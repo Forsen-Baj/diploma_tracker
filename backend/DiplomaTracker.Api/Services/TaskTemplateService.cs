@@ -17,7 +17,7 @@ public class TaskTemplateService : ITaskTemplateService
 
     public async Task<IReadOnlyList<TaskTemplateResponse>> GetTaskTemplatesAsync()
     {
-        var templates = await _dbContext.DiplomaTaskTemplates
+        var templates = await _dbContext.DiplomaTaskTemplates.AsNoTracking()
             .OrderBy(t => t.Order)
             .ThenBy(t => t.Title)
             .ToListAsync();
@@ -26,7 +26,7 @@ public class TaskTemplateService : ITaskTemplateService
 
     public async Task<TaskTemplateResponse?> GetTaskTemplateByIdAsync(Guid id)
     {
-        var template = await _dbContext.DiplomaTaskTemplates.FirstOrDefaultAsync(t => t.Id == id);
+        var template = await _dbContext.DiplomaTaskTemplates.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id);
         return template is null ? null : Map(template);
     }
 

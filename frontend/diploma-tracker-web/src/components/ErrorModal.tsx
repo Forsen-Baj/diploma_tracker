@@ -1,5 +1,3 @@
-import { ApiError } from '../api/apiClient'
-
 type ErrorModalProps = {
   message: string
   onClose: () => void
@@ -15,8 +13,4 @@ export function ErrorModal({ message, onClose }: ErrorModalProps) {
       </div>
     </div>
   )
-}
-
-export function isApiConflict(error: unknown): error is ApiError {
-  return error instanceof ApiError && error.status === 409
 }

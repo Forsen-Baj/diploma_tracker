@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ApiError } from '../api/apiClient'
+import { ApiError, isApiConflict } from '../api/apiClient'
 import { addGroupReviewer, createGroup, deleteGroup, getGroupReviewers, getGroups, removeGroupReviewer, updateGroup } from '../api/groupsApi'
 import { getTeachers } from '../api/teachersApi'
 import type { Group, GroupReviewer, Teacher } from '../api/types'
-import { ErrorModal, isApiConflict } from '../components/ErrorModal'
+import { ErrorModal } from '../components/ErrorModal'
 
 type CreateFormState = {
   name: string

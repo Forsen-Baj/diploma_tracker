@@ -1,20 +1,27 @@
 using System.Text;
+using DiplomaTracker.Api.Configuration;
 using DiplomaTracker.Api.Data;
 using DiplomaTracker.Api.Interfaces;
 using DiplomaTracker.Api.Models;
 using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
+const string CorsPolicyName = "FrontendPolicy";
+
 var builder = WebApplication.CreateBuilder(args);
 
-var corsPolicyName = "FrontendPolicy";
-
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
+builder.Services.Configure<CorsSettings>(builder.Configuration.GetSection("Cors"));
+builder.Services.Configure<BootstrapSettings>(builder.Configuration.GetSection("Bootstrap"));
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITeacherService, TeacherService>();
@@ -49,31 +56,28 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy(corsPolicyName, policy =>
-    {
-        policy.WithOrigins("http://localhost:5173")
+builder.Services.AddCors();
+builder.Services.AddOptions<CorsOptions>()
+    .Configure<IOptions<CorsSettings>>((options, corsSettings) =>
+        options.AddPolicy(CorsPolicyName, policy => policy
+            .WithOrigins(corsSettings.Value.AllowedOrigins)
             .AllowAnyHeader()
-            .AllowAnyMethod();
-    });
-});
+            .AllowAnyMethod()));
 
-var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>() ?? new JwtSettings();
-var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Secret));
-
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
+builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<IOptions<JwtSettings>>((options, jwtSettings) =>
     {
+        var jwt = jwtSettings.Value;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
             ValidateAudience = true,
             ValidateIssuerSigningKey = true,
             ValidateLifetime = true,
-            ValidIssuer = jwtSettings.Issuer,
-            ValidAudience = jwtSettings.Audience,
-            IssuerSigningKey = signingKey,
+            ValidIssuer = jwt.Issuer,
+            ValidAudience = jwt.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.Secret)),
             ClockSkew = TimeSpan.Zero
         };
     });
@@ -82,22 +86,37 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+StartupValidation.ValidateJwtSettings(app.Services.GetRequiredService<IOptions<JwtSettings>>().Value);
+StartupValidation.ValidateCorsSettings(app.Services.GetRequiredService<IOptions<CorsSettings>>().Value);
+
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
+
     await dbContext.Database.MigrateAsync();
-    await DbSeeder.SeedAsync(dbContext, passwordHasher);
+
+    if (app.Environment.IsDevelopment())
+    {
+        await DbSeeder.SeedAsync(dbContext, passwordHasher);
+    }
+    else
+    {
+        var bootstrapSettings = scope.ServiceProvider.GetRequiredService<IOptions<BootstrapSettings>>().Value;
+        await AdminBootstrapper.EnsureAdminAsync(dbContext, passwordHasher, bootstrapSettings, DateTime.UtcNow);
+    }
 }
 
-app.UseSwagger();
-app.UseSwaggerUI();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
-app.UseCors(corsPolicyName);
+app.UseCors(CorsPolicyName);
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 
 app.Run();
-

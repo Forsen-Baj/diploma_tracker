@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ApiError } from '../api/apiClient'
+import { ApiError, isApiConflict } from '../api/apiClient'
 import { assignAllTaskTemplates, createGroupTask, deleteGroupTask, getTasksForGroup, updateGroupTask } from '../api/groupTasksApi'
 import { addGroupReviewer, getGroupReviewers, getGroups, getGroupStudents, removeGroupReviewer } from '../api/groupsApi'
 import { getTaskTemplates } from '../api/taskTemplatesApi'
 import { getTeachers } from '../api/teachersApi'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 import type { Group, GroupReviewer, GroupStudent, GroupTask, TaskTemplate, Teacher } from '../api/types'
-import { ErrorModal, isApiConflict } from '../components/ErrorModal'
+import { ErrorModal } from '../components/ErrorModal'
 
 export function GroupDetailsPage() {
   const { groupId } = useParams<{ groupId: string }>()

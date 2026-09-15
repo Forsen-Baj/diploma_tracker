@@ -1,5 +1,5 @@
 import { Navigate } from 'react-router-dom'
-import { useAuth } from './AuthContext'
+import { useAuth } from './useAuth'
 
 function routeByRole(role: 'Admin' | 'Teacher' | 'Student'): string {
   if (role === 'Admin') return '/admin/dashboard'

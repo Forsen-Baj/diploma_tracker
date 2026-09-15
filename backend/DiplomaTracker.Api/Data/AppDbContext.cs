@@ -108,7 +108,7 @@ public class AppDbContext : DbContext
         var studentTask = modelBuilder.Entity<StudentTask>();
         studentTask.ToTable("StudentTasks");
         studentTask.HasKey(x => x.Id);
-        studentTask.Property(x => x.Status).HasMaxLength(50).IsRequired();
+        studentTask.Property(x => x.Status).HasConversion<string>().HasMaxLength(50).IsRequired();
         studentTask.Property(x => x.CurrentMark).HasColumnType("decimal(5,2)");
         studentTask.Property(x => x.CreatedAt).IsRequired();
         studentTask.Property(x => x.UpdatedAt);

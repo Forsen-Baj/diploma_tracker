@@ -17,7 +17,7 @@ public class GroupService : IGroupService
 
     public async Task<IReadOnlyList<GroupResponse>> GetGroupsAsync()
     {
-        var groups = await _dbContext.Groups
+        var groups = await _dbContext.Groups.AsNoTracking()
             .OrderBy(g => g.Name)
             .ThenBy(g => g.AcademicYear)
             .ToListAsync();
@@ -27,7 +27,7 @@ public class GroupService : IGroupService
 
     public async Task<GroupResponse?> GetGroupByIdAsync(Guid id)
     {
-        var group = await _dbContext.Groups.FirstOrDefaultAsync(g => g.Id == id);
+        var group = await _dbContext.Groups.AsNoTracking().FirstOrDefaultAsync(g => g.Id == id);
         return group is null ? null : MapGroup(group);
     }
 
@@ -122,7 +122,7 @@ public class GroupService : IGroupService
             }
         }
 
-        var students = await _dbContext.StudentProfiles
+        var students = await _dbContext.StudentProfiles.AsNoTracking()
             .Include(s => s.User)
             .Include(s => s.Supervisor)
             .Where(s => s.GroupId == groupId && s.User.Role == "Student")
@@ -141,7 +141,7 @@ public class GroupService : IGroupService
             return null;
         }
 
-        var reviewers = await _dbContext.GroupReviewers
+        var reviewers = await _dbContext.GroupReviewers.AsNoTracking()
             .Include(gr => gr.Reviewer)
             .Where(gr => gr.GroupId == groupId)
             .OrderBy(gr => gr.Reviewer.LastName)

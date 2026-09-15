@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ApiError } from '../api/apiClient'
+import { ApiError, isApiConflict } from '../api/apiClient'
 import { createTeacher, deactivateTeacher, getTeachers, updateTeacher } from '../api/teachersApi'
 import type { Teacher } from '../api/types'
-import { ErrorModal, isApiConflict } from '../components/ErrorModal'
+import { ErrorModal } from '../components/ErrorModal'
 
 type CreateFormState = {
   firstName: string
