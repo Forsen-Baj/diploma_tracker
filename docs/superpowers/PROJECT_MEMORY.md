@@ -9,6 +9,7 @@ Newest status first; keep entries short.
 | What | Path |
 |---|---|
 | System design (binding authority) | `docs/superpowers/specs/2026-09-15-diploma-tracker-system-design.md` |
+| Increment designs | `docs/superpowers/specs/<date>-<topic>-design.md` |
 | Implementation plans | `docs/superpowers/plans/` |
 | Session handoffs | `docs/superpowers/handoffs/` |
 | Tests to write at the end of the project | `docs/superpowers/test-backlog.md` |
@@ -26,7 +27,7 @@ list import, registration toggle, profile and password management) sits between 
 |---|---|
 | 1 Platform foundations | Done — `abffb34` |
 | 2 Academic structure | Done — `65f190d`; whole-phase review and its fixes on `phase1-2` |
-| User onboarding | Not designed |
+| User onboarding | Designed — `docs/superpowers/specs/2026-09-16-user-onboarding-design.md`; plan next |
 | 3–7 | Requirements only (spec §7–§11); each needs its own design and plan |
 
 Open product questions:
