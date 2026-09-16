@@ -23,20 +23,32 @@ system · 4 Thesis topics and reservation · 5 Submission and review · 6 Docume
 and generation · 7 Document preview and commenting. A user-onboarding increment (student
 list import, registration toggle, profile and password management) sits between 2 and 3.
 
-| Phase | State |
-|---|---|
-| 1 Platform foundations | Done — `abffb34` |
-| 2 Academic structure | Done — `65f190d`; whole-phase review and its fixes on `phase1-2` |
-| User onboarding | Designed — `docs/superpowers/specs/2026-09-16-user-onboarding-design.md`; plan next |
-| 3–7 | Requirements only (spec §7–§11); each needs its own design and plan |
+| Phase | State | Design |
+|---|---|---|
+| 1 Platform foundations | Done — `abffb34` | `2026-09-15-diploma-tracker-system-design.md` §5 |
+| 2 Academic structure | Done — `65f190d`, review fixes `0e909bc` | same, §6 |
+| User onboarding | Designed; plan next | `2026-09-16-user-onboarding-design.md` |
+| 3 Design system | Designed | `2026-09-17-design-system-design.md` |
+| 4 Topics and reservation | Designed | `2026-09-17-topics-and-reservation-design.md` |
+| 5 Submission and review | Designed | `2026-09-17-submission-and-review-design.md` |
+| 6 Document templates | Designed | `2026-09-17-document-templates-design.md` |
+| 7 Document preview and commenting | Deferred by the owner; revisit after phase 6 | — |
 
-Open product questions:
-- Under what conditions may a student cancel their own topic reservation? (phase 4)
-- Is PDF output in scope? (phase 6)
-- Should teachers see only the groups they review? `GET /api/groups`, `/api/groups/{id}`
-  and `/api/groups/{id}/reviewers` are open to every teacher; only the group student list
-  is filtered. Spec §6 (Testing) says "a teacher sees only the groups they review". Decide
-  before phase 5 builds teacher pages on these endpoints.
+Build order: onboarding → 3 → 4 → 5 → 6. Each design is approved; each still needs an
+implementation plan (`superpowers:writing-plans`) before execution.
+
+Cross-design links worth knowing:
+- Phase 3 introduces the `{ code, message }` error contract; every endpoint built before it
+  (including onboarding) migrates in phase 3, and every later phase uses codes from the start.
+- The optional patronymic on users arrives with onboarding (CSV column too); phase 6 markers
+  use it.
+- Phase 4 replaces the free-text student topic with `StudentProfile.TopicId`.
+- Phase 5 defines teacher visibility (groups they review or where they supervise a student);
+  phases 5 and 6 rely on it. Phase 5 also introduces `IFileStorage`, reused by phase 6.
+
+Open product questions: none. Settled 2026-09-17: students cancel only while pending and
+before the global selection deadline (phase 4); output is `.docx` only, no PDF (phase 6);
+teachers see only relevant groups (phase 5).
 
 Parked for later (not blocking):
 - List reads use `Include` rather than projecting to DTOs in the query (`GroupService`,
@@ -139,3 +151,4 @@ Parked for later (not blocking):
 
 - 2026-09-16 — Phase 2 committed (`65f190d`); branches reorganised to
   `master` ← `dev` ← `phase1-2`; this file created.
+- 2026-09-17 — Designs for onboarding and phases 3–6 approved and committed; phase 7 deferred.
