@@ -34,7 +34,8 @@ for any other administrative record.
 
 ## 3. Data model
 
-**`AppUser`** — `PasswordHash` is optional. An account without a password hash is
+**`AppUser`** — `Patronymic` (по батькові) is optional, at most 100 characters; documents
+generated in phase 6 use it. `PasswordHash` is optional. An account without a password hash is
 *unclaimed*: it exists, appears in lists and groups, and cannot sign in.
 
 **`StudentProfile`**
@@ -101,7 +102,8 @@ with one file field `file`. An unknown group → **404**.
 - Encoding UTF-8, with or without a byte-order mark. Bytes that are not valid UTF-8 → the
   file is rejected with `Save the file as "CSV UTF-8" and upload it again.`
 - The first line is a header naming the columns `lastName`, `firstName`, `email`,
-  `studentNumber`, in any order and matched case-insensitively. Other columns are ignored.
+  `studentNumber`, in any order and matched case-insensitively. An optional `patronymic`
+  column is read when present. Other columns are ignored.
 - The separator is `;` or `,`, detected from the header line (Ukrainian-locale Excel writes
   `;`).
 - Values may be enclosed in double quotes; a doubled quote inside a quoted value is a
@@ -113,7 +115,7 @@ with one file field `file`. An unknown group → **404**.
 
 **Row validation** — every row is checked before anything is written:
 - all four values present after trimming;
-- email is a syntactically valid address; lengths: names 100, email 256, student number 32;
+- email is a syntactically valid address; lengths: names and patronymic 100, email 256, student number 32;
 - no email and no student number appears twice in the file;
 - an email that belongs to a teacher or an administrator is an error;
 - an email that belongs to an existing student whose student number differs, or a student
@@ -145,7 +147,8 @@ supervisor or topic.
 | PUT | `/api/teachers/{id}/password` | Admin | body `{ password }` → 204; unknown teacher → 404; policy violation → 400 |
 
 **Administrator-created students** — creating a student individually requires first name,
-last name, email, student number and group. Password, supervisor and topic are optional.
+last name, email, student number and group. Patronymic, password, supervisor and topic are
+optional. Teacher creation and editing likewise accept an optional patronymic.
 A student created without a password claims the account like an imported one. Updating a
 student can change the student number, subject to uniqueness (**409** on conflict).
 
