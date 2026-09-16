@@ -71,7 +71,7 @@ public static class DbSeeder
 
     private static async Task<Faculty> EnsureFacultyAsync(AppDbContext dbContext, string name, string shortName, DateTime now)
     {
-        var existing = await dbContext.Faculties.FirstOrDefaultAsync(f => f.ShortName == shortName);
+        var existing = await dbContext.Faculties.FirstOrDefaultAsync(f => f.ShortName == shortName || f.Name == name);
         if (existing is not null)
         {
             return existing;
@@ -98,7 +98,8 @@ public static class DbSeeder
         string shortName,
         DateTime now)
     {
-        var existing = await dbContext.Departments.FirstOrDefaultAsync(d => d.FacultyId == facultyId && d.ShortName == shortName);
+        var existing = await dbContext.Departments.FirstOrDefaultAsync(
+            d => d.FacultyId == facultyId && (d.ShortName == shortName || d.Name == name));
         if (existing is not null)
         {
             return existing;

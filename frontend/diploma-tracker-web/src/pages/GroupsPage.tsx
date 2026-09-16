@@ -106,16 +106,33 @@ export function GroupsPage() {
 
   const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const trimmedName = createForm.name.trim()
+    const trimmedAcademicYear = createForm.academicYear.trim()
+    const trimmedDescription = createForm.description.trim()
+    if (!createForm.departmentId || !trimmedName || !trimmedAcademicYear) {
+      setError('Department, name and academic year are required.')
+      return
+    }
+
     setIsCreating(true)
     setError('')
     try {
-      await createGroup(createForm)
+      await createGroup({
+        departmentId: createForm.departmentId,
+        name: trimmedName,
+        description: trimmedDescription,
+        academicYear: trimmedAcademicYear
+      })
       setCreateForm(emptyCreateForm)
       await loadGroupsAndTeachers()
     } catch (err) {
       if (isApiConflict(err)) {
         setModalMessage((err as ApiError).message)
       } else {
+        if (err instanceof ApiError && err.status === 400) {
+          // The department list may be stale (for example, deleted from another tab).
+          await loadGroupsAndTeachers()
+        }
         setError((err as Error).message)
       }
     } finally {
@@ -144,16 +161,33 @@ export function GroupsPage() {
       return
     }
 
+    const trimmedName = editForm.name.trim()
+    const trimmedAcademicYear = editForm.academicYear.trim()
+    const trimmedDescription = editForm.description.trim()
+    if (!editForm.departmentId || !trimmedName || !trimmedAcademicYear) {
+      setError('Department, name and academic year are required.')
+      return
+    }
+
     setIsSavingEdit(true)
     setError('')
     try {
-      await updateGroup(editingGroupId, editForm)
+      await updateGroup(editingGroupId, {
+        departmentId: editForm.departmentId,
+        name: trimmedName,
+        description: trimmedDescription,
+        academicYear: trimmedAcademicYear
+      })
       cancelEdit()
       await loadGroupsAndTeachers()
     } catch (err) {
       if (isApiConflict(err)) {
         setModalMessage((err as ApiError).message)
       } else {
+        if (err instanceof ApiError && err.status === 400) {
+          // The department list may be stale (for example, deleted from another tab).
+          await loadGroupsAndTeachers()
+        }
         setError((err as Error).message)
       }
     } finally {
@@ -239,9 +273,9 @@ export function GroupsPage() {
                 <option key={department.id} value={department.id}>{department.facultyName} — {department.name}</option>
               ))}
             </select>
-            <input className="field-input" placeholder="Group name" value={createForm.name} onChange={(e) => setCreateForm((prev) => ({ ...prev, name: e.target.value }))} required />
-            <input className="field-input" placeholder="Academic year" value={createForm.academicYear} onChange={(e) => setCreateForm((prev) => ({ ...prev, academicYear: e.target.value }))} required />
-            <input className="field-input" placeholder="Description" value={createForm.description} onChange={(e) => setCreateForm((prev) => ({ ...prev, description: e.target.value }))} />
+            <input className="field-input" placeholder="Group name" value={createForm.name} onChange={(e) => setCreateForm((prev) => ({ ...prev, name: e.target.value }))} maxLength={200} required />
+            <input className="field-input" placeholder="Academic year" value={createForm.academicYear} onChange={(e) => setCreateForm((prev) => ({ ...prev, academicYear: e.target.value }))} maxLength={50} required />
+            <input className="field-input" placeholder="Description" value={createForm.description} onChange={(e) => setCreateForm((prev) => ({ ...prev, description: e.target.value }))} maxLength={1000} />
           </div>
           <button className="primary-button" type="submit" disabled={isCreating}>{isCreating ? 'Creating...' : 'Create Group'}</button>
         </form>
@@ -258,9 +292,9 @@ export function GroupsPage() {
                   <option key={department.id} value={department.id}>{department.facultyName} — {department.name}</option>
                 ))}
               </select>
-              <input className="field-input" placeholder="Group name" value={editForm.name} onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))} required />
-              <input className="field-input" placeholder="Academic year" value={editForm.academicYear} onChange={(e) => setEditForm((prev) => ({ ...prev, academicYear: e.target.value }))} required />
-              <input className="field-input" placeholder="Description" value={editForm.description} onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))} />
+              <input className="field-input" placeholder="Group name" value={editForm.name} onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))} maxLength={200} required />
+              <input className="field-input" placeholder="Academic year" value={editForm.academicYear} onChange={(e) => setEditForm((prev) => ({ ...prev, academicYear: e.target.value }))} maxLength={50} required />
+              <input className="field-input" placeholder="Description" value={editForm.description} onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))} maxLength={1000} />
             </div>
             <div className="actions-row">
               <button className="primary-button" type="submit" disabled={isSavingEdit}>{isSavingEdit ? 'Saving...' : 'Save Changes'}</button>
@@ -272,10 +306,10 @@ export function GroupsPage() {
 
       <section className="page-card">
         <h2>Groups</h2>
+        {error && <p className="error-text">{error}</p>}
         {isLoading && <p>Loading groups...</p>}
-        {!isLoading && error && <p className="error-text">{error}</p>}
-        {!isLoading && !error && sortedGroups.length === 0 && <p>No groups found.</p>}
-        {!isLoading && !error && sortedGroups.length > 0 && (
+        {!isLoading && sortedGroups.length === 0 && <p>No groups found.</p>}
+        {!isLoading && sortedGroups.length > 0 && (
           <div className="list-grid">
             {sortedGroups.map((group) => (
               <article className="entity-card" key={group.id}>

@@ -76,7 +76,21 @@ public class DepartmentService : IDepartmentService
         };
 
         _dbContext.Departments.Add(department);
-        await _dbContext.SaveChangesAsync();
+
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.IsUniqueConstraintViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, await FindConflictAsync(null, faculty.Id, name, shortName) ?? AcademicStructureErrors.DepartmentNameTaken);
+        }
+        catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, AcademicStructureErrors.FacultyNotFound);
+        }
 
         return (MapDepartment(department), null);
     }
@@ -109,7 +123,21 @@ public class DepartmentService : IDepartmentService
         department.Name = name;
         department.ShortName = shortName;
         department.UpdatedAt = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync();
+
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.IsUniqueConstraintViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, await FindConflictAsync(id, faculty.Id, name, shortName) ?? AcademicStructureErrors.DepartmentNameTaken);
+        }
+        catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, AcademicStructureErrors.FacultyNotFound);
+        }
 
         return (MapDepartment(department), null);
     }
@@ -128,7 +156,17 @@ public class DepartmentService : IDepartmentService
         }
 
         _dbContext.Departments.Remove(department);
-        await _dbContext.SaveChangesAsync();
+
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (false, AcademicStructureErrors.DepartmentHasGroups);
+        }
+
         return (true, null);
     }
 

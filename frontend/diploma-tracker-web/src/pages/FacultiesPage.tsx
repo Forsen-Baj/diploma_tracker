@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { isApiConflict } from '../api/apiClient'
 import { createDepartment, deleteDepartment, getDepartments, updateDepartment } from '../api/departmentsApi'
 import { createFaculty, deleteFaculty, getFaculties, updateFaculty } from '../api/facultiesApi'
@@ -19,13 +19,18 @@ export function FacultiesPage() {
   const [facultyForm, setFacultyForm] = useState<NameForm>(emptyForm)
   const [editingFacultyId, setEditingFacultyId] = useState<string | null>(null)
   const [departmentForm, setDepartmentForm] = useState<NameForm>(emptyForm)
-  const [editingDepartmentId, setEditingDepartmentId] = useState<string | null>(null)
+  const [editingDepartment, setEditingDepartment] = useState<Department | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
   const [modalMessage, setModalMessage] = useState('')
 
   const selectedFaculty = faculties.find((faculty) => faculty.id === selectedFacultyId) ?? null
+
+  // Kept in sync with selectedFacultyId on every render so async callbacks can tell
+  // whether the faculty they were started for is still the one on screen.
+  const selectedFacultyIdRef = useRef(selectedFacultyId)
+  selectedFacultyIdRef.current = selectedFacultyId
 
   const reportError = (err: unknown) => {
     if (isApiConflict(err)) {
@@ -56,8 +61,17 @@ export function FacultiesPage() {
     }
 
     try {
-      setDepartments(await getDepartments(facultyId))
+      const data = await getDepartments(facultyId)
+      if (selectedFacultyIdRef.current !== facultyId) {
+        // A different faculty was selected while this request was in flight.
+        return
+      }
+      setDepartments(data)
     } catch (err) {
+      if (selectedFacultyIdRef.current !== facultyId) {
+        return
+      }
+      setDepartments([])
       setError((err as Error).message)
     }
   }, [])
@@ -67,20 +81,29 @@ export function FacultiesPage() {
   }, [loadFaculties])
 
   useEffect(() => {
-    setEditingDepartmentId(null)
+    setEditingDepartment(null)
     setDepartmentForm(emptyForm)
+    setDepartments([])
     void loadDepartments(selectedFacultyId)
   }, [loadDepartments, selectedFacultyId])
 
   const submitFaculty = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const trimmedName = facultyForm.name.trim()
+    const trimmedShortName = facultyForm.shortName.trim()
+    if (!trimmedName || !trimmedShortName) {
+      setError('Faculty name and short name are required.')
+      return
+    }
+
     setIsSaving(true)
     setError('')
+    const request = { name: trimmedName, shortName: trimmedShortName }
     try {
       if (editingFacultyId) {
-        await updateFaculty(editingFacultyId, facultyForm)
+        await updateFaculty(editingFacultyId, request)
       } else {
-        await createFaculty(facultyForm)
+        await createFaculty(request)
       }
       setEditingFacultyId(null)
       setFacultyForm(emptyForm)
@@ -110,6 +133,9 @@ export function FacultiesPage() {
     setError('')
     try {
       await deleteFaculty(faculty.id)
+      if (editingFacultyId === faculty.id) {
+        cancelFacultyEdit()
+      }
       await loadFaculties()
     } catch (err) {
       reportError(err)
@@ -122,18 +148,30 @@ export function FacultiesPage() {
       return
     }
 
+    const trimmedName = departmentForm.name.trim()
+    const trimmedShortName = departmentForm.shortName.trim()
+    if (!trimmedName || !trimmedShortName) {
+      setError('Department name and short name are required.')
+      return
+    }
+
     setIsSaving(true)
     setError('')
-    const request = { facultyId: selectedFacultyId, ...departmentForm }
+    // Updates always target the edited department's own faculty, never the faculty
+    // currently selected in the UI, so an edit can never move a department by accident.
+    const targetFacultyId = editingDepartment ? editingDepartment.facultyId : selectedFacultyId
+    const request = { facultyId: targetFacultyId, name: trimmedName, shortName: trimmedShortName }
     try {
-      if (editingDepartmentId) {
-        await updateDepartment(editingDepartmentId, request)
+      if (editingDepartment) {
+        await updateDepartment(editingDepartment.id, request)
       } else {
         await createDepartment(request)
       }
-      setEditingDepartmentId(null)
+      setEditingDepartment(null)
       setDepartmentForm(emptyForm)
-      await loadDepartments(selectedFacultyId)
+      if (selectedFacultyIdRef.current === targetFacultyId) {
+        await loadDepartments(targetFacultyId)
+      }
     } catch (err) {
       reportError(err)
     } finally {
@@ -142,12 +180,12 @@ export function FacultiesPage() {
   }
 
   const startDepartmentEdit = (department: Department) => {
-    setEditingDepartmentId(department.id)
+    setEditingDepartment(department)
     setDepartmentForm({ name: department.name, shortName: department.shortName })
   }
 
   const cancelDepartmentEdit = () => {
-    setEditingDepartmentId(null)
+    setEditingDepartment(null)
     setDepartmentForm(emptyForm)
   }
 
@@ -159,9 +197,19 @@ export function FacultiesPage() {
     setError('')
     try {
       await deleteDepartment(department.id)
+      if (editingDepartment?.id === department.id) {
+        cancelDepartmentEdit()
+      }
       await loadDepartments(selectedFacultyId)
     } catch (err) {
       reportError(err)
+    }
+  }
+
+  const handleFacultyKeyDown = (event: React.KeyboardEvent<HTMLElement>, facultyId: string) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      setSelectedFacultyId(facultyId)
     }
   }
 
@@ -175,8 +223,8 @@ export function FacultiesPage() {
           <h1>Faculties</h1>
           <form className="group-form" onSubmit={submitFaculty}>
             <div className="group-form-grid">
-              <input className="field-input" placeholder="Faculty name" value={facultyForm.name} onChange={(e) => setFacultyForm((prev) => ({ ...prev, name: e.target.value }))} required />
-              <input className="field-input" placeholder="Short name" value={facultyForm.shortName} onChange={(e) => setFacultyForm((prev) => ({ ...prev, shortName: e.target.value }))} required />
+              <input className="field-input" placeholder="Faculty name" value={facultyForm.name} onChange={(e) => setFacultyForm((prev) => ({ ...prev, name: e.target.value }))} maxLength={200} required />
+              <input className="field-input" placeholder="Short name" value={facultyForm.shortName} onChange={(e) => setFacultyForm((prev) => ({ ...prev, shortName: e.target.value }))} maxLength={50} required />
             </div>
             <div className="actions-row">
               <button className="primary-button" type="submit" disabled={isSaving}>{editingFacultyId ? 'Save Faculty' : 'Add Faculty'}</button>
@@ -191,7 +239,11 @@ export function FacultiesPage() {
               <article
                 key={faculty.id}
                 className={faculty.id === selectedFacultyId ? 'entity-card card-selectable entity-card-selected' : 'entity-card card-selectable'}
+                role="button"
+                tabIndex={0}
+                aria-pressed={faculty.id === selectedFacultyId}
                 onClick={() => setSelectedFacultyId(faculty.id)}
+                onKeyDown={(e) => handleFacultyKeyDown(e, faculty.id)}
               >
                 <h3>{faculty.shortName}</h3>
                 <p>{faculty.name}</p>
@@ -211,12 +263,12 @@ export function FacultiesPage() {
             <>
               <form className="group-form" onSubmit={submitDepartment}>
                 <div className="group-form-grid">
-                  <input className="field-input" placeholder="Department name" value={departmentForm.name} onChange={(e) => setDepartmentForm((prev) => ({ ...prev, name: e.target.value }))} required />
-                  <input className="field-input" placeholder="Short name" value={departmentForm.shortName} onChange={(e) => setDepartmentForm((prev) => ({ ...prev, shortName: e.target.value }))} required />
+                  <input className="field-input" placeholder="Department name" value={departmentForm.name} onChange={(e) => setDepartmentForm((prev) => ({ ...prev, name: e.target.value }))} maxLength={200} required />
+                  <input className="field-input" placeholder="Short name" value={departmentForm.shortName} onChange={(e) => setDepartmentForm((prev) => ({ ...prev, shortName: e.target.value }))} maxLength={50} required />
                 </div>
                 <div className="actions-row">
-                  <button className="primary-button" type="submit" disabled={isSaving}>{editingDepartmentId ? 'Save Department' : 'Add Department'}</button>
-                  {editingDepartmentId && <button className="secondary-button" type="button" onClick={cancelDepartmentEdit} disabled={isSaving}>Cancel</button>}
+                  <button className="primary-button" type="submit" disabled={isSaving}>{editingDepartment ? 'Save Department' : 'Add Department'}</button>
+                  {editingDepartment && <button className="secondary-button" type="button" onClick={cancelDepartmentEdit} disabled={isSaving}>Cancel</button>}
                 </div>
               </form>
 

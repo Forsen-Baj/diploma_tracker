@@ -72,7 +72,21 @@ public class GroupService : IGroupService
         };
 
         _dbContext.Groups.Add(group);
-        await _dbContext.SaveChangesAsync();
+
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.IsUniqueConstraintViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, DuplicateGroup);
+        }
+        catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, AcademicStructureErrors.DepartmentNotFound);
+        }
 
         return (MapGroup(group), null);
     }
@@ -107,7 +121,20 @@ public class GroupService : IGroupService
         group.AcademicYear = normalizedAcademicYear;
         group.UpdatedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync();
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.IsUniqueConstraintViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, DuplicateGroup);
+        }
+        catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, AcademicStructureErrors.DepartmentNotFound);
+        }
 
         return (MapGroup(group), null);
     }
@@ -127,7 +154,17 @@ public class GroupService : IGroupService
         }
 
         _dbContext.Groups.Remove(group);
-        await _dbContext.SaveChangesAsync();
+
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (false, "Cannot delete group because students are assigned.");
+        }
+
         return (true, null);
     }
 

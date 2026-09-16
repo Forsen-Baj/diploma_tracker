@@ -31,6 +31,12 @@ export function isApiConflict(error: unknown): error is ApiError {
   return error instanceof ApiError && error.status === 409
 }
 
+type ProblemDetailsPayload = {
+  message?: string
+  title?: string
+  errors?: Record<string, string[]>
+}
+
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken()
   const headers = new Headers(init?.headers)
@@ -46,8 +52,10 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   })
 
   if (!response.ok) {
-    const payload = await response.json().catch(() => null) as { message?: string } | null
-    throw new ApiError(response.status, payload?.message ?? `Request failed with status ${response.status}`)
+    const payload = await response.json().catch(() => null) as ProblemDetailsPayload | null
+    const firstFieldError = payload?.errors ? Object.values(payload.errors)[0]?.[0] : undefined
+    const message = payload?.message ?? firstFieldError ?? payload?.title ?? `Request failed with status ${response.status}`
+    throw new ApiError(response.status, message)
   }
 
   if (response.status === 204) {
