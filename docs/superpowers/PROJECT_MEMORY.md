@@ -23,19 +23,25 @@ system · 4 Thesis topics and reservation · 5 Submission and review · 6 Docume
 and generation · 7 Document preview and commenting. A user-onboarding increment (student
 list import, registration toggle, profile and password management) sits between 2 and 3.
 
-| Phase | State | Design |
-|---|---|---|
-| 1 Platform foundations | Done — `abffb34` | `2026-09-15-diploma-tracker-system-design.md` §5 |
-| 2 Academic structure | Done — `65f190d`, review fixes `0e909bc` | same, §6 |
-| User onboarding | Designed; plan next | `2026-09-16-user-onboarding-design.md` |
-| 3 Design system | Designed | `2026-09-17-design-system-design.md` |
-| 4 Topics and reservation | Designed | `2026-09-17-topics-and-reservation-design.md` |
-| 5 Submission and review | Designed | `2026-09-17-submission-and-review-design.md` |
-| 6 Document templates | Designed | `2026-09-17-document-templates-design.md` |
-| 7 Document preview and commenting | Deferred by the owner; revisit after phase 6 | — |
+| Phase | State | Design | Plan |
+|---|---|---|---|
+| 1 Platform foundations | Done — `abffb34` | `2026-09-15-diploma-tracker-system-design.md` §5 | `2026-09-15-platform-foundations-and-academic-structure.md` |
+| 2 Academic structure | Done — `65f190d`, review fixes `0e909bc` | same, §6 | same |
+| User onboarding | Planned — next to execute | `2026-09-16-user-onboarding-design.md` | `2026-09-17-user-onboarding.md` |
+| 3 Design system | Planned | `2026-09-17-design-system-design.md` | `2026-09-17-design-system.md` |
+| 4 Topics and reservation | Planned | `2026-09-17-topics-and-reservation-design.md` | `2026-09-17-topics-and-reservation.md` |
+| 5 Submission and review | Planned | `2026-09-17-submission-and-review-design.md` | `2026-09-17-submission-and-review.md` |
+| 6 Document templates | Planned | `2026-09-17-document-templates-design.md` | `2026-09-17-document-templates.md` |
+| 7 Document preview and commenting | Deferred by the owner; revisit after phase 6 | — | — |
 
-Build order: onboarding → 3 → 4 → 5 → 6. Each design is approved; each still needs an
-implementation plan (`superpowers:writing-plans`) before execution.
+Build order: onboarding → 3 → 4 → 5 → 6. Specs live in `docs/superpowers/specs/`, plans in
+`docs/superpowers/plans/`. Each plan assumes the previous ones are implemented; execute them
+in order with `superpowers:subagent-driven-development`.
+
+How the plans are written: complete code for backend, shared frontend infrastructure and
+verification scripts; page markup is specified (components, state, behaviour, full
+translation blocks) and written by the frontend agent. Each plan recreates the local
+database (single `InitialCreate` regenerated) and ends with exactly one commit.
 
 Cross-design links worth knowing:
 - Phase 3 introduces the `{ code, message }` error contract; every endpoint built before it
@@ -152,3 +158,4 @@ Parked for later (not blocking):
 - 2026-09-16 — Phase 2 committed (`65f190d`); branches reorganised to
   `master` ← `dev` ← `phase1-2`; this file created.
 - 2026-09-17 — Designs for onboarding and phases 3–6 approved and committed; phase 7 deferred.
+- 2026-09-17 — Implementation plans written for onboarding and phases 3–6.
