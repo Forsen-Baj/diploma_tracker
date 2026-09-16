@@ -10,6 +10,8 @@ public class AppDbContext : DbContext
     }
 
     public DbSet<AppUser> Users => Set<AppUser>();
+    public DbSet<Faculty> Faculties => Set<Faculty>();
+    public DbSet<Department> Departments => Set<Department>();
     public DbSet<StudentProfile> StudentProfiles => Set<StudentProfile>();
     public DbSet<Group> Groups => Set<Group>();
     public DbSet<GroupReviewer> GroupReviewers => Set<GroupReviewer>();
@@ -19,6 +21,30 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        var faculty = modelBuilder.Entity<Faculty>();
+        faculty.ToTable("Faculties");
+        faculty.HasKey(x => x.Id);
+        faculty.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        faculty.Property(x => x.ShortName).HasMaxLength(50).IsRequired();
+        faculty.Property(x => x.CreatedAt).IsRequired();
+        faculty.Property(x => x.UpdatedAt).IsRequired();
+        faculty.HasIndex(x => x.Name).IsUnique();
+        faculty.HasIndex(x => x.ShortName).IsUnique();
+
+        var department = modelBuilder.Entity<Department>();
+        department.ToTable("Departments");
+        department.HasKey(x => x.Id);
+        department.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        department.Property(x => x.ShortName).HasMaxLength(50).IsRequired();
+        department.Property(x => x.CreatedAt).IsRequired();
+        department.Property(x => x.UpdatedAt).IsRequired();
+        department.HasIndex(x => new { x.FacultyId, x.Name }).IsUnique();
+        department.HasIndex(x => new { x.FacultyId, x.ShortName }).IsUnique();
+        department.HasOne(x => x.Faculty)
+            .WithMany(x => x.Departments)
+            .HasForeignKey(x => x.FacultyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         var user = modelBuilder.Entity<AppUser>();
         user.ToTable("Users");
         user.HasKey(x => x.Id);
@@ -63,6 +89,10 @@ public class AppDbContext : DbContext
         group.Property(x => x.CreatedAt).IsRequired();
         group.Property(x => x.UpdatedAt).IsRequired();
         group.HasIndex(x => new { x.Name, x.AcademicYear }).IsUnique();
+        group.HasOne(x => x.Department)
+            .WithMany(x => x.Groups)
+            .HasForeignKey(x => x.DepartmentId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         var groupReviewer = modelBuilder.Entity<GroupReviewer>();
         groupReviewer.ToTable("GroupReviewers");

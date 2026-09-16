@@ -3,28 +3,33 @@ import { useNavigate } from 'react-router-dom'
 import { ApiError, isApiConflict } from '../api/apiClient'
 import { addGroupReviewer, createGroup, deleteGroup, getGroupReviewers, getGroups, removeGroupReviewer, updateGroup } from '../api/groupsApi'
 import { getTeachers } from '../api/teachersApi'
-import type { Group, GroupReviewer, Teacher } from '../api/types'
+import { getDepartments } from '../api/departmentsApi'
+import type { Department, Group, GroupReviewer, Teacher } from '../api/types'
 import { ErrorModal } from '../components/ErrorModal'
 
 type CreateFormState = {
+  departmentId: string
   name: string
   description: string
   academicYear: string
 }
 
 type EditFormState = {
+  departmentId: string
   name: string
   description: string
   academicYear: string
 }
 
 const emptyCreateForm: CreateFormState = {
+  departmentId: '',
   name: '',
   description: '',
   academicYear: ''
 }
 
 const emptyEditForm: EditFormState = {
+  departmentId: '',
   name: '',
   description: '',
   academicYear: ''
@@ -34,6 +39,7 @@ export function GroupsPage() {
   const navigate = useNavigate()
   const [groups, setGroups] = useState<Group[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [departments, setDepartments] = useState<Department[]>([])
   const [reviewers, setReviewers] = useState<GroupReviewer[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -58,9 +64,10 @@ export function GroupsPage() {
     setIsLoading(true)
     setError('')
     try {
-      const [groupsData, teachersData] = await Promise.all([getGroups(), getTeachers()])
+      const [groupsData, teachersData, departmentsData] = await Promise.all([getGroups(), getTeachers(), getDepartments()])
       setGroups(groupsData)
       setTeachers(teachersData)
+      setDepartments(departmentsData)
       if (!selectedGroupId && groupsData.length > 0) {
         setSelectedGroupId(groupsData[0].id)
       }
@@ -119,6 +126,7 @@ export function GroupsPage() {
   const startEdit = (group: Group) => {
     setEditingGroupId(group.id)
     setEditForm({
+      departmentId: group.departmentId,
       name: group.name,
       description: group.description ?? '',
       academicYear: group.academicYear
@@ -225,6 +233,12 @@ export function GroupsPage() {
         <h1>Manage Groups</h1>
         <form className="group-form" onSubmit={handleCreate}>
           <div className="group-form-grid">
+            <select className="field-input" value={createForm.departmentId} onChange={(e) => setCreateForm((prev) => ({ ...prev, departmentId: e.target.value }))} required>
+              <option value="">Select department</option>
+              {departments.map((department) => (
+                <option key={department.id} value={department.id}>{department.facultyName} — {department.name}</option>
+              ))}
+            </select>
             <input className="field-input" placeholder="Group name" value={createForm.name} onChange={(e) => setCreateForm((prev) => ({ ...prev, name: e.target.value }))} required />
             <input className="field-input" placeholder="Academic year" value={createForm.academicYear} onChange={(e) => setCreateForm((prev) => ({ ...prev, academicYear: e.target.value }))} required />
             <input className="field-input" placeholder="Description" value={createForm.description} onChange={(e) => setCreateForm((prev) => ({ ...prev, description: e.target.value }))} />
@@ -238,6 +252,12 @@ export function GroupsPage() {
           <h2>Edit Group</h2>
           <form className="group-form" onSubmit={handleSaveEdit}>
             <div className="group-form-grid">
+              <select className="field-input" value={editForm.departmentId} onChange={(e) => setEditForm((prev) => ({ ...prev, departmentId: e.target.value }))} required>
+                <option value="">Select department</option>
+                {departments.map((department) => (
+                  <option key={department.id} value={department.id}>{department.facultyName} — {department.name}</option>
+                ))}
+              </select>
               <input className="field-input" placeholder="Group name" value={editForm.name} onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))} required />
               <input className="field-input" placeholder="Academic year" value={editForm.academicYear} onChange={(e) => setEditForm((prev) => ({ ...prev, academicYear: e.target.value }))} required />
               <input className="field-input" placeholder="Description" value={editForm.description} onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))} />
@@ -261,6 +281,7 @@ export function GroupsPage() {
               <article className="entity-card" key={group.id}>
                 <h3>{group.name}</h3>
                 <p><strong>Academic year:</strong> {group.academicYear}</p>
+                <p><strong>Department:</strong> {group.departmentName} ({group.facultyName})</p>
                 <p>{group.description || 'No description'}</p>
                 <div className="actions-row">
                   <button className="secondary-button" onClick={() => startEdit(group)}>Edit</button>

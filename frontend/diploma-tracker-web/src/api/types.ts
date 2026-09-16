@@ -84,6 +84,10 @@ export type UpdateStudentRequest = {
 
 export type Group = {
   id: string
+  departmentId: string
+  departmentName: string
+  facultyId: string
+  facultyName: string
   name: string
   description: string | null
   academicYear: string
@@ -92,12 +96,14 @@ export type Group = {
 }
 
 export type CreateGroupRequest = {
+  departmentId: string
   name: string
   description: string
   academicYear: string
 }
 
 export type UpdateGroupRequest = {
+  departmentId: string
   name: string
   description: string
   academicYear: string
@@ -249,4 +255,33 @@ export type MyStudentTaskDetails = {
   updatedAt: string | null
   submissions: StudentTaskSubmissionHistoryItem[]
   reviews: StudentTaskReviewHistoryItem[]
+}
+
+export type Faculty = {
+  id: string
+  name: string
+  shortName: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type FacultyRequest = {
+  name: string
+  shortName: string
+}
+
+export type Department = {
+  id: string
+  facultyId: string
+  facultyName: string
+  name: string
+  shortName: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type DepartmentRequest = {
+  facultyId: string
+  name: string
+  shortName: string
 }
