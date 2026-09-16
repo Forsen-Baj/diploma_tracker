@@ -11,7 +11,7 @@ Newest status first; keep entries short.
 | System design (binding authority) | `docs/superpowers/specs/2026-09-15-diploma-tracker-system-design.md` |
 | Increment designs | `docs/superpowers/specs/<date>-<topic>-design.md` |
 | Implementation plans | `docs/superpowers/plans/` |
-| Session handoffs | `docs/superpowers/handoffs/` |
+| Session handoffs (latest: `2026-09-17-implementation-kickoff.md`) | `docs/superpowers/handoffs/` |
 | Tests to write at the end of the project | `docs/superpowers/test-backlog.md` |
 | Per-plan execution ledger, briefs, reports, review packages (git-ignored, local only) | `.superpowers/sdd/<plan-name>/` |
 | Local dev server definitions (git-ignored) | `.claude/launch.json` — `api` on :5000, `web` on :5173 |
