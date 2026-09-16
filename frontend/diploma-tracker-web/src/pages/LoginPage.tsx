@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 
 function routeByRole(role: 'Admin' | 'Teacher' | 'Student'): string {
   if (role === 'Admin') return '/admin/dashboard'

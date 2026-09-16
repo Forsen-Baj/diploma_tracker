@@ -14,6 +14,7 @@ import { StudentsPage } from './pages/StudentsPage'
 import { GroupsPage } from './pages/GroupsPage'
 import { GroupDetailsPage } from './pages/GroupDetailsPage'
 import { TaskTemplatesPage } from './pages/TaskTemplatesPage'
+import { FacultiesPage } from './pages/FacultiesPage'
 
 function App() {
   return (
@@ -31,6 +32,7 @@ function App() {
             <Route path="admin/dashboard" element={<AdminDashboardPage />} />
             <Route path="admin/teachers" element={<TeachersPage />} />
             <Route path="admin/students" element={<StudentsPage />} />
+            <Route path="admin/faculties" element={<FacultiesPage />} />
             <Route path="admin/groups" element={<GroupsPage />} />
             <Route path="admin/groups/:groupId" element={<GroupDetailsPage />} />
           </Route>

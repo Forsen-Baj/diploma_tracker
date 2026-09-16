@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ApiError } from '../api/apiClient'
+import { ApiError, isApiConflict } from '../api/apiClient'
 import { activateTaskTemplate, createTaskTemplate, deactivateTaskTemplate, getTaskTemplates, updateTaskTemplate } from '../api/taskTemplatesApi'
 import type { TaskTemplate } from '../api/types'
-import { ErrorModal, isApiConflict } from '../components/ErrorModal'
+import { ErrorModal } from '../components/ErrorModal'
 
 type CreateFormState = {
   title: string

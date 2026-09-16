@@ -19,7 +19,7 @@ public class StudentService : IStudentService
 
     public async Task<IReadOnlyList<StudentResponse>> GetStudentsAsync()
     {
-        var students = await _dbContext.StudentProfiles
+        var students = await _dbContext.StudentProfiles.AsNoTracking()
             .Include(s => s.User)
             .Include(s => s.Group)
             .Include(s => s.Supervisor)

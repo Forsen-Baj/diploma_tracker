@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 
 function dashboardRoute(role: 'Admin' | 'Teacher' | 'Student'): string {
   if (role === 'Admin') return '/admin/dashboard'
@@ -36,6 +36,7 @@ export function LayoutShell() {
             <>
               <NavLink to="/admin/teachers" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>Teachers</NavLink>
               <NavLink to="/admin/students" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>Students</NavLink>
+              <NavLink to="/admin/faculties" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>Faculties</NavLink>
               <NavLink to="/admin/groups" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>Groups</NavLink>
               <NavLink to="/task-templates" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>Task Templates</NavLink>
             </>

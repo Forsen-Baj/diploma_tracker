@@ -326,3 +326,36 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+.faculties-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.faculties-layout .page-card {
+  max-width: none;
+}
+
+.card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.card-selectable {
+  cursor: pointer;
+}
+
+.entity-card-selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1px #2563eb;
+}
+
+@media (max-width: 900px) {
+  .faculties-layout {
+    grid-template-columns: 1fr;
+  }
+}

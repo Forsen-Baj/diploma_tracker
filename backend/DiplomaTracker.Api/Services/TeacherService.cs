@@ -19,7 +19,7 @@ public class TeacherService : ITeacherService
 
     public async Task<IReadOnlyList<TeacherResponse>> GetTeachersAsync()
     {
-        var users = await _dbContext.Users
+        var users = await _dbContext.Users.AsNoTracking()
             .Where(u => u.Role == "Teacher")
             .OrderBy(u => u.LastName)
             .ThenBy(u => u.FirstName)
@@ -30,7 +30,7 @@ public class TeacherService : ITeacherService
 
     public async Task<TeacherResponse?> GetTeacherByIdAsync(Guid id)
     {
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Role == "Teacher" && u.Id == id);
+        var user = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Role == "Teacher" && u.Id == id);
         return user is null ? null : MapTeacher(user);
     }
 

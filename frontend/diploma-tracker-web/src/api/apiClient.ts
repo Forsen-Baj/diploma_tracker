@@ -7,18 +7,28 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE_URL = 'http://localhost:5000'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
+
+if (!API_BASE_URL) {
+  throw new Error('VITE_API_BASE_URL is not configured.')
+}
+
+const TOKEN_STORAGE_KEY = 'diploma_tracker_token'
 
 export function getToken(): string | null {
-  return localStorage.getItem('diploma_tracker_token')
+  return localStorage.getItem(TOKEN_STORAGE_KEY)
 }
 
 export function setToken(token: string): void {
-  localStorage.setItem('diploma_tracker_token', token)
+  localStorage.setItem(TOKEN_STORAGE_KEY, token)
 }
 
 export function clearToken(): void {
-  localStorage.removeItem('diploma_tracker_token')
+  localStorage.removeItem(TOKEN_STORAGE_KEY)
+}
+
+export function isApiConflict(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status === 409
 }
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -36,15 +46,8 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   })
 
   if (!response.ok) {
-    let errorMessage = `Request failed with status ${response.status}`
-    try {
-      const payload = await response.json() as { message?: string }
-      if (payload.message) {
-        errorMessage = payload.message
-      }
-    } catch {
-    }
-    throw new ApiError(response.status, errorMessage)
+    const payload = await response.json().catch(() => null) as { message?: string } | null
+    throw new ApiError(response.status, payload?.message ?? `Request failed with status ${response.status}`)
   }
 
   if (response.status === 204) {

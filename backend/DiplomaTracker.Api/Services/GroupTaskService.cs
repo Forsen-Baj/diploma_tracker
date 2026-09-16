@@ -18,7 +18,7 @@ public class GroupTaskService : IGroupTaskService
 
     public async Task<(IReadOnlyList<GroupTaskResponse>? tasks, string? error)> GetGroupTasksAsync(string role, Guid userId)
     {
-        var query = _dbContext.GroupTasks
+        var query = _dbContext.GroupTasks.AsNoTracking()
             .Include(x => x.Group)
             .Include(x => x.DiplomaTaskTemplate)
             .Include(x => x.StudentTasks)
@@ -44,7 +44,7 @@ public class GroupTaskService : IGroupTaskService
 
     public async Task<(GroupTaskResponse? task, string? error)> GetGroupTaskByIdAsync(Guid id, string role, Guid userId)
     {
-        var groupTask = await _dbContext.GroupTasks
+        var groupTask = await _dbContext.GroupTasks.AsNoTracking()
             .Include(x => x.Group)
             .Include(x => x.DiplomaTaskTemplate)
             .Include(x => x.StudentTasks)
@@ -84,7 +84,7 @@ public class GroupTaskService : IGroupTaskService
             }
         }
 
-        var tasks = await _dbContext.GroupTasks
+        var tasks = await _dbContext.GroupTasks.AsNoTracking()
             .Include(x => x.Group)
             .Include(x => x.DiplomaTaskTemplate)
             .Include(x => x.StudentTasks)
@@ -156,7 +156,7 @@ public class GroupTaskService : IGroupTaskService
                 Id = Guid.NewGuid(),
                 StudentProfileId = studentId,
                 GroupTaskId = groupTask.Id,
-                Status = "Pending",
+                Status = StudentTaskStatus.Pending,
                 CurrentMark = null,
                 CompletedAt = null,
                 CreatedAt = now,
@@ -258,7 +258,7 @@ public class GroupTaskService : IGroupTaskService
                     Id = Guid.NewGuid(),
                     StudentProfileId = studentProfileId,
                     GroupTaskId = groupTask.Id,
-                    Status = "Pending",
+                    Status = StudentTaskStatus.Pending,
                     CreatedAt = now
                 });
                 createdStudentTasks++;
@@ -332,7 +332,7 @@ public class GroupTaskService : IGroupTaskService
             return (false, "Group task not found.");
         }
 
-        var hasNonPending = groupTask.StudentTasks.Any(st => st.Status != "Pending");
+        var hasNonPending = groupTask.StudentTasks.Any(st => st.Status != StudentTaskStatus.Pending);
         if (hasNonPending)
         {
             return (false, "Cannot delete group task because related student tasks are no longer pending.");
@@ -352,7 +352,7 @@ public class GroupTaskService : IGroupTaskService
             return (null, "Forbidden.");
         }
 
-        var studentProfile = await _dbContext.StudentProfiles
+        var studentProfile = await _dbContext.StudentProfiles.AsNoTracking()
             .FirstOrDefaultAsync(s => s.UserId == currentUserId);
 
         if (studentProfile is null)
@@ -360,7 +360,7 @@ public class GroupTaskService : IGroupTaskService
             return (null, "Student profile not found.");
         }
 
-        var tasks = await _dbContext.StudentTasks
+        var tasks = await _dbContext.StudentTasks.AsNoTracking()
             .Include(st => st.GroupTask)
             .ThenInclude(gt => gt.DiplomaTaskTemplate)
             .Where(st => st.StudentProfileId == studentProfile.Id)
@@ -379,7 +379,7 @@ public class GroupTaskService : IGroupTaskService
             return (null, "Forbidden.");
         }
 
-        var studentProfile = await _dbContext.StudentProfiles
+        var studentProfile = await _dbContext.StudentProfiles.AsNoTracking()
             .FirstOrDefaultAsync(s => s.UserId == currentUserId);
 
         if (studentProfile is null)
@@ -387,7 +387,7 @@ public class GroupTaskService : IGroupTaskService
             return (null, "Student profile not found.");
         }
 
-        var task = await _dbContext.StudentTasks
+        var task = await _dbContext.StudentTasks.AsNoTracking()
             .Include(st => st.GroupTask)
             .ThenInclude(gt => gt.DiplomaTaskTemplate)
             .FirstOrDefaultAsync(st => st.Id == id && st.StudentProfileId == studentProfile.Id);
@@ -426,8 +426,8 @@ public class GroupTaskService : IGroupTaskService
 
     private static MyStudentTaskResponse MapMyTask(StudentTask task, DateTime now)
     {
-        var status = task.Status;
-        var displayStatus = status == "Pending" && task.GroupTask.Deadline < now ? "MissedDeadline" : status;
+        var status = task.Status.ToString();
+        var displayStatus = task.Status == StudentTaskStatus.Pending && task.GroupTask.Deadline < now ? "MissedDeadline" : status;
         return new MyStudentTaskResponse
         {
             Id = task.Id,
@@ -450,8 +450,8 @@ public class GroupTaskService : IGroupTaskService
 
     private static MyStudentTaskDetailsResponse MapMyTaskDetails(StudentTask task, DateTime now)
     {
-        var status = task.Status;
-        var displayStatus = status == "Pending" && task.GroupTask.Deadline < now ? "MissedDeadline" : status;
+        var status = task.Status.ToString();
+        var displayStatus = task.Status == StudentTaskStatus.Pending && task.GroupTask.Deadline < now ? "MissedDeadline" : status;
         return new MyStudentTaskDetailsResponse
         {
             Id = task.Id,

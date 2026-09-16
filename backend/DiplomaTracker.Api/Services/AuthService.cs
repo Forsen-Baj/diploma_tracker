@@ -26,7 +26,7 @@ public class AuthService : IAuthService
 
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
     {
-        var user = await _dbContext.Users
+        var user = await _dbContext.Users.AsNoTracking()
             .FirstOrDefaultAsync(u => u.Email == request.Email && u.IsActive);
 
         if (user is null)
@@ -49,7 +49,7 @@ public class AuthService : IAuthService
 
     public async Task<CurrentUserResponse?> GetCurrentUserAsync(Guid userId)
     {
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
+        var user = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
         return user is null ? null : MapCurrentUser(user);
     }
 

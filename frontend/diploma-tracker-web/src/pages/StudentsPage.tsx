@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ApiError } from '../api/apiClient'
+import { ApiError, isApiConflict } from '../api/apiClient'
 import { getGroups } from '../api/groupsApi'
 import { createStudent, deactivateStudent, getStudents, updateStudent } from '../api/studentsApi'
 import { getTeachers } from '../api/teachersApi'
 import type { Group, Student, Teacher } from '../api/types'
-import { ErrorModal, isApiConflict } from '../components/ErrorModal'
+import { ErrorModal } from '../components/ErrorModal'
 
 type CreateFormState = {
   firstName: string
