@@ -30,13 +30,18 @@ for any other administrative record.
 | Students already present | Skipped and reported when email and ID number both match |
 | Teacher accounts | Created by administrators with a password; not imported, not claimable |
 | Password capabilities | Change own password; administrator resets a student to unclaimed; administrator sets a teacher's password |
+| Scope of an access reset | Only the reset student; that one account can be claimed even while registration is closed |
+| Rate limiting | Built and configured, switched off until the owner enables it |
+| Account events | Claims, access resets and password changes are written to the application log |
 | Name editing by users | Not included |
 
 ## 3. Data model
 
 **`AppUser`** — `Patronymic` (по батькові) is optional, at most 100 characters; documents
 generated in phase 6 use it. `PasswordHash` is optional. An account without a password hash is
-*unclaimed*: it exists, appears in lists and groups, and cannot sign in.
+*unclaimed*: it exists, appears in lists and groups, and cannot sign in. `ClaimReopened` (bool,
+default `false`) is set by an administrator's access reset and cleared when the account is
+claimed; it lets that one account be claimed while registration is closed.
 
 **`StudentProfile`**
 - `StudentNumber` — required, at most 32 characters, unique. Stored trimmed and
@@ -68,7 +73,16 @@ its own stricter minimum of 12.
 **Rate limiting** — ASP.NET Core's built-in rate limiter guards `POST /api/auth/login` and
 `POST /api/auth/claim` with a fixed window of 10 requests per minute per client IP address.
 Excess requests receive **429**. Student ID numbers are short, so without a limit the claim
-endpoint could be used to guess them.
+endpoint could be used to guess them. The limiter is registered and attached to both endpoints,
+but the middleware runs only when the configuration value `RateLimiting:Enabled` is `true`; it is
+`false` until the owner decides to enable it.
+
+**Account event log** — the application log (`ILogger`) records, at Information level: a
+successful claim (user id, and whether the account had been reopened by a reset), an access
+reset (student user id, acting administrator id), a teacher password set by an administrator
+(teacher user id, acting administrator id), and a password change by its owner (user id). A
+refused claim is logged at Warning with the reason (registration closed, details mismatch) and
+the normalised email. Passwords, password hashes and student numbers are never logged.
 
 **Sessions** — a password change or reset does not revoke tokens already issued; they
 remain valid until they expire (at most 60 minutes). Token revocation would require token
@@ -83,14 +97,19 @@ versioning and is not justified at this scale.
 | POST | `/api/auth/claim` | anonymous, rate-limited | body `{ email, studentNumber, password }` |
 
 **Claim outcomes**
-- Registration closed → **403** `Registration is closed.`
 - Password violates the policy, or a field is missing → **400** with the validation message.
-- No active, unclaimed student matches both the normalised email and the normalised student
-  number → **400** `These details don't match an account waiting to be claimed.` One
-  message covers an unknown email, a wrong number, an already claimed account and a
-  deactivated account, so the endpoint does not disclose which of these applies.
-- Success → the password is set and the response is the same `LoginResponse` that sign-in
-  returns, so the student is signed in immediately.
+- Registration open, and no active, unclaimed student matches both the normalised email and the
+  normalised student number → **400** `These details don't match an account waiting to be
+  claimed.` One message covers an unknown email, a wrong number, an already claimed account and
+  a deactivated account, so the endpoint does not disclose which of these applies.
+- Registration closed, and no active, unclaimed student with `ClaimReopened` matches both values
+  → **403** `Registration is closed.` The same response covers every non-matching case, so a
+  closed registration discloses nothing about which accounts exist or were reset.
+- Success (a match while open, or a reopened match while closed) → the password is set,
+  `ClaimReopened` is cleared, and the response is the same `LoginResponse` that sign-in returns,
+  so the student is signed in immediately. The write is conditional on the account still being
+  active and unclaimed (and still reopened when registration is closed); a concurrent claim that
+  loses gets the outcome above for its registration state.
 
 ## 6. Student list import
 
@@ -143,7 +162,7 @@ supervisor or topic.
 | Method | Route | Access | Behaviour |
 |---|---|---|---|
 | PUT | `/api/auth/password` | any signed-in user | body `{ currentPassword, newPassword }` → 204; wrong current password → 400; policy violation → 400 |
-| POST | `/api/students/{id}/reset-access` | Admin | clears the password hash; the student claims again → 204; unknown student → 404 |
+| POST | `/api/students/{id}/reset-access` | Admin | clears the password hash and sets `ClaimReopened`; this student alone can claim again, whether or not registration is open → 204; unknown student → 404 |
 | PUT | `/api/teachers/{id}/password` | Admin | body `{ password }` → 204; unknown teacher → 404; policy violation → 400 |
 
 **Administrator-created students** — creating a student individually requires first name,
@@ -152,20 +171,21 @@ optional. Teacher creation and editing likewise accept an optional patronymic.
 A student created without a password claims the account like an imported one. Updating a
 student can change the student number, subject to uniqueness (**409** on conflict).
 
-**Student responses** carry `studentNumber` and `isClaimed`; `supervisorId`,
-`supervisorName` and `diplomaTopic` are nullable.
+**Student responses** carry `studentNumber`, `isClaimed` and `claimReopened`; `supervisorId`,
+`supervisorName` and `diplomaTopic` are nullable. **Group student responses**
+(`GET /api/groups/{id}/students`) also carry `studentNumber` and `isClaimed`.
 
 Error strings for this increment live in one shared class, following the
 `(T? result, string? error)` service pattern established in phase 2.
 
 ## 8. Administration and user interface
 
-**Sign-in page** — shows a *Claim your account* link only while `GET /api/registration`
-reports registration open.
+**Sign-in page** — always shows a *Claim your account* link.
 
 **Claim page** (`/claim`, anonymous) — email, student ID number, password, and password
 confirmation (checked in the browser). On success the student is signed in and taken to
-their dashboard. Closed registration shows a notice instead of the form.
+their dashboard. The form is always available; while registration is closed a notice above it
+says that only students whose access an administrator has reset can claim their account now.
 
 **Account page** (`/account`, every role, linked from the navigation) — change password:
 current password, new password, confirmation.
@@ -176,10 +196,14 @@ current password, new password, confirmation.
   produces a CSV containing only the header line. After an upload it shows either the
   summary (number created, list of skipped rows) or the list of row errors.
 - A student number column and form field; a *Claimed* / *Not claimed* badge.
-- A *Reset access* action with a confirmation step.
+- A *Reset access* action with a confirmation step that states only this student will be able
+  to claim the account again; a reset, unclaimed student shows a *Reopened* badge.
 - Supervisor and topic are optional in the create and edit forms.
 
 **Teachers page** (Admin) — a *Set password* action opening a modal with the new password.
+
+**Group details page** (Admin) — the students table shows the student number and the same
+*Claimed* / *Not claimed* badge as the Students page.
 
 ## 9. Delivery and verification
 
@@ -201,3 +225,4 @@ walkthroughs wait until richer workflows exist.
 - Updating existing students from an import.
 - Revoking issued tokens on password change or reset.
 - Per-group or scheduled registration windows.
+- Logging of rate-limit rejections (the limiter is switched off).

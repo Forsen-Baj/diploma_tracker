@@ -362,6 +362,10 @@ export function GroupDetailsPage() {
                   <article className="entity-card" key={student.studentProfileId}>
                     <h3>{student.firstName} {student.lastName}</h3>
                     <p>{student.email}</p>
+                    <p><strong>Student number:</strong> {student.studentNumber}</p>
+                    <p>
+                      <span className={student.isClaimed ? 'badge badge-claimed' : 'badge badge-unclaimed'}>{student.isClaimed ? 'Claimed' : 'Not claimed'}</span>
+                    </p>
                     <p><strong>Status:</strong> <span className={student.isActive ? 'status-active' : 'status-inactive'}>{student.isActive ? 'Active' : 'Inactive'}</span></p>
                     <p><strong>Diploma topic:</strong> {student.diplomaTopic ?? 'Not set'}</p>
                     <p><strong>Supervisor:</strong> {student.supervisorFirstName && student.supervisorLastName ? `${student.supervisorFirstName} ${student.supervisorLastName}` : 'Not assigned'}</p>

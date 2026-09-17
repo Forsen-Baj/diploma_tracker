@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using DiplomaTracker.Api.DTOs.Teachers;
 using DiplomaTracker.Api.Interfaces;
 using DiplomaTracker.Api.Services;
@@ -57,7 +58,12 @@ public class TeachersController : ControllerBase
     [HttpPut("{id:guid}/password")]
     public async Task<IActionResult> SetPassword(Guid id, [FromBody] SetTeacherPasswordRequest request)
     {
-        var (success, error) = await _teacherService.SetPasswordAsync(id, request.Password);
+        if (!TryGetUserId(out var administratorId))
+        {
+            return Unauthorized();
+        }
+
+        var (success, error) = await _teacherService.SetPasswordAsync(id, request.Password, administratorId);
         return success ? NoContent() : ToErrorResult(error);
     }
 
@@ -67,4 +73,10 @@ public class TeachersController : ControllerBase
         OnboardingErrors.EmailTaken => Conflict(new { message = error }),
         _ => BadRequest(new { message = error })
     };
+
+    private bool TryGetUserId(out Guid userId)
+    {
+        var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(userIdValue, out userId);
+    }
 }

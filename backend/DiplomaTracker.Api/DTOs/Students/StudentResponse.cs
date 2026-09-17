@@ -12,6 +12,7 @@ public class StudentResponse
     public string Role { get; set; } = string.Empty;
     public bool IsActive { get; set; }
     public bool IsClaimed { get; set; }
+    public bool ClaimReopened { get; set; }
     public string? DiplomaTopic { get; set; }
     public Guid? GroupId { get; set; }
     public string? GroupName { get; set; }

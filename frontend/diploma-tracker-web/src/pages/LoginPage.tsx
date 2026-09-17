@@ -1,7 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/apiClient'
-import { getRegistrationStatus } from '../api/registrationApi'
 import { useAuth } from '../auth/useAuth'
 
 function routeByRole(role: 'Admin' | 'Teacher' | 'Student'): string {
@@ -18,13 +17,6 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
-  const [registrationOpen, setRegistrationOpen] = useState(false)
-
-  useEffect(() => {
-    getRegistrationStatus()
-      .then((status) => setRegistrationOpen(status.open))
-      .catch(() => setRegistrationOpen(false))
-  }, [])
 
   if (!isInitializing && user) {
     return <Navigate to={routeByRole(user.role)} replace />
@@ -74,9 +66,7 @@ export function LoginPage() {
           </button>
           {error && <p className="error-text">{error}</p>}
         </form>
-        {registrationOpen && (
-          <p className="auth-link">First time here? <Link to="/claim">Claim your account</Link></p>
-        )}
+        <p className="auth-link">First time here? <Link to="/claim">Claim your account</Link></p>
       </section>
     </div>
   )

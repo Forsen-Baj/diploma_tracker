@@ -3,6 +3,7 @@ using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Models;
 using DiplomaTracker.Api.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace DiplomaTracker.Api.Tests.Services;
@@ -196,6 +197,6 @@ public class AuthServiceTests
             ExpiresInMinutes = 60
         });
 
-        return new AuthService(context, jwtOptions, passwordHasher, new RegistrationService(context));
+        return new AuthService(context, jwtOptions, passwordHasher, new RegistrationService(context), NullLogger<AuthService>.Instance);
     }
 }

@@ -6,6 +6,7 @@ using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Interfaces;
 using DiplomaTracker.Api.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
@@ -22,17 +23,20 @@ public class AuthService : IAuthService
     private readonly JwtSettings _jwtSettings;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IRegistrationService _registrationService;
+    private readonly ILogger<AuthService> _logger;
 
     public AuthService(
         AppDbContext dbContext,
         IOptions<JwtSettings> jwtOptions,
         IPasswordHasher passwordHasher,
-        IRegistrationService registrationService)
+        IRegistrationService registrationService,
+        ILogger<AuthService> logger)
     {
         _dbContext = dbContext;
         _jwtSettings = jwtOptions.Value;
         _passwordHasher = passwordHasher;
         _registrationService = registrationService;
+        _logger = logger;
     }
 
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
@@ -68,15 +72,12 @@ public class AuthService : IAuthService
 
     public async Task<(LoginResponse? result, string? error)> ClaimAccountAsync(ClaimAccountRequest request)
     {
-        if (!await _registrationService.IsOpenAsync())
-        {
-            return (null, OnboardingErrors.RegistrationClosed);
-        }
-
         if (!PasswordPolicy.IsSatisfiedBy(request.Password))
         {
             return (null, PasswordPolicy.Violation);
         }
+
+        var registrationOpen = await _registrationService.IsOpenAsync();
 
         var email = IdentityNormalizer.Email(request.Email);
         var studentNumber = IdentityNormalizer.StudentNumber(request.StudentNumber);
@@ -85,32 +86,66 @@ public class AuthService : IAuthService
             .Include(p => p.User)
             .FirstOrDefaultAsync(p => p.StudentNumber == studentNumber
                 && p.User.Email == email
-                && p.User.Role == "Student");
+                && p.User.Role == "Student"
+                && p.User.IsActive
+                && p.User.PasswordHash == null);
 
-        if (profile is null || !profile.User.IsActive || profile.User.PasswordHash is not null)
+        if (profile is null || (!registrationOpen && !profile.User.ClaimReopened))
         {
-            return (null, OnboardingErrors.ClaimDetailsMismatch);
+            return (null, RefuseClaim(registrationOpen, email));
         }
 
+        var wasReopened = profile.User.ClaimReopened;
         var hash = _passwordHasher.HashPassword(request.Password);
         var now = DateTime.UtcNow;
         var rows = await _dbContext.Users
-            .Where(u => u.Id == profile.UserId && u.PasswordHash == null && u.IsActive && u.Role == "Student")
-            .ExecuteUpdateAsync(s => s.SetProperty(u => u.PasswordHash, hash).SetProperty(u => u.UpdatedAt, now));
+            .Where(u => u.Id == profile.UserId
+                && u.PasswordHash == null
+                && u.IsActive
+                && u.Role == "Student"
+                && (registrationOpen || u.ClaimReopened))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(u => u.PasswordHash, hash)
+                .SetProperty(u => u.ClaimReopened, false)
+                .SetProperty(u => u.UpdatedAt, now));
 
         if (rows == 0)
         {
-            return (null, OnboardingErrors.ClaimDetailsMismatch);
+            return (null, RefuseClaim(registrationOpen, email));
         }
 
         profile.User.PasswordHash = hash;
+        profile.User.ClaimReopened = false;
         profile.User.UpdatedAt = now;
+
+        _logger.LogInformation(
+            "Account claimed: UserId={UserId}, Reopened={Reopened}",
+            profile.UserId,
+            wasReopened);
 
         return (new LoginResponse
         {
             Token = CreateToken(profile.User),
             User = MapCurrentUser(profile.User)
         }, null);
+    }
+
+    private string RefuseClaim(bool registrationOpen, string email)
+    {
+        if (registrationOpen)
+        {
+            _logger.LogWarning(
+                "Claim refused: Reason={Reason}, Email={Email}",
+                "DetailsMismatch",
+                email);
+            return OnboardingErrors.ClaimDetailsMismatch;
+        }
+
+        _logger.LogWarning(
+            "Claim refused: Reason={Reason}, Email={Email}",
+            "RegistrationClosed",
+            email);
+        return OnboardingErrors.RegistrationClosed;
     }
 
     public async Task<(bool success, string? error)> ChangePasswordAsync(Guid userId, ChangePasswordRequest request)
@@ -142,6 +177,8 @@ public class AuthService : IAuthService
         {
             return (false, OnboardingErrors.CurrentPasswordIncorrect);
         }
+
+        _logger.LogInformation("Password changed: UserId={UserId}", userId);
 
         return (true, null);
     }

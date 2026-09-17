@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using DiplomaTracker.Api.DTOs.Students;
 using DiplomaTracker.Api.Interfaces;
 using DiplomaTracker.Api.Services;
@@ -57,7 +58,12 @@ public class StudentsController : ControllerBase
     [HttpPost("{id:guid}/reset-access")]
     public async Task<IActionResult> ResetAccess(Guid id)
     {
-        var (success, error) = await _studentService.ResetAccessAsync(id);
+        if (!TryGetUserId(out var administratorId))
+        {
+            return Unauthorized();
+        }
+
+        var (success, error) = await _studentService.ResetAccessAsync(id, administratorId);
         return success ? NoContent() : ToErrorResult(error);
     }
 
@@ -81,4 +87,10 @@ public class StudentsController : ControllerBase
         OnboardingErrors.EmailTaken or OnboardingErrors.StudentNumberTaken => Conflict(new { message = error }),
         _ => BadRequest(new { message = error })
     };
+
+    private bool TryGetUserId(out Guid userId)
+    {
+        var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(userIdValue, out userId);
+    }
 }

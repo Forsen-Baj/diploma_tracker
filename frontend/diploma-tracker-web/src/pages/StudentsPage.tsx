@@ -258,7 +258,7 @@ export function StudentsPage() {
   }
 
   const handleResetAccess = async (student: Student) => {
-    if (!window.confirm(`Reset access for ${student.firstName} ${student.lastName}? They will need to claim the account again.`)) {
+    if (!window.confirm(`Reset access for ${student.firstName} ${student.lastName}? Their password is removed and only this student will be able to claim the account again, even while registration is closed.`)) {
       return
     }
 
@@ -389,6 +389,9 @@ export function StudentsPage() {
                 <p><strong>Student ID:</strong> {student.studentNumber}</p>
                 <p>
                   <span className={student.isClaimed ? 'badge badge-claimed' : 'badge badge-unclaimed'}>{student.isClaimed ? 'Claimed' : 'Not claimed'}</span>
+                  {!student.isClaimed && student.claimReopened && (
+                    <span className="badge badge-reopened">Reopened</span>
+                  )}
                 </p>
                 <p><strong>Group:</strong> {student.groupName ?? 'Not assigned'}</p>
                 <p><strong>Diploma topic:</strong> {student.diplomaTopic ?? 'Not set'}</p>

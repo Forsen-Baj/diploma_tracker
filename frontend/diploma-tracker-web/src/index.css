@@ -404,6 +404,12 @@ body {
   color: #b06000;
 }
 
+.badge-reopened {
+  background: #e8f0fe;
+  color: #1a73e8;
+  margin-left: 6px;
+}
+
 .import-grid {
   display: grid;
   grid-template-columns: 1fr 1fr auto auto;

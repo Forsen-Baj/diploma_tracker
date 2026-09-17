@@ -58,6 +58,7 @@ export type Student = {
   role: 'Student'
   isActive: boolean
   isClaimed: boolean
+  claimReopened: boolean
   diplomaTopic: string | null
   groupId: string | null
   groupName: string | null
@@ -139,7 +140,9 @@ export type GroupStudent = {
   firstName: string
   lastName: string
   email: string
+  studentNumber: string
   isActive: boolean
+  isClaimed: boolean
   diplomaTopic: string | null
   supervisorId: string | null
   supervisorFirstName: string | null

@@ -11,5 +11,5 @@ public interface IStudentService
     Task<(StudentResponse? student, string? error)> AssignGroupAsync(Guid id, Guid groupId);
     Task<(StudentResponse? student, string? error)> AssignSupervisorAsync(Guid id, Guid supervisorId);
     Task<(bool success, string? error)> DeactivateStudentAsync(Guid id);
-    Task<(bool success, string? error)> ResetAccessAsync(Guid id);
+    Task<(bool success, string? error)> ResetAccessAsync(Guid id, Guid administratorId);
 }

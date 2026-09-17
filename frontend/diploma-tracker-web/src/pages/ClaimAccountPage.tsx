@@ -57,28 +57,25 @@ export function ClaimAccountPage() {
     <div className="login-wrap">
       <section className="login-card">
         <h1>Claim your account</h1>
-        {registrationOpen === null && !loadError && <p>Loading...</p>}
         {loadError && <p className="error-text">Could not check registration status. Try again.</p>}
         {!loadError && registrationOpen === false && (
-          <p>Registration is closed. Contact your department administrator.</p>
+          <p>Registration is closed. Only students whose access an administrator has reset can claim their account now.</p>
         )}
-        {!loadError && registrationOpen && (
-          <form onSubmit={handleSubmit} className="login-form">
-            <p className="field-hint">Use the email and student ID number from your department's list.</p>
-            <label className="field-label" htmlFor="claim-email">Email</label>
-            <input id="claim-email" type="email" className="field-input" maxLength={256} value={email} onChange={(e) => setEmail(e.target.value)} required />
-            <label className="field-label" htmlFor="claim-number">Student ID number</label>
-            <input id="claim-number" className="field-input" maxLength={32} value={studentNumber} onChange={(e) => setStudentNumber(e.target.value)} required />
-            <label className="field-label" htmlFor="claim-password">New password</label>
-            <input id="claim-password" type="password" className="field-input" maxLength={PASSWORD_MAX} value={password} onChange={(e) => setPassword(e.target.value)} required />
-            <label className="field-label" htmlFor="claim-confirm">Confirm password</label>
-            <input id="claim-confirm" type="password" className="field-input" maxLength={PASSWORD_MAX} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
-            <button type="submit" className="primary-button" disabled={isSubmitting}>
-              {isSubmitting ? 'Claiming...' : 'Claim account'}
-            </button>
-            {error && <p className="error-text">{error}</p>}
-          </form>
-        )}
+        <form onSubmit={handleSubmit} className="login-form">
+          <p className="field-hint">Use the email and student ID number from your department's list.</p>
+          <label className="field-label" htmlFor="claim-email">Email</label>
+          <input id="claim-email" type="email" className="field-input" maxLength={256} value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <label className="field-label" htmlFor="claim-number">Student ID number</label>
+          <input id="claim-number" className="field-input" maxLength={32} value={studentNumber} onChange={(e) => setStudentNumber(e.target.value)} required />
+          <label className="field-label" htmlFor="claim-password">New password</label>
+          <input id="claim-password" type="password" className="field-input" maxLength={PASSWORD_MAX} value={password} onChange={(e) => setPassword(e.target.value)} required />
+          <label className="field-label" htmlFor="claim-confirm">Confirm password</label>
+          <input id="claim-confirm" type="password" className="field-input" maxLength={PASSWORD_MAX} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+          <button type="submit" className="primary-button" disabled={isSubmitting}>
+            {isSubmitting ? 'Claiming...' : 'Claim account'}
+          </button>
+          {error && <p className="error-text">{error}</p>}
+        </form>
         <p className="auth-link"><Link to="/login">Back to sign in</Link></p>
       </section>
     </div>

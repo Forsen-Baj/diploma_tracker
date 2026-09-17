@@ -3,6 +3,7 @@ using DiplomaTracker.Api.DTOs.Students;
 using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DiplomaTracker.Api.Services;
 
@@ -10,11 +11,13 @@ public class StudentService : IStudentService
 {
     private readonly AppDbContext _dbContext;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly ILogger<StudentService> _logger;
 
-    public StudentService(AppDbContext dbContext, IPasswordHasher passwordHasher)
+    public StudentService(AppDbContext dbContext, IPasswordHasher passwordHasher, ILogger<StudentService> logger)
     {
         _dbContext = dbContext;
         _passwordHasher = passwordHasher;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<StudentResponse>> GetStudentsAsync()
@@ -223,7 +226,7 @@ public class StudentService : IStudentService
         return (true, null);
     }
 
-    public async Task<(bool success, string? error)> ResetAccessAsync(Guid id)
+    public async Task<(bool success, string? error)> ResetAccessAsync(Guid id, Guid administratorId)
     {
         var profile = await _dbContext.StudentProfiles
             .Include(s => s.User)
@@ -235,8 +238,14 @@ public class StudentService : IStudentService
         }
 
         profile.User.PasswordHash = null;
+        profile.User.ClaimReopened = true;
         profile.User.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Access reset: StudentUserId={StudentUserId}, AdministratorId={AdministratorId}",
+            profile.UserId,
+            administratorId);
 
         return (true, null);
     }
@@ -310,6 +319,7 @@ public class StudentService : IStudentService
             Role = profile.User.Role,
             IsActive = profile.User.IsActive,
             IsClaimed = profile.User.PasswordHash is not null,
+            ClaimReopened = profile.User.ClaimReopened,
             DiplomaTopic = profile.DiplomaTopic,
             GroupId = profile.GroupId,
             GroupName = profile.Group?.Name,

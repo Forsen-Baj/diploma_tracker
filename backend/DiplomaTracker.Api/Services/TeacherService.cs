@@ -3,6 +3,7 @@ using DiplomaTracker.Api.DTOs.Teachers;
 using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DiplomaTracker.Api.Services;
 
@@ -10,11 +11,13 @@ public class TeacherService : ITeacherService
 {
     private readonly AppDbContext _dbContext;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly ILogger<TeacherService> _logger;
 
-    public TeacherService(AppDbContext dbContext, IPasswordHasher passwordHasher)
+    public TeacherService(AppDbContext dbContext, IPasswordHasher passwordHasher, ILogger<TeacherService> logger)
     {
         _dbContext = dbContext;
         _passwordHasher = passwordHasher;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<TeacherResponse>> GetTeachersAsync()
@@ -121,7 +124,7 @@ public class TeacherService : ITeacherService
         return (true, null);
     }
 
-    public async Task<(bool success, string? error)> SetPasswordAsync(Guid id, string password)
+    public async Task<(bool success, string? error)> SetPasswordAsync(Guid id, string password, Guid administratorId)
     {
         var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Role == "Teacher" && u.Id == id);
         if (user is null)
@@ -137,6 +140,12 @@ public class TeacherService : ITeacherService
         user.PasswordHash = _passwordHasher.HashPassword(password);
         user.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Teacher password set by administrator: TeacherUserId={TeacherUserId}, AdministratorId={AdministratorId}",
+            user.Id,
+            administratorId);
+
         return (true, null);
     }
 

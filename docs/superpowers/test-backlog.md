@@ -71,7 +71,7 @@ its review completes.
 - `AuthService.ClaimAccountAsync`: closed registration; password policy bounds (7, 8, 128, 129 characters); normalised email and number; wrong number, unknown email, deactivated student and already-claimed account all return the same mismatch error; success returns a token and sets the hash.
 - `AuthService.LoginAsync`: unclaimed account refused; email normalised.
 - `AuthService.ChangePasswordAsync`: wrong current password; policy violation; success.
-- `StudentService`: create without password is unclaimed; create with short password refused; duplicate email and duplicate student number; unknown group and unknown/inactive supervisor; update clears supervisor when omitted; `ResetAccessAsync` clears the hash; `IsClaimed` mapping.
+- `StudentService`: create without password is unclaimed; create with short password refused; duplicate email and duplicate student number; unknown group and unknown/inactive supervisor; update clears supervisor when omitted; `ResetAccessAsync` clears the hash and sets `ClaimReopened` for that student only; `IsClaimed` and `ClaimReopened` mapping; reset, teacher password set and password change write their Information log events without passwords, hashes or student numbers.
 - `StudentService`: an update whose unique conflict appears only at `SaveChanges` maps to the right message (email vs student number); updating a student whose current supervisor is inactive succeeds when the supervisor is unchanged, and fails when an inactive supervisor is newly chosen.
 - `TeacherService`: patronymic trimmed/nullable; create password policy; `SetPasswordAsync` unknown teacher and policy.
 - `TeacherService`: create or update unique-index race returns the email-taken error.
@@ -81,11 +81,12 @@ its review completes.
 
 ### HTTP level
 - `GET /api/registration` anonymous 200; `PUT` requires Admin (401/403).
-- `POST /api/auth/claim` 403 closed, 400 mismatch, 200 success; login and claim return 429 after 10 requests per minute from one IP.
+- `POST /api/auth/claim` while open: 400 mismatch, 200 success. While closed: a reopened account claims with 200 and loses `ClaimReopened`; a non-reopened account, wrong details, and a second claim of the reopened account all return 403 `Registration is closed.`; a reset never changes the registration switch.
+- `GET /api/groups/{id}/students` items carry `studentNumber` and `isClaimed`.
 - `POST /api/groups/{id}/students/import` requires Admin; 404 unknown group; 400 body shape `{ message, errors: [{ line, message }] }`; 200 body shape `{ created, skipped: [{ line, email }] }`.
 - `POST /api/students/{id}/reset-access` 204/404; `PUT /api/teachers/{id}/password` 204/400/404; `PUT /api/auth/password` 204/400/401.
 - `PUT /api/registration` with `{}` returns 400.
-- Rate limiter: login and claim share one per-IP budget; different IPs are limited independently; IPv6 clients in the same /64 share a bucket; the 429 response carries `Retry-After` and a `{ message }` body and still carries CORS headers for the web origin.
+- Rate limiter off by default: with `RateLimiting:Enabled` false, more than 10 logins per minute from one IP succeed. With it true: login and claim return 429 after 10 requests per minute from one IP; they share one per-IP budget; different IPs are limited independently; IPv6 clients in the same /64 share a bucket; the 429 response carries `Retry-After` and a `{ message }` body and still carries CORS headers for the web origin.
 - Import upload above the 2 MB request limit returns 413; group deleted between the existence check and save returns 404 and writes nothing.
 
 ### SQL Server integration
@@ -95,7 +96,8 @@ its review completes.
 
 ### Frontend
 - Claim page: closed notice, password mismatch and length messages, success signs in.
-- Login page shows the claim link only when registration is open; 429 message.
+- Login page always shows the claim link; 429 message.
+- Claim page renders the form while closed with the closed notice; Students page shows the Reopened badge and the one-student reset confirmation; Group details page shows student number and claimed badge.
 - Students page: registration toggle, import success summary and row-error list, template download content, reset access confirmation.
 - Teachers page: set-password modal validation.
 - `apiClient` omits `Content-Type` for `FormData` and extracts the first message from ProblemDetails `errors`; a 413 import shows the file-too-large message.

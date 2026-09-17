@@ -167,7 +167,11 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors(CorsPolicyName);
-app.UseRateLimiter();
+if (app.Configuration.GetValue<bool>("RateLimiting:Enabled"))
+{
+    app.UseRateLimiter();
+}
+
 app.UseAuthentication();
 app.UseAuthorization();
 

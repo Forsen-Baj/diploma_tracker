@@ -63,8 +63,8 @@ Parked for later (not blocking):
   one on short name), the 409 message may name the short name rather than the name.
 - Tests to write in the end-of-project testing pass are collected in
   `docs/superpowers/test-backlog.md`, one section per phase.
-- Onboarding security, not in scope of the approved design: rate-limit key has no forwarded-headers handling (needed before deploying behind a reverse proxy); `PUT /api/auth/password` is not rate-limited; no security event logging (claims, resets, password changes, 429s).
-- Onboarding owner questions from the review (open): per-IP limit shared by a classroom behind one NAT and by login + claim; restoring one student's access requires opening registration for everyone; student-number normalisation keeps internal spaces and does not fold Latin/Cyrillic lookalikes; administrators may change their own password to 8 characters; group details list shows no student number or claimed status; email + student number is weak proof of identity while registration is open.
+- Rate limiting is built but switched off (`RateLimiting:Enabled` = `false` in `appsettings.json`) until the owner enables it. Before enabling: forwarded-headers handling for a reverse proxy, a per-IP budget that suits a classroom behind one NAT (login and claim share one budget), and whether `PUT /api/auth/password` needs a limit.
+- Onboarding questions still open: student-number normalisation keeps internal spaces and does not fold Latin/Cyrillic lookalikes; administrators may change their own password to 8 characters; email + student number is weak proof of identity while registration is open.
 
 ## How work is run
 
@@ -138,9 +138,9 @@ Parked for later (not blocking):
   constant must stay character-for-character equal.
 - Subagents have no browser. Browser checks run from the controller session through the
   in-app browser, and sign-in there is done by the owner.
-- **Auth endpoints are rate-limited** (10 requests per minute per IP on `login` and `claim`). Scripted checks that sign in repeatedly must pace their calls or they receive 429.
+- **Rate limiter is off by configuration.** With `RateLimiting:Enabled` = `true`, `login` and `claim` allow 10 requests per minute per IP; scripted checks must then pace their calls or they receive 429.
 - **Seed student number** is `SEED-0001`; imported and claimable test students need their own unique numbers.
-- **`.superpowers/checks/` is not git-ignored** (only `.superpowers/sdd/` has its own ignore file). Never stage it; commit with explicit paths.
+- **`.superpowers/` is never committed:** `.superpowers/sdd/` has its own ignore file and `/.superpowers/checks/` is in `.gitignore`.
 
 ## Decisions (do not reopen)
 
@@ -165,3 +165,4 @@ Parked for later (not blocking):
 - 2026-09-17 — Designs for onboarding and phases 3–6 approved and committed; phase 7 deferred.
 - 2026-09-17 — Implementation plans written for onboarding and phases 3–6.
 - 2026-09-17 — User onboarding implemented: CSV import, account claiming, registration switch, password management.
+- 2026-09-17 — Onboarding refined: an access reset reopens only that student's account (`ClaimReopened`), account events are logged, rate limiting switched off, group details show student number and claim status.
