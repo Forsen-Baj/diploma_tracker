@@ -1,11 +1,20 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { claimAccount } from '../api/authApi'
 import { getRegistrationStatus } from '../api/registrationApi'
-import { PASSWORD_MAX, PASSWORD_POLICY_MESSAGE, isPasswordLengthValid } from '../auth/passwordPolicy'
+import { useErrorMessage } from '../api/useErrorMessage'
+import { AuthLayout } from '../components/layout/AuthLayout'
+import { Button } from '../components/ui/Button'
+import { TextField } from '../components/ui/TextField'
+import { useToast } from '../components/ui/useToast'
+import { PASSWORD_MAX, isPasswordLengthValid } from '../auth/passwordPolicy'
 import { useAuth } from '../auth/useAuth'
 
 export function ClaimAccountPage() {
+  const { t } = useTranslation()
+  const errorMessage = useErrorMessage()
+  const toast = useToast()
   const { user, isInitializing, completeSignIn } = useAuth()
   const navigate = useNavigate()
   const [registrationOpen, setRegistrationOpen] = useState<boolean | null>(null)
@@ -15,7 +24,8 @@ export function ClaimAccountPage() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+  const [confirmPasswordError, setConfirmPasswordError] = useState('')
 
   useEffect(() => {
     getRegistrationStatus()
@@ -29,15 +39,16 @@ export function ClaimAccountPage() {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
-    setError('')
+    setPasswordError('')
+    setConfirmPasswordError('')
 
     if (!isPasswordLengthValid(password)) {
-      setError(PASSWORD_POLICY_MESSAGE)
+      setPasswordError(t('validation.passwordLength'))
       return
     }
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match.')
+      setConfirmPasswordError(t('validation.passwordMismatch'))
       return
     }
 
@@ -47,37 +58,64 @@ export function ClaimAccountPage() {
       completeSignIn(result)
       navigate('/', { replace: true })
     } catch (err) {
-      setError((err as Error).message)
+      toast.error(errorMessage(err))
     } finally {
       setIsSubmitting(false)
     }
   }
 
   return (
-    <div className="login-wrap">
-      <section className="login-card">
-        <h1>Claim your account</h1>
-        {loadError && <p className="error-text">Could not check registration status. Try again.</p>}
-        {!loadError && registrationOpen === false && (
-          <p>Registration is closed. Only students whose access an administrator has reset can claim their account now.</p>
-        )}
-        <form onSubmit={handleSubmit} className="login-form">
-          <p className="field-hint">Use the email and student ID number from your department's list.</p>
-          <label className="field-label" htmlFor="claim-email">Email</label>
-          <input id="claim-email" type="email" className="field-input" maxLength={256} value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <label className="field-label" htmlFor="claim-number">Student ID number</label>
-          <input id="claim-number" className="field-input" maxLength={32} value={studentNumber} onChange={(e) => setStudentNumber(e.target.value)} required />
-          <label className="field-label" htmlFor="claim-password">New password</label>
-          <input id="claim-password" type="password" className="field-input" maxLength={PASSWORD_MAX} value={password} onChange={(e) => setPassword(e.target.value)} required />
-          <label className="field-label" htmlFor="claim-confirm">Confirm password</label>
-          <input id="claim-confirm" type="password" className="field-input" maxLength={PASSWORD_MAX} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
-          <button type="submit" className="primary-button" disabled={isSubmitting}>
-            {isSubmitting ? 'Claiming...' : 'Claim account'}
-          </button>
-          {error && <p className="error-text">{error}</p>}
-        </form>
-        <p className="auth-link"><Link to="/login">Back to sign in</Link></p>
-      </section>
-    </div>
+    <AuthLayout title={t('claim.title')}>
+      {loadError && (
+        <p className="mb-4 rounded-control bg-danger-soft px-3 py-2 text-sm text-danger">{t('claim.statusLoadFailed')}</p>
+      )}
+      {!loadError && registrationOpen === false && (
+        <p className="mb-4 rounded-control bg-warning-soft px-3 py-2 text-sm text-warning">{t('claim.closedReopenedOnly')}</p>
+      )}
+      <p className="mb-4 text-sm text-text-muted">{t('claim.hint')}</p>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <TextField
+          label={t('auth.email')}
+          type="email"
+          maxLength={256}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+        <TextField
+          label={t('claim.studentNumber')}
+          maxLength={32}
+          value={studentNumber}
+          onChange={(e) => setStudentNumber(e.target.value)}
+          required
+        />
+        <TextField
+          label={t('claim.newPassword')}
+          type="password"
+          maxLength={PASSWORD_MAX}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          error={passwordError}
+          required
+        />
+        <TextField
+          label={t('claim.confirmPassword')}
+          type="password"
+          maxLength={PASSWORD_MAX}
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          error={confirmPasswordError}
+          required
+        />
+        <Button type="submit" className="w-full" loading={isSubmitting}>
+          {isSubmitting ? t('claim.submitting') : t('claim.submit')}
+        </Button>
+      </form>
+      <p className="mt-6 text-sm text-text-muted">
+        <Link to="/login" className="text-accent font-medium hover:underline">
+          {t('claim.backToSignIn')}
+        </Link>
+      </p>
+    </AuthLayout>
   )
 }

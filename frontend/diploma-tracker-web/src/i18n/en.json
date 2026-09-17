@@ -1,0 +1,414 @@
+{
+  "app": {
+    "name": "Diploma Tracker"
+  },
+  "common": {
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "close": "Close",
+    "edit": "Edit",
+    "delete": "Delete",
+    "remove": "Remove",
+    "confirm": "Confirm",
+    "loading": "Loading…",
+    "active": "Active",
+    "inactive": "Inactive",
+    "no": "No",
+    "notSet": "Not set",
+    "notAssigned": "Not assigned",
+    "noDescription": "No description",
+    "actions": "Actions",
+    "status": "Status",
+    "optional": "optional",
+    "select": "Select…",
+    "savedToast": "Changes saved",
+    "deletedToast": "Deleted"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "faculties": "Faculties",
+    "groups": "Groups",
+    "students": "Students",
+    "teachers": "Teachers",
+    "taskTemplates": "Steps",
+    "myTasks": "My steps",
+    "admins": "Administrators",
+    "account": "Account",
+    "signOut": "Sign out",
+    "language": "Language"
+  },
+  "roles": {
+    "Admin": "Administrator",
+    "Teacher": "Teacher",
+    "Student": "Student"
+  },
+  "validation": {
+    "required": "Fill in this field.",
+    "passwordLength": "Password must be between 8 and 128 characters.",
+    "passwordMismatch": "Passwords do not match."
+  },
+  "errors": {
+    "network": "Cannot reach the server. Try again.",
+    "validation": {
+      "failed": "Some fields are invalid."
+    },
+    "access": {
+      "forbidden": "You do not have access to this resource."
+    },
+    "request": {
+      "tooMany": "Too many attempts. Wait a minute and try again.",
+      "notFound": "The requested resource was not found.",
+      "methodNotAllowed": "This action is not allowed here.",
+      "unsupportedMediaType": "This file type is not supported."
+    },
+    "server": {
+      "unexpected": "An unexpected error occurred."
+    },
+    "auth": {
+      "unauthorized": "Your session has ended. Sign in again.",
+      "invalidCredentials": "Invalid email or password.",
+      "claimMismatch": "These details don't match an account waiting to be claimed.",
+      "currentPasswordIncorrect": "Current password is incorrect.",
+      "userNotFound": "User not found."
+    },
+    "registration": {
+      "closed": "Registration is closed."
+    },
+    "password": {
+      "policy": "Password must be between 8 and 128 characters."
+    },
+    "user": {
+      "emailTaken": "A user with this email already exists."
+    },
+    "student": {
+      "notFound": "Student not found.",
+      "groupNotFound": "The selected group does not exist.",
+      "supervisorNotFound": "The selected supervisor does not exist.",
+      "supervisorInvalid": "Supervisor must be an active teacher.",
+      "numberTaken": "A student with this student ID number already exists.",
+      "profileNotFound": "Student profile not found.",
+      "archived": "This student is archived. Restore the account first."
+    },
+    "teacher": {
+      "notFound": "Teacher not found."
+    },
+    "faculty": {
+      "notFound": "Faculty not found.",
+      "nameTaken": "A faculty with this name already exists.",
+      "shortNameTaken": "A faculty with this short name already exists.",
+      "hasDepartments": "Cannot delete the faculty because departments belong to it.",
+      "hasTaskTemplates": "Cannot delete the faculty because steps belong to it."
+    },
+    "department": {
+      "notFound": "Department not found.",
+      "nameTaken": "A department with this name already exists in this faculty.",
+      "shortNameTaken": "A department with this short name already exists in this faculty.",
+      "hasGroups": "Cannot delete the department because groups belong to it.",
+      "facultyNotFound": "The selected faculty does not exist."
+    },
+    "group": {
+      "notFound": "Group not found.",
+      "codeTaken": "A group with this code already exists for this academic year.",
+      "hasStudents": "Cannot delete the group because it has students.",
+      "departmentNotFound": "The selected department does not exist."
+    },
+    "reviewer": {
+      "notFound": "The selected reviewer does not exist.",
+      "mustBeActiveTeacher": "Reviewer must be an active teacher.",
+      "alreadyAssigned": "This reviewer is already assigned to the group.",
+      "assignmentNotFound": "Reviewer assignment not found."
+    },
+    "taskTemplate": {
+      "notFound": "Step not found.",
+      "orderInvalid": "Order must be greater than 0.",
+      "titleRequired": "Enter a title.",
+      "titleTaken": "An active step with this title already exists.",
+      "facultyNotFound": "The selected faculty does not exist.",
+      "inUse": "Cannot change the faculty of a step that is assigned to a group."
+    },
+    "groupTask": {
+      "notFound": "Group step not found.",
+      "groupNotFound": "The selected group does not exist.",
+      "templateNotFound": "One or more selected steps do not exist.",
+      "templateInactive": "Selected steps must be active.",
+      "templateFacultyMismatch": "This step belongs to a different faculty than the group.",
+      "startAfterDeadline": "The start date cannot be later than the deadline.",
+      "alreadyAssigned": "This step is already assigned to the group.",
+      "noTemplates": "Select at least one step.",
+      "duplicateTemplates": "The request lists a step more than once.",
+      "hasProgress": "Cannot delete the step because students have already started it."
+    },
+    "studentTask": {
+      "notFound": "Step not found."
+    },
+    "admin": {
+      "notFound": "Administrator not found.",
+      "cannotDeactivateSelf": "You cannot deactivate your own account.",
+      "lastActive": "Cannot deactivate the last active administrator."
+    },
+    "import": {
+      "groupNotFound": "Group not found.",
+      "fileMissing": "Choose a CSV file.",
+      "notCsv": "Only .csv files can be imported.",
+      "tooLarge": "The file is larger than 1 MB.",
+      "notUtf8": "Save the file as \"CSV UTF-8\" and upload it again.",
+      "tooManyRows": "The file contains more than 500 students.",
+      "headerInvalid": "The first line must name the columns lastName, firstName, email and studentNumber.",
+      "rowErrors": "The file contains errors. Nothing was imported.",
+      "conflict": "The student list changed during import; upload the file again.",
+      "row": {
+        "required": "lastName, firstName, email and studentNumber are required.",
+        "nameTooLong": "Names must be at most 100 characters.",
+        "invalidEmail": "\"{{email}}\" is not a valid email address.",
+        "numberTooLong": "Student ID number must be at most 32 characters.",
+        "duplicateEmail": "Email {{email}} already appears on line {{line}}.",
+        "duplicateNumber": "Number {{number}} already appears on line {{line}}.",
+        "staffEmail": "This email belongs to a teacher or an administrator.",
+        "emailNumberMismatch": "This email belongs to a student with a different ID number.",
+        "numberEmailMismatch": "This number belongs to a student with a different email.",
+        "malformedQuote": "The file has a misplaced or unclosed quote."
+      }
+    }
+  },
+  "auth": {
+    "signInTitle": "Sign in",
+    "email": "Email",
+    "password": "Password",
+    "signIn": "Sign in",
+    "signingIn": "Signing in…",
+    "firstTime": "First time here?",
+    "claimLink": "Claim your account"
+  },
+  "claim": {
+    "title": "Claim your account",
+    "hint": "Use the email and student ID number from your department's list.",
+    "studentNumber": "Student ID number",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm password",
+    "submit": "Claim account",
+    "submitting": "Claiming…",
+    "backToSignIn": "Back to sign in",
+    "closedReopenedOnly": "Registration is closed. Only students whose access an administrator has reset can claim their account now.",
+    "statusLoadFailed": "Could not check registration status. Try again."
+  },
+  "account": {
+    "title": "Account",
+    "changePassword": "Change password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm new password",
+    "submit": "Change password",
+    "passwordChanged": "Password changed"
+  },
+  "dashboard": {
+    "welcome": "Diploma work tracking system",
+    "adminTitle": "Administrator dashboard",
+    "teacherTitle": "Teacher dashboard",
+    "studentTitle": "Student dashboard",
+    "goToMyTasks": "Go to my steps"
+  },
+  "health": {
+    "title": "Server health",
+    "application": "Application"
+  },
+  "faculties": {
+    "title": "Faculties and departments",
+    "listTitle": "Faculties",
+    "addFaculty": "Add faculty",
+    "editFaculty": "Edit faculty",
+    "deleteFacultyConfirm": "Delete faculty \"{{name}}\"?",
+    "departmentsOf": "Departments of {{shortName}}",
+    "addDepartment": "Add department",
+    "editDepartment": "Edit department",
+    "deleteDepartmentConfirm": "Delete department \"{{name}}\"?",
+    "name": "Name",
+    "shortName": "Short name",
+    "noFaculties": "No faculties yet.",
+    "noDepartments": "No departments in this faculty yet.",
+    "selectFaculty": "Select or create a faculty to manage its departments."
+  },
+  "groups": {
+    "title": "Groups",
+    "addGroup": "Add group",
+    "editGroup": "Edit group",
+    "deleteConfirm": "Delete group \"{{code}}\"?",
+    "code": "Group code",
+    "name": "Group name",
+    "academicYear": "Academic year",
+    "department": "Department",
+    "description": "Description",
+    "noGroups": "No groups yet.",
+    "reviewersTitle": "Group reviewers",
+    "group": "Group",
+    "reviewer": "Reviewer",
+    "assignReviewer": "Assign reviewer",
+    "removeReviewerConfirm": "Remove this reviewer from the group?",
+    "noReviewers": "No reviewers assigned.",
+    "backToGroups": "Back to groups",
+    "openDetails": "Open",
+    "studentNumber": "Student number",
+    "claimed": "Claimed",
+    "notClaimed": "Not claimed"
+  },
+  "groupDetails": {
+    "reviewers": "Reviewers",
+    "tasks": "Group steps",
+    "template": "Step",
+    "startDate": "Start date",
+    "deadline": "Deadline",
+    "period": "Period",
+    "assignTask": "Assign step",
+    "bulkTitle": "Assign several active steps",
+    "assignSelected": "Assign selected",
+    "allAssigned": "All active steps are already assigned.",
+    "selectAtLeastOne": "Select at least one step and deadline.",
+    "order": "#",
+    "studentTaskCount": "Students",
+    "editPeriod": "Change period",
+    "deleteTaskConfirm": "Delete this group step and all pending student steps?",
+    "noTasks": "No steps assigned to this group.",
+    "students": "Students in group",
+    "topic": "Topic",
+    "supervisor": "Supervisor",
+    "noStudents": "No students in this group.",
+    "notFound": "Group not found.",
+    "archiveAllStudents": "Archive all students",
+    "archiveAllStudentsConfirm_one": "Archive the {{count}} student of group \"{{code}}\"? Archived students cannot sign in until restored.",
+    "archiveAllStudentsConfirm_other": "Archive all {{count}} students of group \"{{code}}\"? Archived students cannot sign in until restored.",
+    "archivedToast": "Archived students: {{count}}.",
+    "selectTemplate": "Select {{title}}"
+  },
+  "students": {
+    "title": "Students",
+    "addStudent": "Add student",
+    "editStudent": "Edit student",
+    "registrationOpen": "Registration open",
+    "registrationHint": "While this is on, imported students can claim their accounts.",
+    "registrationOpened": "Registration opened",
+    "registrationClosed": "Registration closed",
+    "importTitle": "Import students",
+    "importHint": "CSV UTF-8 with columns lastName, firstName, patronymic (optional), email, studentNumber.",
+    "import": "Import",
+    "downloadTemplate": "Download template",
+    "importCreated": "Students created: {{count}}.",
+    "importSkipped": "Already in the system (skipped):",
+    "lineEmail": "Line {{line}}: {{email}}",
+    "lineMessage": "Line {{line}}: {{message}}",
+    "file": "File",
+    "lastName": "Last name",
+    "firstName": "First name",
+    "patronymic": "Patronymic",
+    "email": "Email",
+    "studentNumber": "Student ID number",
+    "password": "Password",
+    "passwordHint": "Leave empty to let the student claim the account.",
+    "group": "Group",
+    "supervisor": "Supervisor",
+    "noSupervisor": "No supervisor",
+    "topic": "Diploma topic",
+    "claimed": "Claimed",
+    "notClaimed": "Not claimed",
+    "reopened": "Reopened",
+    "resetAccess": "Reset access",
+    "resetConfirm": "Reset access for {{name}}? Their password is removed and only this student will be able to claim the account again, even while registration is closed.",
+    "inactiveSupervisor": "{{name}} (inactive)",
+    "noStudents": "No students yet.",
+    "noArchivedStudents": "No archived students.",
+    "viewSwitch": "View",
+    "viewCurrent": "Current",
+    "viewArchived": "Archived",
+    "archivedAt": "Archived on",
+    "archiveSelected": "Archive selected ({{count}})",
+    "archiveSelectedConfirm_one": "Archive {{count}} selected student? Archived students cannot sign in until restored.",
+    "archiveSelectedConfirm_other": "Archive {{count}} selected students? Archived students cannot sign in until restored.",
+    "archivedToast": "Archived students: {{count}}.",
+    "restoreSelected": "Restore selected ({{count}})",
+    "restoreSelectedConfirm_one": "Restore {{count}} selected student?",
+    "restoreSelectedConfirm_other": "Restore {{count}} selected students?",
+    "restoredToast": "Restored students: {{count}}.",
+    "selectAll": "Select all on this page",
+    "selectRow": "Select {{name}}"
+  },
+  "teachers": {
+    "title": "Teachers",
+    "addTeacher": "Add teacher",
+    "editTeacher": "Edit teacher",
+    "lastName": "Last name",
+    "firstName": "First name",
+    "patronymic": "Patronymic",
+    "email": "Email",
+    "password": "Password",
+    "setPassword": "Set password",
+    "setPasswordFor": "New password for {{name}}",
+    "passwordUpdated": "Password updated for {{name}}.",
+    "deactivate": "Deactivate",
+    "deactivateConfirm": "Deactivate teacher {{name}}?",
+    "noTeachers": "No teachers yet."
+  },
+  "taskTemplates": {
+    "title": "Diploma work steps",
+    "add": "Add step",
+    "edit": "Edit step",
+    "titleField": "Title",
+    "description": "Description",
+    "order": "Order",
+    "active": "Active",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "deactivateConfirm": "Deactivate step \"{{title}}\"?",
+    "noTemplates": "No steps yet.",
+    "faculty": "Faculty",
+    "selectFaculty": "Select a faculty to see its steps."
+  },
+  "myTasks": {
+    "title": "My steps",
+    "order": "#",
+    "step": "Step",
+    "period": "Period",
+    "status": {
+      "label": "Status",
+      "all": "All",
+      "Pending": "Pending",
+      "Submitted": "Submitted",
+      "Approved": "Approved",
+      "Returned": "Returned",
+      "MissedDeadline": "Deadline missed"
+    },
+    "mark": "Mark",
+    "open": "Open",
+    "noTasks": "No steps yet.",
+    "back": "Back to my steps",
+    "currentMark": "Current mark",
+    "completedAt": "Completed",
+    "notCompleted": "Not completed",
+    "submissions": "Submissions",
+    "file": "File",
+    "submittedAt": "Submitted",
+    "late": "Late",
+    "comment": "Comment",
+    "reviews": "Reviews",
+    "reviewer": "Reviewer",
+    "decision": "Decision",
+    "date": "Date",
+    "noSubmissions": "No submissions yet.",
+    "noReviews": "No reviews yet."
+  },
+  "admins": {
+    "title": "Administrators",
+    "addAdmin": "Add administrator",
+    "editAdmin": "Edit administrator",
+    "lastName": "Last name",
+    "firstName": "First name",
+    "patronymic": "Patronymic",
+    "email": "Email",
+    "password": "Password",
+    "setPassword": "Set password",
+    "setPasswordFor": "New password for {{name}}",
+    "passwordUpdated": "Password updated for {{name}}.",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "deactivateConfirm": "Deactivate administrator {{name}}?",
+    "noAdmins": "No administrators yet."
+  }
+}

@@ -61,11 +61,13 @@ export type Student = {
   claimReopened: boolean
   diplomaTopic: string | null
   groupId: string | null
+  groupCode: string | null
   groupName: string | null
   supervisorId: string | null
   supervisorFirstName: string | null
   supervisorLastName: string | null
   supervisorEmail: string | null
+  archivedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -99,7 +101,8 @@ export type Group = {
   departmentName: string
   facultyId: string
   facultyName: string
-  name: string
+  code: string
+  name: string | null
   description: string | null
   academicYear: string
   createdAt: string
@@ -108,15 +111,17 @@ export type Group = {
 
 export type CreateGroupRequest = {
   departmentId: string
-  name: string
-  description: string
+  code: string
+  name?: string
+  description?: string
   academicYear: string
 }
 
 export type UpdateGroupRequest = {
   departmentId: string
-  name: string
-  description: string
+  code: string
+  name?: string
+  description?: string
   academicYear: string
 }
 
@@ -137,6 +142,7 @@ export type AddGroupReviewerRequest = {
 export type GroupStudent = {
   studentProfileId: string
   userId: string
+  groupCode: string
   firstName: string
   lastName: string
   email: string
@@ -154,6 +160,8 @@ export type GroupStudent = {
 
 export type TaskTemplate = {
   id: string
+  facultyId: string
+  facultyName: string
   title: string
   description: string | null
   order: number
@@ -163,12 +171,14 @@ export type TaskTemplate = {
 }
 
 export type CreateTaskTemplateRequest = {
+  facultyId: string
   title: string
   description: string
   order: number
 }
 
 export type UpdateTaskTemplateRequest = {
+  facultyId: string
   title: string
   description: string
   order: number
@@ -178,11 +188,13 @@ export type UpdateTaskTemplateRequest = {
 export type GroupTask = {
   id: string
   groupId: string
-  groupName: string
+  groupCode: string
+  groupName: string | null
   taskTemplateId: string
   taskTitle: string
   taskDescription: string | null
   taskOrder: number
+  startDate: string | null
   deadline: string
   createdAt: string
   updatedAt: string | null
@@ -192,15 +204,18 @@ export type GroupTask = {
 export type CreateGroupTaskRequest = {
   groupId: string
   taskTemplateId: string
+  startDate?: string
   deadline: string
 }
 
 export type UpdateGroupTaskRequest = {
+  startDate?: string
   deadline: string
 }
 
 export type AssignTaskTemplateDeadlineRequest = {
   taskTemplateId: string
+  startDate?: string
   deadline: string
 }
 
@@ -223,6 +238,7 @@ export type MyStudentTask = {
   title: string
   description: string | null
   order: number
+  startDate: string | null
   deadline: string
   status: string
   displayStatus: string
@@ -259,6 +275,7 @@ export type MyStudentTaskDetails = {
   title: string
   description: string | null
   order: number
+  startDate: string | null
   deadline: string
   status: string
   displayStatus: string
@@ -321,10 +338,62 @@ export type SkippedImportRow = {
 
 export type ImportRowError = {
   line: number
+  code: string
   message: string
+  params: Record<string, string> | null
 }
 
 export type StudentImportResult = {
   created: number
   skipped: SkippedImportRow[]
+}
+
+export type Admin = {
+  id: string
+  firstName: string
+  lastName: string
+  patronymic: string | null
+  email: string
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type CreateAdminRequest = {
+  firstName: string
+  lastName: string
+  patronymic?: string
+  email: string
+  password: string
+}
+
+export type UpdateAdminRequest = {
+  firstName: string
+  lastName: string
+  patronymic?: string
+  email: string
+}
+
+export type SetAdminPasswordRequest = {
+  password: string
+}
+
+export type ArchiveStudentsRequest = {
+  studentIds: string[]
+}
+
+export type ArchiveStudentsResponse = {
+  archived: number
+}
+
+export type RestoreStudentsRequest = {
+  studentIds: string[]
+}
+
+export type RestoreStudentsResponse = {
+  restored: number
+}
+
+export type ArchiveGroupStudentsResponse = {
+  archived: number
 }

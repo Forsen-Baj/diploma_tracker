@@ -1,7 +1,8 @@
+import { useTranslation } from 'react-i18next'
+import { PageHeader } from '../components/ui/PageHeader'
+
 export function TeacherDashboardPage() {
-  return (
-    <section className="page-card">
-      <h1>Teacher Dashboard</h1>
-    </section>
-  )
+  const { t } = useTranslation()
+
+  return <PageHeader title={t('dashboard.teacherTitle')} />
 }

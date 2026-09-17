@@ -114,6 +114,11 @@ public class FacultyService : IFacultyService
             return (false, AcademicStructureErrors.FacultyHasDepartments);
         }
 
+        if (await _dbContext.DiplomaTaskTemplates.AnyAsync(t => t.FacultyId == id))
+        {
+            return (false, AcademicStructureErrors.FacultyHasTaskTemplates);
+        }
+
         _dbContext.Faculties.Remove(faculty);
 
         try
@@ -123,7 +128,8 @@ public class FacultyService : IFacultyService
         catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
         {
             _dbContext.ChangeTracker.Clear();
-            return (false, AcademicStructureErrors.FacultyHasDepartments);
+            var hasDepartments = await _dbContext.Departments.AnyAsync(d => d.FacultyId == id);
+            return (false, hasDepartments ? AcademicStructureErrors.FacultyHasDepartments : AcademicStructureErrors.FacultyHasTaskTemplates);
         }
 
         return (true, null);

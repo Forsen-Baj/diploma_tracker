@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { getCurrentUser, login as loginRequest } from '../api/authApi'
-import { clearToken, getToken, setToken } from '../api/apiClient'
+import { clearToken, getToken, setToken, setUnauthorizedHandler } from '../api/apiClient'
 import type { CurrentUser } from '../api/types'
 import { AuthContext, type AuthContextValue } from './context'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [isInitializing, setIsInitializing] = useState(true)
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => setUser(null))
+    return () => setUnauthorizedHandler(null)
+  }, [])
 
   useEffect(() => {
     if (!getToken()) {

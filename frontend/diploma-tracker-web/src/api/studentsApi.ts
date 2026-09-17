@@ -1,8 +1,19 @@
 import { apiRequest } from './apiClient'
-import type { CreateStudentRequest, Student, StudentImportResult, UpdateStudentRequest } from './types'
+import type {
+  ArchiveGroupStudentsResponse,
+  ArchiveStudentsRequest,
+  ArchiveStudentsResponse,
+  CreateStudentRequest,
+  RestoreStudentsRequest,
+  RestoreStudentsResponse,
+  Student,
+  StudentImportResult,
+  UpdateStudentRequest
+} from './types'
 
-export async function getStudents(): Promise<Student[]> {
-  return apiRequest<Student[]>('/api/students')
+export async function getStudents(archived = false): Promise<Student[]> {
+  const query = archived ? '?archived=true' : ''
+  return apiRequest<Student[]>(`/api/students${query}`)
 }
 
 export async function createStudent(request: CreateStudentRequest): Promise<Student> {
@@ -19,26 +30,6 @@ export async function updateStudent(id: string, request: UpdateStudentRequest): 
   })
 }
 
-export async function deactivateStudent(id: string): Promise<void> {
-  await apiRequest<void>(`/api/students/${id}/deactivate`, {
-    method: 'PATCH'
-  })
-}
-
-export async function assignStudentGroup(id: string, groupId: string): Promise<Student> {
-  return apiRequest<Student>(`/api/students/${id}/group`, {
-    method: 'PUT',
-    body: JSON.stringify({ groupId })
-  })
-}
-
-export async function assignStudentSupervisor(id: string, supervisorId: string): Promise<Student> {
-  return apiRequest<Student>(`/api/students/${id}/supervisor`, {
-    method: 'PUT',
-    body: JSON.stringify({ supervisorId })
-  })
-}
-
 export async function resetStudentAccess(id: string): Promise<void> {
   await apiRequest<void>(`/api/students/${id}/reset-access`, {
     method: 'POST'
@@ -51,5 +42,27 @@ export async function importStudents(groupId: string, file: File): Promise<Stude
   return apiRequest<StudentImportResult>(`/api/groups/${groupId}/students/import`, {
     method: 'POST',
     body: form
+  })
+}
+
+export async function archiveStudents(studentIds: string[]): Promise<ArchiveStudentsResponse> {
+  const request: ArchiveStudentsRequest = { studentIds }
+  return apiRequest<ArchiveStudentsResponse>('/api/students/archive', {
+    method: 'POST',
+    body: JSON.stringify(request)
+  })
+}
+
+export async function restoreStudents(studentIds: string[]): Promise<RestoreStudentsResponse> {
+  const request: RestoreStudentsRequest = { studentIds }
+  return apiRequest<RestoreStudentsResponse>('/api/students/restore', {
+    method: 'POST',
+    body: JSON.stringify(request)
+  })
+}
+
+export async function archiveGroupStudents(groupId: string): Promise<ArchiveGroupStudentsResponse> {
+  return apiRequest<ArchiveGroupStudentsResponse>(`/api/groups/${groupId}/students/archive`, {
+    method: 'POST'
   })
 }

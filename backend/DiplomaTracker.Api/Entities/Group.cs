@@ -4,7 +4,8 @@ public class Group
 {
     public Guid Id { get; set; }
     public Guid DepartmentId { get; set; }
-    public string Name { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+    public string? Name { get; set; }
     public string? Description { get; set; }
     public string AcademicYear { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }

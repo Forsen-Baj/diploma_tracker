@@ -12,23 +12,6 @@ namespace DiplomaTracker.Api.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
-                name: "DiplomaTaskTemplates",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Title = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Description = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
-                    Order = table.Column<int>(type: "int", nullable: false),
-                    IsActive = table.Column<bool>(type: "bit", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_DiplomaTaskTemplates", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "Faculties",
                 columns: table => new
                 {
@@ -99,12 +82,37 @@ namespace DiplomaTracker.Api.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "DiplomaTaskTemplates",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    FacultyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Title = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    Order = table.Column<int>(type: "int", nullable: false),
+                    IsActive = table.Column<bool>(type: "bit", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_DiplomaTaskTemplates", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_DiplomaTaskTemplates_Faculties_FacultyId",
+                        column: x => x.FacultyId,
+                        principalTable: "Faculties",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Groups",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     DepartmentId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Code = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
                     Description = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
                     AcademicYear = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
@@ -154,6 +162,7 @@ namespace DiplomaTracker.Api.Migrations
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     GroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     DiplomaTaskTemplateId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    StartDate = table.Column<DateTime>(type: "datetime2", nullable: true),
                     Deadline = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
@@ -185,6 +194,7 @@ namespace DiplomaTracker.Api.Migrations
                     DiplomaTopic = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
                     GroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     SupervisorId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    ArchivedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
@@ -259,6 +269,11 @@ namespace DiplomaTracker.Api.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_DiplomaTaskTemplates_FacultyId",
+                table: "DiplomaTaskTemplates",
+                column: "FacultyId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_DiplomaTaskTemplates_Title",
                 table: "DiplomaTaskTemplates",
                 column: "Title");
@@ -287,15 +302,15 @@ namespace DiplomaTracker.Api.Migrations
                 column: "ReviewerId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Groups_AcademicYear_Code",
+                table: "Groups",
+                columns: new[] { "AcademicYear", "Code" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Groups_DepartmentId",
                 table: "Groups",
                 column: "DepartmentId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Groups_Name_AcademicYear",
-                table: "Groups",
-                columns: new[] { "Name", "AcademicYear" },
-                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_GroupTasks_DiplomaTaskTemplateId",

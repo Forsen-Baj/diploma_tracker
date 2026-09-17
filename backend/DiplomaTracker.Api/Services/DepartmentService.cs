@@ -51,7 +51,7 @@ public class DepartmentService : IDepartmentService
         var faculty = await _dbContext.Faculties.FirstOrDefaultAsync(f => f.Id == request.FacultyId);
         if (faculty is null)
         {
-            return (null, AcademicStructureErrors.FacultyNotFound);
+            return (null, AcademicStructureErrors.DepartmentFacultyNotFound);
         }
 
         var name = request.Name.Trim();
@@ -89,7 +89,7 @@ public class DepartmentService : IDepartmentService
         catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
         {
             _dbContext.ChangeTracker.Clear();
-            return (null, AcademicStructureErrors.FacultyNotFound);
+            return (null, AcademicStructureErrors.DepartmentFacultyNotFound);
         }
 
         return (MapDepartment(department), null);
@@ -106,7 +106,7 @@ public class DepartmentService : IDepartmentService
         var faculty = await _dbContext.Faculties.FirstOrDefaultAsync(f => f.Id == request.FacultyId);
         if (faculty is null)
         {
-            return (null, AcademicStructureErrors.FacultyNotFound);
+            return (null, AcademicStructureErrors.DepartmentFacultyNotFound);
         }
 
         var name = request.Name.Trim();
@@ -136,7 +136,7 @@ public class DepartmentService : IDepartmentService
         catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
         {
             _dbContext.ChangeTracker.Clear();
-            return (null, AcademicStructureErrors.FacultyNotFound);
+            return (null, AcademicStructureErrors.DepartmentFacultyNotFound);
         }
 
         return (MapDepartment(department), null);

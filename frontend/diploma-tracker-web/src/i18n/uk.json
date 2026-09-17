@@ -1,0 +1,417 @@
+{
+  "app": {
+    "name": "Diploma Tracker"
+  },
+  "common": {
+    "save": "Зберегти",
+    "saving": "Збереження…",
+    "cancel": "Скасувати",
+    "close": "Закрити",
+    "edit": "Редагувати",
+    "delete": "Видалити",
+    "remove": "Прибрати",
+    "confirm": "Підтвердити",
+    "loading": "Завантаження…",
+    "active": "Активний",
+    "inactive": "Неактивний",
+    "no": "Ні",
+    "notSet": "Не вказано",
+    "notAssigned": "Не призначено",
+    "noDescription": "Без опису",
+    "actions": "Дії",
+    "status": "Статус",
+    "optional": "необов'язково",
+    "select": "Оберіть…",
+    "savedToast": "Зміни збережено",
+    "deletedToast": "Видалено"
+  },
+  "nav": {
+    "dashboard": "Головна",
+    "faculties": "Факультети",
+    "groups": "Групи",
+    "students": "Студенти",
+    "teachers": "Викладачі",
+    "taskTemplates": "Етапи",
+    "myTasks": "Мої етапи",
+    "admins": "Адміністратори",
+    "account": "Обліковий запис",
+    "signOut": "Вийти",
+    "language": "Мова"
+  },
+  "roles": {
+    "Admin": "Адміністратор",
+    "Teacher": "Викладач",
+    "Student": "Студент"
+  },
+  "validation": {
+    "required": "Заповніть це поле.",
+    "passwordLength": "Пароль має містити від 8 до 128 символів.",
+    "passwordMismatch": "Паролі не збігаються."
+  },
+  "errors": {
+    "network": "Немає з'єднання із сервером. Спробуйте ще раз.",
+    "validation": {
+      "failed": "Деякі поля заповнено неправильно."
+    },
+    "access": {
+      "forbidden": "У вас немає доступу до цього ресурсу."
+    },
+    "request": {
+      "tooMany": "Забагато спроб. Зачекайте хвилину й спробуйте знову.",
+      "notFound": "Запитаний ресурс не знайдено.",
+      "methodNotAllowed": "Ця дія тут недоступна.",
+      "unsupportedMediaType": "Цей тип файлу не підтримується."
+    },
+    "server": {
+      "unexpected": "Сталася неочікувана помилка."
+    },
+    "auth": {
+      "unauthorized": "Сесія завершилася. Увійдіть знову.",
+      "invalidCredentials": "Неправильна електронна пошта або пароль.",
+      "claimMismatch": "Ці дані не відповідають обліковому запису, що очікує активації.",
+      "currentPasswordIncorrect": "Поточний пароль неправильний.",
+      "userNotFound": "Користувача не знайдено."
+    },
+    "registration": {
+      "closed": "Реєстрацію закрито."
+    },
+    "password": {
+      "policy": "Пароль має містити від 8 до 128 символів."
+    },
+    "user": {
+      "emailTaken": "Користувач із такою електронною поштою вже існує."
+    },
+    "student": {
+      "notFound": "Студента не знайдено.",
+      "groupNotFound": "Обраної групи не існує.",
+      "supervisorNotFound": "Обраного керівника не існує.",
+      "supervisorInvalid": "Керівником може бути лише активний викладач.",
+      "numberTaken": "Студент із таким номером студентського квитка вже існує.",
+      "profileNotFound": "Профіль студента не знайдено.",
+      "archived": "Цього студента заархівовано. Спершу відновіть обліковий запис."
+    },
+    "teacher": {
+      "notFound": "Викладача не знайдено."
+    },
+    "faculty": {
+      "notFound": "Факультет не знайдено.",
+      "nameTaken": "Факультет із такою назвою вже існує.",
+      "shortNameTaken": "Факультет із такою скороченою назвою вже існує.",
+      "hasDepartments": "Неможливо видалити факультет, бо до нього належать кафедри.",
+      "hasTaskTemplates": "Неможливо видалити факультет, бо до нього належать етапи."
+    },
+    "department": {
+      "notFound": "Кафедру не знайдено.",
+      "nameTaken": "Кафедра з такою назвою вже існує на цьому факультеті.",
+      "shortNameTaken": "Кафедра з такою скороченою назвою вже існує на цьому факультеті.",
+      "hasGroups": "Неможливо видалити кафедру, бо до неї належать групи.",
+      "facultyNotFound": "Обраного факультету не існує."
+    },
+    "group": {
+      "notFound": "Групу не знайдено.",
+      "codeTaken": "Група з таким кодом уже існує в цьому навчальному році.",
+      "hasStudents": "Неможливо видалити групу, бо в ній є студенти.",
+      "departmentNotFound": "Обраної кафедри не існує."
+    },
+    "reviewer": {
+      "notFound": "Обраного рецензента не існує.",
+      "mustBeActiveTeacher": "Рецензентом може бути лише активний викладач.",
+      "alreadyAssigned": "Цього рецензента вже призначено до групи.",
+      "assignmentNotFound": "Призначення рецензента не знайдено."
+    },
+    "taskTemplate": {
+      "notFound": "Етап не знайдено.",
+      "orderInvalid": "Порядковий номер має бути більшим за 0.",
+      "titleRequired": "Вкажіть назву.",
+      "titleTaken": "Активний етап із такою назвою вже існує.",
+      "facultyNotFound": "Обраного факультету не існує.",
+      "inUse": "Неможливо змінити факультет етапу, який призначено групі."
+    },
+    "groupTask": {
+      "notFound": "Етап групи не знайдено.",
+      "groupNotFound": "Обраної групи не існує.",
+      "templateNotFound": "Одного чи кількох обраних етапів не існує.",
+      "templateInactive": "Обрані етапи мають бути активними.",
+      "templateFacultyMismatch": "Цей етап належить іншому факультету, ніж група.",
+      "startAfterDeadline": "Дата початку не може бути пізнішою за термін.",
+      "alreadyAssigned": "Цей етап уже призначено групі.",
+      "noTemplates": "Оберіть щонайменше один етап.",
+      "duplicateTemplates": "Етапи в запиті повторюються.",
+      "hasProgress": "Неможливо видалити етап, бо студенти вже почали його виконувати."
+    },
+    "studentTask": {
+      "notFound": "Етап не знайдено."
+    },
+    "admin": {
+      "notFound": "Адміністратора не знайдено.",
+      "cannotDeactivateSelf": "Ви не можете деактивувати власний обліковий запис.",
+      "lastActive": "Неможливо деактивувати останнього активного адміністратора."
+    },
+    "import": {
+      "groupNotFound": "Групу не знайдено.",
+      "fileMissing": "Оберіть CSV-файл.",
+      "notCsv": "Можна імпортувати лише файли .csv.",
+      "tooLarge": "Файл більший за 1 МБ.",
+      "notUtf8": "Збережіть файл у форматі «CSV UTF-8» і завантажте знову.",
+      "tooManyRows": "Файл містить понад 500 студентів.",
+      "headerInvalid": "Перший рядок має містити стовпці lastName, firstName, email і studentNumber.",
+      "rowErrors": "Файл містить помилки. Нічого не імпортовано.",
+      "conflict": "Список студентів змінився під час імпорту; завантажте файл знову.",
+      "row": {
+        "required": "lastName, firstName, email і studentNumber обов'язкові.",
+        "nameTooLong": "Імена мають бути не довші за 100 символів.",
+        "invalidEmail": "«{{email}}» не є правильною адресою електронної пошти.",
+        "numberTooLong": "Номер студентського квитка має бути не довшим за 32 символи.",
+        "duplicateEmail": "Пошта {{email}} уже є в рядку {{line}}.",
+        "duplicateNumber": "Номер {{number}} уже є в рядку {{line}}.",
+        "staffEmail": "Ця пошта належить викладачу або адміністратору.",
+        "emailNumberMismatch": "Ця пошта належить студенту з іншим номером студентського квитка.",
+        "numberEmailMismatch": "Цей номер належить студенту з іншою поштою.",
+        "malformedQuote": "Неправильно розміщені або незакриті лапки."
+      }
+    }
+  },
+  "auth": {
+    "signInTitle": "Вхід",
+    "email": "Електронна пошта",
+    "password": "Пароль",
+    "signIn": "Увійти",
+    "signingIn": "Вхід…",
+    "firstTime": "Уперше тут?",
+    "claimLink": "Активуйте обліковий запис"
+  },
+  "claim": {
+    "title": "Активація облікового запису",
+    "hint": "Використайте електронну пошту та номер студентського квитка зі списку вашої кафедри.",
+    "studentNumber": "Номер студентського квитка",
+    "newPassword": "Новий пароль",
+    "confirmPassword": "Повторіть пароль",
+    "submit": "Активувати",
+    "submitting": "Активація…",
+    "backToSignIn": "Повернутися до входу",
+    "closedReopenedOnly": "Реєстрацію закрито. Зараз активувати обліковий запис можуть лише студенти, яким адміністратор скинув доступ.",
+    "statusLoadFailed": "Не вдалося перевірити стан реєстрації. Спробуйте ще раз."
+  },
+  "account": {
+    "title": "Обліковий запис",
+    "changePassword": "Зміна пароля",
+    "currentPassword": "Поточний пароль",
+    "newPassword": "Новий пароль",
+    "confirmPassword": "Повторіть новий пароль",
+    "submit": "Змінити пароль",
+    "passwordChanged": "Пароль змінено"
+  },
+  "dashboard": {
+    "welcome": "Система відстеження дипломних робіт",
+    "adminTitle": "Панель адміністратора",
+    "teacherTitle": "Панель викладача",
+    "studentTitle": "Панель студента",
+    "goToMyTasks": "Перейти до моїх етапів"
+  },
+  "health": {
+    "title": "Стан сервера",
+    "application": "Застосунок"
+  },
+  "faculties": {
+    "title": "Факультети та кафедри",
+    "listTitle": "Факультети",
+    "addFaculty": "Додати факультет",
+    "editFaculty": "Редагувати факультет",
+    "deleteFacultyConfirm": "Видалити факультет «{{name}}»?",
+    "departmentsOf": "Кафедри {{shortName}}",
+    "addDepartment": "Додати кафедру",
+    "editDepartment": "Редагувати кафедру",
+    "deleteDepartmentConfirm": "Видалити кафедру «{{name}}»?",
+    "name": "Назва",
+    "shortName": "Скорочена назва",
+    "noFaculties": "Факультетів ще немає.",
+    "noDepartments": "На цьому факультеті ще немає кафедр.",
+    "selectFaculty": "Оберіть або створіть факультет, щоб керувати його кафедрами."
+  },
+  "groups": {
+    "title": "Групи",
+    "addGroup": "Додати групу",
+    "editGroup": "Редагувати групу",
+    "deleteConfirm": "Видалити групу «{{code}}»?",
+    "code": "Код групи",
+    "name": "Назва групи",
+    "academicYear": "Навчальний рік",
+    "department": "Кафедра",
+    "description": "Опис",
+    "noGroups": "Груп ще немає.",
+    "reviewersTitle": "Рецензенти груп",
+    "group": "Група",
+    "reviewer": "Рецензент",
+    "assignReviewer": "Призначити рецензента",
+    "removeReviewerConfirm": "Прибрати рецензента з групи?",
+    "noReviewers": "Рецензентів не призначено.",
+    "backToGroups": "До списку груп",
+    "openDetails": "Відкрити",
+    "studentNumber": "Номер студентського квитка",
+    "claimed": "Активовано",
+    "notClaimed": "Не активовано"
+  },
+  "groupDetails": {
+    "reviewers": "Рецензенти",
+    "tasks": "Етапи групи",
+    "template": "Етап",
+    "startDate": "Дата початку",
+    "deadline": "Термін",
+    "period": "Період",
+    "assignTask": "Призначити етап",
+    "bulkTitle": "Призначити кілька активних етапів",
+    "assignSelected": "Призначити обрані",
+    "allAssigned": "Усі активні етапи вже призначено.",
+    "selectAtLeastOne": "Оберіть щонайменше один етап і термін.",
+    "order": "№",
+    "studentTaskCount": "Студентів",
+    "editPeriod": "Змінити період",
+    "deleteTaskConfirm": "Видалити етап групи та всі невиконані етапи студентів?",
+    "noTasks": "Групі ще не призначено етапів.",
+    "students": "Студенти групи",
+    "topic": "Тема",
+    "supervisor": "Керівник",
+    "noStudents": "У групі немає студентів.",
+    "notFound": "Групу не знайдено.",
+    "archiveAllStudents": "Заархівувати всіх студентів",
+    "archiveAllStudentsConfirm_one": "У групі «{{code}}» {{count}} студент. Заархівувати його? Заархівовані студенти не зможуть увійти, поки їх не відновлять.",
+    "archiveAllStudentsConfirm_few": "У групі «{{code}}» {{count}} студенти. Заархівувати всіх? Заархівовані студенти не зможуть увійти, поки їх не відновлять.",
+    "archiveAllStudentsConfirm_many": "У групі «{{code}}» {{count}} студентів. Заархівувати всіх? Заархівовані студенти не зможуть увійти, поки їх не відновлять.",
+    "archivedToast": "Заархівовано студентів: {{count}}.",
+    "selectTemplate": "Обрати етап «{{title}}»"
+  },
+  "students": {
+    "title": "Студенти",
+    "addStudent": "Додати студента",
+    "editStudent": "Редагувати студента",
+    "registrationOpen": "Відкрита реєстрація",
+    "registrationHint": "Поки перемикач увімкнено, імпортовані студенти можуть активувати свої облікові записи.",
+    "registrationOpened": "Реєстрацію відкрито",
+    "registrationClosed": "Реєстрацію закрито",
+    "importTitle": "Імпорт студентів",
+    "importHint": "CSV UTF-8 зі стовпцями lastName, firstName, patronymic (необов'язково), email, studentNumber.",
+    "import": "Імпортувати",
+    "downloadTemplate": "Завантажити шаблон",
+    "importCreated": "Створено студентів: {{count}}.",
+    "importSkipped": "Уже є в системі (пропущено):",
+    "lineEmail": "Рядок {{line}}: {{email}}",
+    "lineMessage": "Рядок {{line}}: {{message}}",
+    "file": "Файл",
+    "lastName": "Прізвище",
+    "firstName": "Ім'я",
+    "patronymic": "По батькові",
+    "email": "Електронна пошта",
+    "studentNumber": "Номер студентського квитка",
+    "password": "Пароль",
+    "passwordHint": "Залиште порожнім, щоб студент активував обліковий запис самостійно.",
+    "group": "Група",
+    "supervisor": "Керівник",
+    "noSupervisor": "Без керівника",
+    "topic": "Тема дипломної роботи",
+    "claimed": "Активовано",
+    "notClaimed": "Не активовано",
+    "reopened": "Доступ скинуто",
+    "resetAccess": "Скинути доступ",
+    "resetConfirm": "Скинути доступ для {{name}}? Пароль буде видалено, і лише цей студент зможе знову активувати обліковий запис, навіть коли реєстрацію закрито.",
+    "inactiveSupervisor": "{{name}} (неактивний)",
+    "noStudents": "Студентів ще немає.",
+    "noArchivedStudents": "Заархівованих студентів немає.",
+    "viewSwitch": "Перегляд",
+    "viewCurrent": "Поточні",
+    "viewArchived": "Заархівовані",
+    "archivedAt": "Заархівовано",
+    "archiveSelected": "Заархівувати обрані ({{count}})",
+    "archiveSelectedConfirm_one": "Вибраний {{count}} студент. Заархівувати його? Заархівовані студенти не зможуть увійти, поки їх не відновлять.",
+    "archiveSelectedConfirm_few": "Вибрані {{count}} студенти. Заархівувати їх? Заархівовані студенти не зможуть увійти, поки їх не відновлять.",
+    "archiveSelectedConfirm_many": "Вибрані {{count}} студентів. Заархівувати їх? Заархівовані студенти не зможуть увійти, поки їх не відновлять.",
+    "archivedToast": "Заархівовано студентів: {{count}}.",
+    "restoreSelected": "Відновити обрані ({{count}})",
+    "restoreSelectedConfirm_one": "Вибраний {{count}} студент. Відновити його?",
+    "restoreSelectedConfirm_few": "Вибрані {{count}} студенти. Відновити їх?",
+    "restoreSelectedConfirm_many": "Вибрані {{count}} студентів. Відновити їх?",
+    "restoredToast": "Відновлено студентів: {{count}}.",
+    "selectAll": "Вибрати всіх на цій сторінці",
+    "selectRow": "Вибрати {{name}}"
+  },
+  "teachers": {
+    "title": "Викладачі",
+    "addTeacher": "Додати викладача",
+    "editTeacher": "Редагувати викладача",
+    "lastName": "Прізвище",
+    "firstName": "Ім'я",
+    "patronymic": "По батькові",
+    "email": "Електронна пошта",
+    "password": "Пароль",
+    "setPassword": "Встановити пароль",
+    "setPasswordFor": "Новий пароль для {{name}}",
+    "passwordUpdated": "Пароль для {{name}} оновлено.",
+    "deactivate": "Деактивувати",
+    "deactivateConfirm": "Деактивувати викладача {{name}}?",
+    "noTeachers": "Викладачів ще немає."
+  },
+  "taskTemplates": {
+    "title": "Етапи дипломної роботи",
+    "add": "Додати етап",
+    "edit": "Редагувати етап",
+    "titleField": "Назва",
+    "description": "Опис",
+    "order": "Порядок",
+    "active": "Активний",
+    "activate": "Активувати",
+    "deactivate": "Деактивувати",
+    "deactivateConfirm": "Деактивувати етап «{{title}}»?",
+    "noTemplates": "Етапів ще немає.",
+    "faculty": "Факультет",
+    "selectFaculty": "Оберіть факультет, щоб побачити його етапи."
+  },
+  "myTasks": {
+    "title": "Мої етапи",
+    "order": "№",
+    "step": "Етап",
+    "period": "Період",
+    "status": {
+      "label": "Статус",
+      "all": "Усі",
+      "Pending": "Очікує",
+      "Submitted": "Надіслано",
+      "Approved": "Зараховано",
+      "Returned": "Повернуто на доопрацювання",
+      "MissedDeadline": "Термін минув"
+    },
+    "mark": "Оцінка",
+    "open": "Відкрити",
+    "noTasks": "Етапів ще немає.",
+    "back": "До моїх етапів",
+    "currentMark": "Поточна оцінка",
+    "completedAt": "Виконано",
+    "notCompleted": "Не виконано",
+    "submissions": "Надіслані роботи",
+    "file": "Файл",
+    "submittedAt": "Надіслано",
+    "late": "Із запізненням",
+    "comment": "Коментар",
+    "reviews": "Рецензії",
+    "reviewer": "Рецензент",
+    "decision": "Рішення",
+    "date": "Дата",
+    "noSubmissions": "Робіт ще не надіслано.",
+    "noReviews": "Рецензій ще немає."
+  },
+  "admins": {
+    "title": "Адміністратори",
+    "addAdmin": "Додати адміністратора",
+    "editAdmin": "Редагувати адміністратора",
+    "lastName": "Прізвище",
+    "firstName": "Ім'я",
+    "patronymic": "По батькові",
+    "email": "Електронна пошта",
+    "password": "Пароль",
+    "setPassword": "Встановити пароль",
+    "setPasswordFor": "Новий пароль для {{name}}",
+    "passwordUpdated": "Пароль для {{name}} оновлено.",
+    "activate": "Активувати",
+    "deactivate": "Деактивувати",
+    "deactivateConfirm": "Деактивувати адміністратора {{name}}?",
+    "noAdmins": "Адміністраторів ще немає."
+  }
+}

@@ -1,10 +1,14 @@
 export class ApiError extends Error {
   status: number
+  code: string | null
+  fields: Record<string, string[]> | null
   payload: unknown
 
-  constructor(status: number, message: string, payload: unknown = null) {
+  constructor(status: number, message: string, code: string | null, fields: Record<string, string[]> | null, payload: unknown) {
     super(message)
     this.status = status
+    this.code = code
+    this.fields = fields
     this.payload = payload
   }
 }
@@ -29,30 +33,28 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_STORAGE_KEY)
 }
 
-export function isApiConflict(error: unknown): error is ApiError {
-  return error instanceof ApiError && error.status === 409
+type UnauthorizedHandler = () => void
+
+let unauthorizedHandler: UnauthorizedHandler | null = null
+
+// Lets `AuthProvider` clear the signed-in user (and therefore let `ProtectedRoute` redirect to
+// `/login`) as soon as the API reports an expired or invalid token, instead of leaving a dead
+// session that keeps showing "Your session has ended" on every action.
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
+  unauthorizedHandler = handler
 }
 
 type ErrorPayload = {
+  code?: string
   message?: string
-  title?: string
-  errors?: unknown
+  fields?: Record<string, string[]>
 }
 
-function firstValidationMessage(errors: unknown): string | undefined {
-  if (!errors || typeof errors !== 'object' || Array.isArray(errors)) {
-    return undefined
-  }
-
-  const first = Object.values(errors as Record<string, unknown>)[0]
-  return Array.isArray(first) && typeof first[0] === 'string' ? first[0] : undefined
-}
-
-export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function send(path: string, init?: RequestInit): Promise<Response> {
   const token = getToken()
   const headers = new Headers(init?.headers)
 
-  if (!(init?.body instanceof FormData)) {
+  if (init?.body !== undefined && !(init.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json')
   }
 
@@ -60,23 +62,33 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers
-  })
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers })
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearToken()
+      unauthorizedHandler?.()
+    }
+
     const payload = await response.json().catch(() => null) as ErrorPayload | null
-    const fallback = response.status === 429
-      ? 'Too many attempts. Wait a minute and try again.'
-      : `Request failed with status ${response.status}`
-    const message = payload?.message ?? firstValidationMessage(payload?.errors) ?? payload?.title ?? fallback
-    throw new ApiError(response.status, message, payload)
+    throw new ApiError(
+      response.status,
+      payload?.message ?? `Request failed with status ${response.status}`,
+      payload?.code ?? null,
+      payload?.fields ?? null,
+      payload
+    )
   }
 
+  return response
+}
+
+export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await send(path, init)
   if (response.status === 204) {
     return undefined as T
   }
 
   return response.json() as Promise<T>
 }
+

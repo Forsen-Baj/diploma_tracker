@@ -1,4 +1,6 @@
 import { Navigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { Spinner } from '../components/ui/Spinner'
 import { useAuth } from './useAuth'
 
 function routeByRole(role: 'Admin' | 'Teacher' | 'Student'): string {
@@ -9,9 +11,15 @@ function routeByRole(role: 'Admin' | 'Teacher' | 'Student'): string {
 
 export function RoleRedirect() {
   const { user, isInitializing } = useAuth()
+  const { t } = useTranslation()
 
   if (isInitializing) {
-    return <section className="page-card"><p>Loading session...</p></section>
+    return (
+      <div className="flex justify-center py-10">
+        <Spinner />
+        <span className="sr-only">{t('common.loading')}</span>
+      </div>
+    )
   }
 
   if (!user) {

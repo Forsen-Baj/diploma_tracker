@@ -8,6 +8,7 @@ public class StudentProfile
     public string? DiplomaTopic { get; set; }
     public Guid GroupId { get; set; }
     public Guid? SupervisorId { get; set; }
+    public DateTime? ArchivedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public AppUser User { get; set; } = null!;

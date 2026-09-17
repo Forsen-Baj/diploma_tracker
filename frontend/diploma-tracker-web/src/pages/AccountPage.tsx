@@ -1,29 +1,39 @@
 import { useState, type FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 import { changePassword } from '../api/authApi'
-import { PASSWORD_MAX, PASSWORD_POLICY_MESSAGE, isPasswordLengthValid } from '../auth/passwordPolicy'
+import { useErrorMessage } from '../api/useErrorMessage'
+import { Button } from '../components/ui/Button'
+import { Card } from '../components/ui/Card'
+import { PageHeader } from '../components/ui/PageHeader'
+import { TextField } from '../components/ui/TextField'
+import { useToast } from '../components/ui/useToast'
+import { PASSWORD_MAX, isPasswordLengthValid } from '../auth/passwordPolicy'
 import { useAuth } from '../auth/useAuth'
 
 export function AccountPage() {
+  const { t } = useTranslation()
+  const errorMessage = useErrorMessage()
+  const toast = useToast()
   const { user } = useAuth()
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isSaving, setIsSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const [newPasswordError, setNewPasswordError] = useState('')
+  const [confirmPasswordError, setConfirmPasswordError] = useState('')
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
-    setError('')
-    setSuccess('')
+    setNewPasswordError('')
+    setConfirmPasswordError('')
 
     if (!isPasswordLengthValid(newPassword)) {
-      setError(PASSWORD_POLICY_MESSAGE)
+      setNewPasswordError(t('validation.passwordLength'))
       return
     }
 
     if (newPassword !== confirmPassword) {
-      setError('Passwords do not match.')
+      setConfirmPasswordError(t('validation.passwordMismatch'))
       return
     }
 
@@ -33,36 +43,52 @@ export function AccountPage() {
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
-      setSuccess('Password changed.')
+      toast.success(t('account.passwordChanged'))
     } catch (err) {
-      setError((err as Error).message)
+      toast.error(errorMessage(err))
     } finally {
       setIsSaving(false)
     }
   }
 
   return (
-    <div className="account-page">
-      <section className="page-card">
-        <h1>Account</h1>
-        {user && <p>{user.firstName} {user.lastName} · {user.email}</p>}
-      </section>
-      <section className="page-card">
-        <h2>Change password</h2>
-        <form onSubmit={handleSubmit} className="login-form">
-          <label className="field-label" htmlFor="current-password">Current password</label>
-          <input id="current-password" type="password" className="field-input" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
-          <label className="field-label" htmlFor="new-password">New password</label>
-          <input id="new-password" type="password" className="field-input" maxLength={PASSWORD_MAX} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
-          <label className="field-label" htmlFor="confirm-password">Confirm new password</label>
-          <input id="confirm-password" type="password" className="field-input" maxLength={PASSWORD_MAX} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
-          <button type="submit" className="primary-button" disabled={isSaving}>
-            {isSaving ? 'Saving...' : 'Change password'}
-          </button>
-          {error && <p className="error-text">{error}</p>}
-          {success && <p className="success-text">{success}</p>}
+    <>
+      <PageHeader
+        title={t('account.title')}
+        description={user ? `${user.firstName} ${user.lastName} · ${user.email}` : undefined}
+      />
+      <Card title={t('account.changePassword')}>
+        <form id="account-password-form" onSubmit={handleSubmit} className="flex max-w-md flex-col gap-4">
+          <TextField
+            label={t('account.currentPassword')}
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            required
+          />
+          <TextField
+            label={t('account.newPassword')}
+            type="password"
+            maxLength={PASSWORD_MAX}
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            error={newPasswordError}
+            required
+          />
+          <TextField
+            label={t('account.confirmPassword')}
+            type="password"
+            maxLength={PASSWORD_MAX}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            error={confirmPasswordError}
+            required
+          />
+          <Button type="submit" loading={isSaving} className="self-start">
+            {isSaving ? t('common.saving') : t('account.submit')}
+          </Button>
         </form>
-      </section>
-    </div>
+      </Card>
+    </>
   )
 }

@@ -7,7 +7,7 @@ namespace DiplomaTracker.Api.Controllers;
 
 [ApiController]
 [Route("api/registration")]
-public class RegistrationController : ControllerBase
+public class RegistrationController : ApiControllerBase
 {
     private readonly IRegistrationService _registrationService;
 

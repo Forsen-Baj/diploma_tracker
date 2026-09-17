@@ -1,5 +1,4 @@
 using DiplomaTracker.Api.Interfaces;
-using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,7 +7,7 @@ namespace DiplomaTracker.Api.Controllers;
 [ApiController]
 [Route("api/groups/{groupId:guid}/students/import")]
 [Authorize(Roles = "Admin")]
-public class StudentImportController : ControllerBase
+public class StudentImportController : ApiControllerBase
 {
     private readonly IStudentImportService _importService;
 
@@ -27,11 +26,6 @@ public class StudentImportController : ControllerBase
             return Ok(outcome.Result);
         }
 
-        return outcome.Error switch
-        {
-            OnboardingErrors.GroupNotFound => NotFound(new { message = outcome.Error }),
-            OnboardingErrors.ImportConflict => Conflict(new { message = outcome.Error }),
-            _ => BadRequest(new { message = outcome.Error, errors = outcome.RowErrors })
-        };
+        return ErrorResult(outcome.Error, outcome.RowErrors.Count > 0 ? outcome.RowErrors : null);
     }
 }

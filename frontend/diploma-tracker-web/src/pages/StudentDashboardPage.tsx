@@ -1,10 +1,19 @@
-import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
+import { Button } from '../components/ui/Button'
+import { Card } from '../components/ui/Card'
+import { PageHeader } from '../components/ui/PageHeader'
 
 export function StudentDashboardPage() {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+
   return (
-    <section className="page-card">
-      <h1>Student Dashboard</h1>
-      <p><Link to="/student/tasks">Go to My Tasks</Link></p>
-    </section>
+    <>
+      <PageHeader title={t('dashboard.studentTitle')} />
+      <Card>
+        <Button onClick={() => navigate('/student/tasks')}>{t('dashboard.goToMyTasks')}</Button>
+      </Card>
+    </>
   )
 }

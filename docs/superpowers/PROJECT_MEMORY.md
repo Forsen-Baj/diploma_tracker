@@ -28,7 +28,8 @@ list import, registration toggle, profile and password management) sits between 
 | 1 Platform foundations | Done — `abffb34` | `2026-09-15-diploma-tracker-system-design.md` §5 | `2026-09-15-platform-foundations-and-academic-structure.md` |
 | 2 Academic structure | Done — `65f190d`, review fixes `0e909bc` | same, §6 | same |
 | User onboarding | Done — commit `Implement user onboarding` | `2026-09-16-user-onboarding-design.md` | `2026-09-17-user-onboarding.md` |
-| 3 Design system | Planned | `2026-09-17-design-system-design.md` | `2026-09-17-design-system.md` |
+| 3 Design system | Done — commit `Implement design system and structure refinements` | `2026-09-17-design-system-design.md` | `2026-09-17-design-system.md` |
+| Structure and administration refinements | Done — commit `Implement design system and structure refinements` | `2026-09-17-structure-and-administration-refinements-design.md` | `2026-09-17-structure-and-administration-refinements.md` |
 | 4 Topics and reservation | Planned | `2026-09-17-topics-and-reservation-design.md` | `2026-09-17-topics-and-reservation.md` |
 | 5 Submission and review | Planned | `2026-09-17-submission-and-review-design.md` | `2026-09-17-submission-and-review.md` |
 | 6 Document templates | Planned | `2026-09-17-document-templates-design.md` | `2026-09-17-document-templates.md` |
@@ -65,6 +66,9 @@ Parked for later (not blocking):
   `docs/superpowers/test-backlog.md`, one section per phase.
 - Rate limiting is built but switched off (`RateLimiting:Enabled` = `false` in `appsettings.json`) until the owner enables it. Before enabling: forwarded-headers handling for a reverse proxy, a per-IP budget that suits a classroom behind one NAT (login and claim share one budget), and whether `PUT /api/auth/password` needs a limit.
 - Onboarding questions still open: student-number normalisation keeps internal spaces and does not fold Latin/Cyrillic lookalikes; administrators may change their own password to 8 characters; email + student number is weak proof of identity while registration is open.
+- Owner notes from the phase 3 browser test, to do first in the next session: check scripts must use realistic academic years (e.g. `2026/2027`) and delete the groups they create — `refinements-check.mjs` leaves rows like `RF-077685-A`; academic year must accept only digits and `/ \ - . ` and whitespace; `Group.Name` is to be removed entirely (code only); step template `Order` must be unique per faculty.
+- Drag-and-drop reordering of step templates: owner wants it in the final phase, after the core workflows.
+- Parked from the phase 3 review: a group whose students are all archived cannot be deleted; reviewer lists and the academic structure are readable by any signed-in user; tokens stay valid up to 60 minutes after archiving or deactivation; accessibility pass (request sequencing, modal initial focus, segmented-control keyboard behaviour, loading states announced).
 
 ## How work is run
 
@@ -133,14 +137,14 @@ Parked for later (not blocking):
   migrations and re-seeds. Hand-created rows are not recreated.
 - **The InMemory provider enforces neither foreign keys nor unique indexes;** constraint
   behaviour is only proven against SQL Server.
-- `GroupsController` maps 409 by comparing against the literal
-  `"Group with the same name and academic year already exists."`; `GroupService`'s
-  constant must stay character-for-character equal.
 - Subagents have no browser. Browser checks run from the controller session through the
   in-app browser, and sign-in there is done by the owner.
 - **Rate limiter is off by configuration.** With `RateLimiting:Enabled` = `true`, `login` and `claim` allow 10 requests per minute per IP; scripted checks must then pace their calls or they receive 429.
 - **Seed student number** is `SEED-0001`; imported and claimable test students need their own unique numbers.
 - **`.superpowers/` is never committed:** `.superpowers/sdd/` has its own ignore file and `/.superpowers/checks/` is in `.gitignore`.
+- **Error contract:** every API error is `{ code, message }` (`fields` for `validation.failed`, `errors` for import rows); codes live in per-area catalogues and are translated in `src/i18n/{uk,en}.json`. Never compare message text.
+- **Check scripts** (`.superpowers/checks/`) run against the live local database and leave their rows behind; they must use unique values per run.
+- **i18n:** `npm run i18n:check` validates that uk and en have the same keys and each language's own plural categories (uk one/few/many, en one/other).
 
 ## Decisions (do not reopen)
 
@@ -157,6 +161,7 @@ Parked for later (not blocking):
 - Configuration validation runs after `builder.Build()` so `dotnet ef` works without
   secrets.
 - Workflow step status is an enum persisted as a string (`nvarchar(50)`).
+- API errors are `{ code, message }`; a body reference that does not exist has its own 400 code, a URL resource that does not exist a 404 code.
 
 ## Log
 
@@ -166,3 +171,4 @@ Parked for later (not blocking):
 - 2026-09-17 — Implementation plans written for onboarding and phases 3–6.
 - 2026-09-17 — User onboarding implemented: CSV import, account claiming, registration switch, password management.
 - 2026-09-17 — Onboarding refined: an access reset reopens only that student's account (`ClaimReopened`), account events are logged, rate limiting switched off, group details show student number and claim status.
+- 2026-09-18 — Design system and structure refinements implemented: `{ code, message }` error contract, Tailwind 4 + Headless UI component library, uk/en interface, group codes, steps per faculty with start dates, administrators page, student archiving, steps for late joiners.

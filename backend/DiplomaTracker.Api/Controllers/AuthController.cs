@@ -1,6 +1,5 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
 using DiplomaTracker.Api.Configuration;
+using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
 using DiplomaTracker.Api.Models;
 using DiplomaTracker.Api.Services;
@@ -12,7 +11,7 @@ namespace DiplomaTracker.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class AuthController : ControllerBase
+public class AuthController : ApiControllerBase
 {
     private readonly IAuthService _authService;
 
@@ -28,7 +27,7 @@ public class AuthController : ControllerBase
         var result = await _authService.LoginAsync(request);
         if (result is null)
         {
-            return Unauthorized();
+            return ErrorResult(OnboardingErrors.InvalidCredentials);
         }
 
         return Ok(result);
@@ -44,24 +43,22 @@ public class AuthController : ControllerBase
             return Ok(result);
         }
 
-        return error == OnboardingErrors.RegistrationClosed
-            ? StatusCode(StatusCodes.Status403Forbidden, new { message = error })
-            : BadRequest(new { message = error });
+        return ErrorResult(error);
     }
 
     [Authorize]
     [HttpGet("me")]
     public async Task<IActionResult> Me()
     {
-        if (!TryGetUserId(out var userId))
+        if (!TryGetUserContext(out _, out var userId))
         {
-            return Unauthorized();
+            return ErrorResult(OnboardingErrors.UserNotFound);
         }
 
         var user = await _authService.GetCurrentUserAsync(userId);
         if (user is null)
         {
-            return Unauthorized();
+            return ErrorResult(OnboardingErrors.UserNotFound);
         }
 
         return Ok(user);
@@ -71,9 +68,9 @@ public class AuthController : ControllerBase
     [HttpPut("password")]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
     {
-        if (!TryGetUserId(out var userId))
+        if (!TryGetUserContext(out _, out var userId))
         {
-            return Unauthorized();
+            return ErrorResult(OnboardingErrors.UserNotFound);
         }
 
         var (success, error) = await _authService.ChangePasswordAsync(userId, request);
@@ -82,15 +79,6 @@ public class AuthController : ControllerBase
             return NoContent();
         }
 
-        return error == OnboardingErrors.UserNotFound
-            ? Unauthorized()
-            : BadRequest(new { message = error });
-    }
-
-    private bool TryGetUserId(out Guid userId)
-    {
-        var userIdValue = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-            ?? User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-        return Guid.TryParse(userIdValue, out userId);
+        return ErrorResult(error);
     }
 }

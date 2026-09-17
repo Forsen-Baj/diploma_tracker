@@ -32,7 +32,7 @@ public class StudentImportService : IStudentImportService
     {
         if (!await _dbContext.Groups.AnyAsync(g => g.Id == groupId))
         {
-            return StudentImportOutcome.Failed(OnboardingErrors.GroupNotFound);
+            return StudentImportOutcome.Failed(OnboardingErrors.ImportGroupNotFound);
         }
 
         if (file is null || file.Length == 0)
@@ -65,7 +65,7 @@ public class StudentImportService : IStudentImportService
         }
         catch (CsvFormatException exception)
         {
-            return StudentImportOutcome.Failed(OnboardingErrors.ImportCsvMisplacedOrUnclosedQuote(exception.Line));
+            return StudentImportOutcome.Invalid([ImportRowError.Create(exception.Line, OnboardingErrors.RowMalformedQuote)]);
         }
 
         var columns = records.Count == 0 ? null : MapColumns(records[0].Fields);
@@ -106,11 +106,11 @@ public class StudentImportService : IStudentImportService
             {
                 if (existingUser.Role != "Student" || existingUser.StudentProfile is null)
                 {
-                    errors.Add(new ImportRowError(row.Line, OnboardingErrors.ImportRowEmailBelongsToNonStudent));
+                    errors.Add(ImportRowError.Create(row.Line, OnboardingErrors.RowStaffEmail));
                 }
                 else if (existingUser.StudentProfile.StudentNumber != row.StudentNumber)
                 {
-                    errors.Add(new ImportRowError(row.Line, OnboardingErrors.ImportRowEmailNumberMismatch));
+                    errors.Add(ImportRowError.Create(row.Line, OnboardingErrors.RowEmailNumberMismatch));
                 }
                 else
                 {
@@ -119,7 +119,7 @@ public class StudentImportService : IStudentImportService
             }
             else if (numbersInUseSet.Contains(row.StudentNumber))
             {
-                errors.Add(new ImportRowError(row.Line, OnboardingErrors.ImportRowNumberEmailMismatch));
+                errors.Add(ImportRowError.Create(row.Line, OnboardingErrors.RowNumberEmailMismatch));
             }
             else
             {
@@ -133,6 +133,7 @@ public class StudentImportService : IStudentImportService
         }
 
         var now = DateTime.UtcNow;
+        var createdProfileIds = new List<Guid>();
         foreach (var row in toCreate)
         {
             var user = new AppUser
@@ -149,8 +150,7 @@ public class StudentImportService : IStudentImportService
                 UpdatedAt = now
             };
 
-            _dbContext.Users.Add(user);
-            _dbContext.StudentProfiles.Add(new StudentProfile
+            var profile = new StudentProfile
             {
                 Id = Guid.NewGuid(),
                 UserId = user.Id,
@@ -158,8 +158,16 @@ public class StudentImportService : IStudentImportService
                 GroupId = groupId,
                 CreatedAt = now,
                 UpdatedAt = now
-            });
+            };
+
+            _dbContext.Users.Add(user);
+            _dbContext.StudentProfiles.Add(profile);
+            createdProfileIds.Add(profile.Id);
         }
+
+        await LateJoinerTaskAssigner.AssignMissingGroupTasksAsync(
+            _dbContext,
+            createdProfileIds.Select(profileId => (profileId, groupId)).ToList());
 
         try
         {
@@ -173,7 +181,7 @@ public class StudentImportService : IStudentImportService
         catch (DbUpdateException exception) when (exception.IsForeignKeyViolation())
         {
             _dbContext.ChangeTracker.Clear();
-            return StudentImportOutcome.Failed(OnboardingErrors.GroupNotFound);
+            return StudentImportOutcome.Failed(OnboardingErrors.ImportGroupNotFound);
         }
 
         return StudentImportOutcome.Succeeded(new StudentImportResult
@@ -240,28 +248,28 @@ public class StudentImportService : IStudentImportService
 
             if (lastName.Length == 0 || firstName.Length == 0 || email.Length == 0 || studentNumber.Length == 0)
             {
-                errors.Add(new ImportRowError(record.LineNumber, OnboardingErrors.ImportRowFieldsRequired));
+                errors.Add(ImportRowError.Create(record.LineNumber, OnboardingErrors.RowRequired));
                 continue;
             }
 
             if (lastName.Length > 100 || firstName.Length > 100 || patronymic.Length > 100)
             {
-                errors.Add(new ImportRowError(record.LineNumber, OnboardingErrors.ImportRowNamesTooLong));
+                errors.Add(ImportRowError.Create(record.LineNumber, OnboardingErrors.RowNameTooLong));
             }
 
             if (email.Length > 256 || !IdentityNormalizer.IsValidEmail(email))
             {
-                errors.Add(new ImportRowError(record.LineNumber, OnboardingErrors.ImportRowInvalidEmail(email)));
+                errors.Add(ImportRowError.Create(record.LineNumber, OnboardingErrors.RowInvalidEmail, new Dictionary<string, string> { ["email"] = email }));
             }
 
             if (studentNumber.Length > 32)
             {
-                errors.Add(new ImportRowError(record.LineNumber, OnboardingErrors.ImportRowStudentNumberTooLong));
+                errors.Add(ImportRowError.Create(record.LineNumber, OnboardingErrors.RowNumberTooLong));
             }
 
             if (emailLines.TryGetValue(email, out var firstEmailLine))
             {
-                errors.Add(new ImportRowError(record.LineNumber, OnboardingErrors.ImportRowDuplicateEmail(email, firstEmailLine)));
+                errors.Add(ImportRowError.Create(record.LineNumber, OnboardingErrors.RowDuplicateEmail, new Dictionary<string, string> { ["email"] = email, ["line"] = firstEmailLine.ToString() }));
             }
             else
             {
@@ -270,7 +278,7 @@ public class StudentImportService : IStudentImportService
 
             if (numberLines.TryGetValue(studentNumber, out var firstNumberLine))
             {
-                errors.Add(new ImportRowError(record.LineNumber, OnboardingErrors.ImportRowDuplicateStudentNumber(studentNumber, firstNumberLine)));
+                errors.Add(ImportRowError.Create(record.LineNumber, OnboardingErrors.RowDuplicateNumber, new Dictionary<string, string> { ["number"] = studentNumber, ["line"] = firstNumberLine.ToString() }));
             }
             else
             {

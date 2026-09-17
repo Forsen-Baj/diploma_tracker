@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using DiplomaTracker.Api.DTOs.Students;
+using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
 using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -10,7 +11,7 @@ namespace DiplomaTracker.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Roles = "Admin")]
-public class StudentsController : ControllerBase
+public class StudentsController : ApiControllerBase
 {
     private readonly IStudentService _studentService;
 
@@ -20,16 +21,16 @@ public class StudentsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll([FromQuery] bool archived = false)
     {
-        return Ok(await _studentService.GetStudentsAsync());
+        return Ok(await _studentService.GetStudentsAsync(archived));
     }
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
         var student = await _studentService.GetStudentByIdAsync(id);
-        return student is null ? NotFound() : Ok(student);
+        return student is null ? ErrorResult(OnboardingErrors.StudentNotFound) : Ok(student);
     }
 
     [HttpPost]
@@ -37,7 +38,7 @@ public class StudentsController : ControllerBase
     {
         var (student, error) = await _studentService.CreateStudentAsync(request);
         return student is null
-            ? ToErrorResult(error)
+            ? ErrorResult(error)
             : CreatedAtAction(nameof(GetById), new { id = student.Id }, student);
     }
 
@@ -45,14 +46,31 @@ public class StudentsController : ControllerBase
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateStudentRequest request)
     {
         var (student, error) = await _studentService.UpdateStudentAsync(id, request);
-        return student is null ? ToErrorResult(error) : Ok(student);
+        return student is null ? ErrorResult(error) : Ok(student);
     }
 
-    [HttpPatch("{id:guid}/deactivate")]
-    public async Task<IActionResult> Deactivate(Guid id)
+    [HttpPost("archive")]
+    public async Task<IActionResult> Archive([FromBody] ArchiveStudentsRequest request)
     {
-        var (success, error) = await _studentService.DeactivateStudentAsync(id);
-        return success ? NoContent() : ToErrorResult(error);
+        if (!TryGetUserId(out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (archived, error) = await _studentService.ArchiveStudentsAsync(request.StudentIds, administratorId);
+        return error is null ? Ok(new ArchiveResultResponse { Archived = archived }) : ErrorResult(error);
+    }
+
+    [HttpPost("restore")]
+    public async Task<IActionResult> Restore([FromBody] RestoreStudentsRequest request)
+    {
+        if (!TryGetUserId(out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (restored, error) = await _studentService.RestoreStudentsAsync(request.StudentIds, administratorId);
+        return error is null ? Ok(new RestoreResultResponse { Restored = restored }) : ErrorResult(error);
     }
 
     [HttpPost("{id:guid}/reset-access")]
@@ -60,33 +78,26 @@ public class StudentsController : ControllerBase
     {
         if (!TryGetUserId(out var administratorId))
         {
-            return Unauthorized();
+            return ErrorResult(CommonErrors.Forbidden);
         }
 
         var (success, error) = await _studentService.ResetAccessAsync(id, administratorId);
-        return success ? NoContent() : ToErrorResult(error);
+        return success ? NoContent() : ErrorResult(error);
     }
 
     [HttpPut("{id:guid}/group")]
     public async Task<IActionResult> AssignGroup(Guid id, [FromBody] AssignStudentGroupRequest request)
     {
         var (student, error) = await _studentService.AssignGroupAsync(id, request.GroupId);
-        return student is null ? ToErrorResult(error) : Ok(student);
+        return student is null ? ErrorResult(error) : Ok(student);
     }
 
     [HttpPut("{id:guid}/supervisor")]
     public async Task<IActionResult> AssignSupervisor(Guid id, [FromBody] AssignStudentSupervisorRequest request)
     {
         var (student, error) = await _studentService.AssignSupervisorAsync(id, request.SupervisorId);
-        return student is null ? ToErrorResult(error) : Ok(student);
+        return student is null ? ErrorResult(error) : Ok(student);
     }
-
-    private IActionResult ToErrorResult(string? error) => error switch
-    {
-        OnboardingErrors.StudentNotFound => NotFound(new { message = error }),
-        OnboardingErrors.EmailTaken or OnboardingErrors.StudentNumberTaken => Conflict(new { message = error }),
-        _ => BadRequest(new { message = error })
-    };
 
     private bool TryGetUserId(out Guid userId)
     {

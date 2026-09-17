@@ -1,4 +1,5 @@
 using DiplomaTracker.Api.DTOs.Departments;
+using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
 using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -9,7 +10,7 @@ namespace DiplomaTracker.Api.Controllers;
 [ApiController]
 [Route("api/departments")]
 [Authorize]
-public class DepartmentsController : ControllerBase
+public class DepartmentsController : ApiControllerBase
 {
     private readonly IDepartmentService _departmentService;
 
@@ -23,7 +24,7 @@ public class DepartmentsController : ControllerBase
     {
         var departments = await _departmentService.GetDepartmentsAsync(facultyId);
         return departments is null
-            ? NotFound(new { message = AcademicStructureErrors.FacultyNotFound })
+            ? ErrorResult(AcademicStructureErrors.FacultyNotFound)
             : Ok(departments);
     }
 
@@ -31,7 +32,7 @@ public class DepartmentsController : ControllerBase
     public async Task<IActionResult> GetById(Guid id)
     {
         var department = await _departmentService.GetDepartmentByIdAsync(id);
-        return department is null ? NotFound() : Ok(department);
+        return department is null ? ErrorResult(AcademicStructureErrors.DepartmentNotFound) : Ok(department);
     }
 
     [Authorize(Roles = "Admin")]
@@ -40,7 +41,7 @@ public class DepartmentsController : ControllerBase
     {
         var (department, error) = await _departmentService.CreateDepartmentAsync(request);
         return department is null
-            ? ToErrorResult(error)
+            ? ErrorResult(error)
             : CreatedAtAction(nameof(GetById), new { id = department.Id }, department);
     }
 
@@ -49,7 +50,7 @@ public class DepartmentsController : ControllerBase
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateDepartmentRequest request)
     {
         var (department, error) = await _departmentService.UpdateDepartmentAsync(id, request);
-        return department is null ? ToErrorResult(error) : Ok(department);
+        return department is null ? ErrorResult(error) : Ok(department);
     }
 
     [Authorize(Roles = "Admin")]
@@ -57,15 +58,6 @@ public class DepartmentsController : ControllerBase
     public async Task<IActionResult> Delete(Guid id)
     {
         var (success, error) = await _departmentService.DeleteDepartmentAsync(id);
-        return success ? NoContent() : ToErrorResult(error);
+        return success ? NoContent() : ErrorResult(error);
     }
-
-    private IActionResult ToErrorResult(string? error) => error switch
-    {
-        AcademicStructureErrors.DepartmentNotFound => NotFound(new { message = error }),
-        AcademicStructureErrors.DepartmentNameTaken
-            or AcademicStructureErrors.DepartmentShortNameTaken
-            or AcademicStructureErrors.DepartmentHasGroups => Conflict(new { message = error }),
-        _ => BadRequest(new { message = error })
-    };
 }

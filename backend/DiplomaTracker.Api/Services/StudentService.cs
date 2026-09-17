@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using DiplomaTracker.Api.Data;
 using DiplomaTracker.Api.DTOs.Students;
 using DiplomaTracker.Api.Entities;
@@ -20,24 +21,22 @@ public class StudentService : IStudentService
         _logger = logger;
     }
 
-    public async Task<IReadOnlyList<StudentResponse>> GetStudentsAsync()
+    public async Task<IReadOnlyList<StudentResponse>> GetStudentsAsync(bool archived)
     {
-        var students = await _dbContext.StudentProfiles.AsNoTracking()
-            .Include(s => s.User)
-            .Include(s => s.Group)
-            .Include(s => s.Supervisor)
-            .Where(s => s.User.Role == "Student")
+        return await _dbContext.StudentProfiles.AsNoTracking()
+            .Where(s => s.User.Role == "Student" && (archived ? s.ArchivedAt != null : s.ArchivedAt == null))
             .OrderBy(s => s.User.LastName)
             .ThenBy(s => s.User.FirstName)
+            .Select(ProjectStudent)
             .ToListAsync();
-
-        return students.Select(MapStudent).ToList();
     }
 
     public async Task<StudentResponse?> GetStudentByIdAsync(Guid id)
     {
-        var student = await LoadStudentProfileAsync(id);
-        return student is null ? null : MapStudent(student);
+        return await _dbContext.StudentProfiles.AsNoTracking()
+            .Where(s => s.Id == id && s.User.Role == "Student")
+            .Select(ProjectStudent)
+            .FirstOrDefaultAsync();
     }
 
     public async Task<(StudentResponse? student, string? error)> CreateStudentAsync(CreateStudentRequest request)
@@ -97,6 +96,8 @@ public class StudentService : IStudentService
         _dbContext.Users.Add(user);
         _dbContext.StudentProfiles.Add(profile);
 
+        await LateJoinerTaskAssigner.AssignMissingGroupTasksAsync(_dbContext, [(profile.Id, profile.GroupId)]);
+
         var conflict = await SaveWithConflictMappingAsync(email, studentNumber, user.Id);
         if (conflict is not null)
         {
@@ -115,6 +116,11 @@ public class StudentService : IStudentService
         if (profile is null)
         {
             return (null, OnboardingErrors.StudentNotFound);
+        }
+
+        if (profile.ArchivedAt is not null)
+        {
+            return (null, OnboardingErrors.StudentArchived);
         }
 
         var email = IdentityNormalizer.Email(request.Email);
@@ -136,6 +142,8 @@ public class StudentService : IStudentService
             return (null, assignment.error);
         }
 
+        var groupChanged = profile.GroupId != assignment.group!.Id;
+
         var now = DateTime.UtcNow;
         profile.User.FirstName = request.FirstName.Trim();
         profile.User.LastName = request.LastName.Trim();
@@ -144,9 +152,14 @@ public class StudentService : IStudentService
         profile.User.UpdatedAt = now;
         profile.StudentNumber = studentNumber;
         profile.DiplomaTopic = IdentityNormalizer.Optional(request.DiplomaTopic);
-        profile.GroupId = assignment.group!.Id;
+        profile.GroupId = assignment.group.Id;
         profile.SupervisorId = assignment.supervisor?.Id;
         profile.UpdatedAt = now;
+
+        if (groupChanged)
+        {
+            await LateJoinerTaskAssigner.AssignMissingGroupTasksAsync(_dbContext, [(profile.Id, profile.GroupId)]);
+        }
 
         var conflict = await SaveWithConflictMappingAsync(email, studentNumber, profile.UserId);
         if (conflict is not null)
@@ -167,14 +180,27 @@ public class StudentService : IStudentService
             return (null, OnboardingErrors.StudentNotFound);
         }
 
+        if (profile.ArchivedAt is not null)
+        {
+            return (null, OnboardingErrors.StudentArchived);
+        }
+
         var group = await _dbContext.Groups.FirstOrDefaultAsync(g => g.Id == groupId);
         if (group is null)
         {
             return (null, OnboardingErrors.GroupNotFound);
         }
 
+        var groupChanged = profile.GroupId != groupId;
+
         profile.GroupId = groupId;
         profile.UpdatedAt = DateTime.UtcNow;
+
+        if (groupChanged)
+        {
+            await LateJoinerTaskAssigner.AssignMissingGroupTasksAsync(_dbContext, [(profile.Id, groupId)]);
+        }
+
         await _dbContext.SaveChangesAsync();
 
         profile.Group = group;
@@ -187,6 +213,11 @@ public class StudentService : IStudentService
         if (profile is null)
         {
             return (null, OnboardingErrors.StudentNotFound);
+        }
+
+        if (profile.ArchivedAt is not null)
+        {
+            return (null, OnboardingErrors.StudentArchived);
         }
 
         var supervisor = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == supervisorId);
@@ -208,7 +239,7 @@ public class StudentService : IStudentService
         return (MapStudent(profile), null);
     }
 
-    public async Task<(bool success, string? error)> DeactivateStudentAsync(Guid id)
+    public async Task<(bool success, string? error)> ResetAccessAsync(Guid id, Guid administratorId)
     {
         var profile = await _dbContext.StudentProfiles
             .Include(s => s.User)
@@ -219,22 +250,9 @@ public class StudentService : IStudentService
             return (false, OnboardingErrors.StudentNotFound);
         }
 
-        profile.User.IsActive = false;
-        profile.User.UpdatedAt = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync();
-
-        return (true, null);
-    }
-
-    public async Task<(bool success, string? error)> ResetAccessAsync(Guid id, Guid administratorId)
-    {
-        var profile = await _dbContext.StudentProfiles
-            .Include(s => s.User)
-            .FirstOrDefaultAsync(s => s.Id == id && s.User.Role == "Student");
-
-        if (profile is null)
+        if (profile.ArchivedAt is not null)
         {
-            return (false, OnboardingErrors.StudentNotFound);
+            return (false, OnboardingErrors.StudentArchived);
         }
 
         profile.User.PasswordHash = null;
@@ -248,6 +266,66 @@ public class StudentService : IStudentService
             administratorId);
 
         return (true, null);
+    }
+
+    public async Task<(int archived, string? error)> ArchiveStudentsAsync(IReadOnlyList<Guid> studentIds, Guid administratorId)
+    {
+        var uniqueIds = studentIds.Distinct().ToList();
+        var profiles = await _dbContext.StudentProfiles
+            .Include(s => s.User)
+            .Where(s => uniqueIds.Contains(s.Id) && s.User.Role == "Student")
+            .ToListAsync();
+
+        if (profiles.Count != uniqueIds.Count)
+        {
+            return (0, OnboardingErrors.StudentNotFound);
+        }
+
+        var now = DateTime.UtcNow;
+        var archivedIds = StudentArchiver.Archive(profiles, now);
+        await _dbContext.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Students archived: Count={Count}, StudentProfileIds={StudentProfileIds}, AdministratorId={AdministratorId}",
+            archivedIds.Count,
+            archivedIds,
+            administratorId);
+
+        return (archivedIds.Count, null);
+    }
+
+    public async Task<(int restored, string? error)> RestoreStudentsAsync(IReadOnlyList<Guid> studentIds, Guid administratorId)
+    {
+        var uniqueIds = studentIds.Distinct().ToList();
+        var profiles = await _dbContext.StudentProfiles
+            .Include(s => s.User)
+            .Where(s => uniqueIds.Contains(s.Id) && s.User.Role == "Student")
+            .ToListAsync();
+
+        if (profiles.Count != uniqueIds.Count)
+        {
+            return (0, OnboardingErrors.StudentNotFound);
+        }
+
+        var toRestore = profiles.Where(p => p.ArchivedAt is not null).ToList();
+        if (toRestore.Count > 0)
+        {
+            await LateJoinerTaskAssigner.AssignMissingGroupTasksAsync(
+                _dbContext,
+                toRestore.Select(p => (p.Id, p.GroupId)).ToList());
+        }
+
+        var now = DateTime.UtcNow;
+        var restoredIds = StudentArchiver.Restore(toRestore, now);
+        await _dbContext.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Students restored: Count={Count}, StudentProfileIds={StudentProfileIds}, AdministratorId={AdministratorId}",
+            restoredIds.Count,
+            restoredIds,
+            administratorId);
+
+        return (restoredIds.Count, null);
     }
 
     private async Task<StudentProfile?> LoadStudentProfileAsync(Guid id)
@@ -305,30 +383,31 @@ public class StudentService : IStudentService
         }
     }
 
-    private static StudentResponse MapStudent(StudentProfile profile)
+    private static readonly Expression<Func<StudentProfile, StudentResponse>> ProjectStudent = profile => new StudentResponse
     {
-        return new StudentResponse
-        {
-            Id = profile.Id,
-            UserId = profile.UserId,
-            FirstName = profile.User.FirstName,
-            LastName = profile.User.LastName,
-            Patronymic = profile.User.Patronymic,
-            Email = profile.User.Email,
-            StudentNumber = profile.StudentNumber,
-            Role = profile.User.Role,
-            IsActive = profile.User.IsActive,
-            IsClaimed = profile.User.PasswordHash is not null,
-            ClaimReopened = profile.User.ClaimReopened,
-            DiplomaTopic = profile.DiplomaTopic,
-            GroupId = profile.GroupId,
-            GroupName = profile.Group?.Name,
-            SupervisorId = profile.SupervisorId,
-            SupervisorFirstName = profile.Supervisor?.FirstName,
-            SupervisorLastName = profile.Supervisor?.LastName,
-            SupervisorEmail = profile.Supervisor?.Email,
-            CreatedAt = profile.CreatedAt,
-            UpdatedAt = profile.UpdatedAt
-        };
-    }
+        Id = profile.Id,
+        UserId = profile.UserId,
+        FirstName = profile.User.FirstName,
+        LastName = profile.User.LastName,
+        Patronymic = profile.User.Patronymic,
+        Email = profile.User.Email,
+        StudentNumber = profile.StudentNumber,
+        Role = profile.User.Role,
+        IsActive = profile.User.IsActive,
+        IsClaimed = profile.User.PasswordHash != null,
+        ClaimReopened = profile.User.ClaimReopened,
+        ArchivedAt = profile.ArchivedAt,
+        DiplomaTopic = profile.DiplomaTopic,
+        GroupId = profile.GroupId,
+        GroupCode = profile.Group != null ? profile.Group.Code : null,
+        GroupName = profile.Group != null ? profile.Group.Name : null,
+        SupervisorId = profile.SupervisorId,
+        SupervisorFirstName = profile.Supervisor != null ? profile.Supervisor.FirstName : null,
+        SupervisorLastName = profile.Supervisor != null ? profile.Supervisor.LastName : null,
+        SupervisorEmail = profile.Supervisor != null ? profile.Supervisor.Email : null,
+        CreatedAt = profile.CreatedAt,
+        UpdatedAt = profile.UpdatedAt
+    };
+
+    private static StudentResponse MapStudent(StudentProfile profile) => ProjectStudent.Compile()(profile);
 }

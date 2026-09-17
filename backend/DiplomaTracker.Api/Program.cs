@@ -4,11 +4,14 @@ using System.Text;
 using System.Threading.RateLimiting;
 using DiplomaTracker.Api.Configuration;
 using DiplomaTracker.Api.Data;
+using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
 using DiplomaTracker.Api.Models;
 using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Cors.Infrastructure;
+using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -52,6 +55,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITeacherService, TeacherService>();
+builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IStudentService, StudentService>();
 builder.Services.AddScoped<IGroupService, GroupService>();
 builder.Services.AddScoped<ITaskTemplateService, TaskTemplateService>();
@@ -77,13 +81,17 @@ builder.Services.AddRateLimiter(options =>
     options.OnRejected = async (context, cancellationToken) =>
     {
         context.HttpContext.Response.Headers.RetryAfter = "60";
-        await context.HttpContext.Response.WriteAsJsonAsync(
-            new { message = OnboardingErrors.TooManyAttempts },
-            cancellationToken);
+        var definition = ErrorCatalog.Get(CommonErrors.TooManyRequests);
+        context.HttpContext.Response.StatusCode = definition.Status;
+        await context.HttpContext.Response.WriteAsJsonAsync(ApiErrorResponse.From(definition), cancellationToken);
     };
 });
 
-builder.Services.AddControllers();
+builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+        new BadRequestObjectResult(ValidationErrorResponseFactory.Create(context.ModelState));
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -115,7 +123,8 @@ builder.Services.AddOptions<CorsOptions>()
         options.AddPolicy(CorsPolicyName, policy => policy
             .WithOrigins(corsSettings.Value.AllowedOrigins)
             .AllowAnyHeader()
-            .AllowAnyMethod()));
+            .AllowAnyMethod()
+            .WithExposedHeaders("Content-Disposition")));
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
 builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
@@ -138,6 +147,44 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+_ = ErrorCatalog.All.Count;
+
+app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
+{
+    var exceptionFeature = context.Features.Get<IExceptionHandlerFeature>();
+    var badHttpRequestException = exceptionFeature?.Error as BadHttpRequestException;
+
+    var code = badHttpRequestException?.StatusCode switch
+    {
+        StatusCodes.Status413PayloadTooLarge => OnboardingErrors.ImportFileTooLarge,
+        StatusCodes.Status400BadRequest => CommonErrors.ValidationFailed,
+        _ => CommonErrors.Unexpected
+    };
+
+    context.Response.StatusCode = code == CommonErrors.Unexpected
+        ? StatusCodes.Status500InternalServerError
+        : badHttpRequestException!.StatusCode;
+
+    var definition = ErrorCatalog.Get(code);
+    await context.Response.WriteAsJsonAsync(ApiErrorResponse.From(definition));
+}));
+
+app.UseStatusCodePages(async context =>
+{
+    var code = context.HttpContext.Response.StatusCode switch
+    {
+        StatusCodes.Status401Unauthorized => OnboardingErrors.UserNotFound,
+        StatusCodes.Status403Forbidden => CommonErrors.Forbidden,
+        StatusCodes.Status404NotFound => CommonErrors.NotFound,
+        StatusCodes.Status405MethodNotAllowed => CommonErrors.MethodNotAllowed,
+        StatusCodes.Status415UnsupportedMediaType => CommonErrors.UnsupportedMediaType,
+        _ => CommonErrors.Unexpected
+    };
+    var definition = ErrorCatalog.Get(code);
+    context.HttpContext.Response.ContentType = "application/json";
+    await context.HttpContext.Response.WriteAsJsonAsync(ApiErrorResponse.From(definition));
+});
 
 StartupValidation.ValidateJwtSettings(app.Services.GetRequiredService<IOptions<JwtSettings>>().Value);
 StartupValidation.ValidateCorsSettings(app.Services.GetRequiredService<IOptions<CorsSettings>>().Value);

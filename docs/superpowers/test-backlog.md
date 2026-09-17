@@ -106,3 +106,26 @@ its review completes.
 - Students page: create password keeps surrounding spaces; oversize file rejected before upload; edit form keeps and labels an inactive current supervisor.
 - Teachers page: set-password confirmation mismatch; success notice; backdrop ignored while saving.
 
+## Design system and refinements
+
+### Service level, InMemory
+- `TaskTemplateService`: active-title uniqueness is per faculty (same title allowed in two faculties, refused twice in one); faculty change refused while the template is assigned (`taskTemplate.inUse`); unknown faculty on create.
+- `GroupTaskService`: assigning a template of another faculty (`groupTask.templateFacultyMismatch`); assign-all limited to the group's faculty's active templates; `startDate` after `deadline` refused; student-task counts and fan-out exclude archived students, including right after a deadline edit.
+- `GroupService`: `(AcademicYear, Code)` uniqueness; whitespace-only code or academic year refused; optional name normalised to null.
+- `StudentService` / archiving: batch archive is all-or-nothing on an unknown id (404 `student.notFound`); already-archived ids ignored in the count; restore re-activates and re-creates missing steps; archived students refused for edit, group move, supervisor change and reset access (`student.archived`); archived excluded from lists and group student lists.
+- Late-joiner steps: a student created, imported, moved or restored into a group receives exactly the group's existing steps, with no duplicates, in the same save.
+- `AdminService`: create/update/set password; self-deactivate refused; last active administrator refused, including two concurrent deactivations against the last two.
+
+### HTTP level
+- Every error body is `{ code, message }`, including framework-generated 401/403/404/405/415 and an over-2 MB import (413 `import.tooLarge`); a genuine failure is 500 `server.unexpected`.
+- Task-template writes require Admin (teacher token → 403); admin endpoints require Admin.
+- Model-validation failures return `validation.failed` with `fields`; duplicate field names do not throw.
+
+### Frontend
+- Error codes render translated messages in both languages; an unmapped code falls back to the server message.
+- Language toggle switches on a click anywhere and persists across reloads; `<html lang>` follows.
+- Tooltips appear for icon-only actions and truncated labels, including disabled buttons, and are dismissed with Escape.
+- Group step period round-trips through the editor without shifting by the UTC offset.
+- Batch selection: header checkbox indeterminate state, selection cleared after archive/restore, counts in confirmations and toasts.
+- Ukrainian plurals use one/few/many for counted strings.
+

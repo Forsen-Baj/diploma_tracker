@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { LayoutShell } from './components/LayoutShell'
+import { AppShell } from './components/layout/AppShell'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { RoleRedirect } from './auth/RoleRedirect'
 import { LoginPage } from './pages/LoginPage'
@@ -17,6 +17,7 @@ import { GroupsPage } from './pages/GroupsPage'
 import { GroupDetailsPage } from './pages/GroupDetailsPage'
 import { TaskTemplatesPage } from './pages/TaskTemplatesPage'
 import { FacultiesPage } from './pages/FacultiesPage'
+import { AdminsPage } from './pages/AdminsPage'
 
 function App() {
   return (
@@ -25,7 +26,7 @@ function App() {
       <Route path="/claim" element={<ClaimAccountPage />} />
 
       <Route element={<ProtectedRoute />}>
-        <Route path="/" element={<LayoutShell />}>
+        <Route path="/" element={<AppShell />}>
           <Route index element={<RoleRedirect />} />
           <Route path="health" element={<HealthPage />} />
           <Route path="account" element={<AccountPage />} />
@@ -39,6 +40,7 @@ function App() {
             <Route path="admin/faculties" element={<FacultiesPage />} />
             <Route path="admin/groups" element={<GroupsPage />} />
             <Route path="admin/groups/:groupId" element={<GroupDetailsPage />} />
+            <Route path="admins" element={<AdminsPage />} />
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['Teacher']} />}>
             <Route path="teacher/dashboard" element={<TeacherDashboardPage />} />
