@@ -1,5 +1,5 @@
 import { apiRequest } from './apiClient'
-import type { CreateStudentRequest, Student, UpdateStudentRequest } from './types'
+import type { CreateStudentRequest, Student, StudentImportResult, UpdateStudentRequest } from './types'
 
 export async function getStudents(): Promise<Student[]> {
   return apiRequest<Student[]>('/api/students')
@@ -36,5 +36,20 @@ export async function assignStudentSupervisor(id: string, supervisorId: string):
   return apiRequest<Student>(`/api/students/${id}/supervisor`, {
     method: 'PUT',
     body: JSON.stringify({ supervisorId })
+  })
+}
+
+export async function resetStudentAccess(id: string): Promise<void> {
+  await apiRequest<void>(`/api/students/${id}/reset-access`, {
+    method: 'POST'
+  })
+}
+
+export async function importStudents(groupId: string, file: File): Promise<StudentImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  return apiRequest<StudentImportResult>(`/api/groups/${groupId}/students/import`, {
+    method: 'POST',
+    body: form
   })
 }

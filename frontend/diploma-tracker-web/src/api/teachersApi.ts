@@ -24,3 +24,10 @@ export async function deactivateTeacher(id: string): Promise<void> {
     method: 'PATCH'
   })
 }
+
+export async function setTeacherPassword(id: string, password: string): Promise<void> {
+  await apiRequest<void>(`/api/teachers/${id}/password`, {
+    method: 'PUT',
+    body: JSON.stringify({ password })
+  })
+}

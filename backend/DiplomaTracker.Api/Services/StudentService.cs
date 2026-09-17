@@ -39,11 +39,23 @@ public class StudentService : IStudentService
 
     public async Task<(StudentResponse? student, string? error)> CreateStudentAsync(CreateStudentRequest request)
     {
-        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
-        var emailExists = await _dbContext.Users.AnyAsync(u => u.Email == normalizedEmail);
-        if (emailExists)
+        var email = IdentityNormalizer.Email(request.Email);
+        var studentNumber = IdentityNormalizer.StudentNumber(request.StudentNumber);
+
+        if (await _dbContext.Users.AnyAsync(u => u.Email == email))
         {
-            return (null, "Email already exists.");
+            return (null, OnboardingErrors.EmailTaken);
+        }
+
+        if (await _dbContext.StudentProfiles.AnyAsync(p => p.StudentNumber == studentNumber))
+        {
+            return (null, OnboardingErrors.StudentNumberTaken);
+        }
+
+        var password = string.IsNullOrEmpty(request.Password) ? null : request.Password;
+        if (password is not null && !PasswordPolicy.IsSatisfiedBy(password))
+        {
+            return (null, PasswordPolicy.Violation);
         }
 
         var assignment = await ResolveAssignmentAsync(request.GroupId, request.SupervisorId);
@@ -58,8 +70,9 @@ public class StudentService : IStudentService
             Id = Guid.NewGuid(),
             FirstName = request.FirstName.Trim(),
             LastName = request.LastName.Trim(),
-            Email = normalizedEmail,
-            PasswordHash = _passwordHasher.HashPassword(request.Password),
+            Patronymic = IdentityNormalizer.Optional(request.Patronymic),
+            Email = email,
+            PasswordHash = password is null ? null : _passwordHasher.HashPassword(password),
             Role = "Student",
             IsActive = true,
             CreatedAt = now,
@@ -70,16 +83,22 @@ public class StudentService : IStudentService
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,
-            DiplomaTopic = request.DiplomaTopic.Trim(),
+            StudentNumber = studentNumber,
+            DiplomaTopic = IdentityNormalizer.Optional(request.DiplomaTopic),
             GroupId = assignment.group!.Id,
-            SupervisorId = assignment.supervisor!.Id,
+            SupervisorId = assignment.supervisor?.Id,
             CreatedAt = now,
             UpdatedAt = now
         };
 
         _dbContext.Users.Add(user);
         _dbContext.StudentProfiles.Add(profile);
-        await _dbContext.SaveChangesAsync();
+
+        var conflict = await SaveWithConflictMappingAsync(email, studentNumber, user.Id);
+        if (conflict is not null)
+        {
+            return (null, conflict);
+        }
 
         profile.User = user;
         profile.Group = assignment.group;
@@ -92,32 +111,45 @@ public class StudentService : IStudentService
         var profile = await LoadStudentProfileAsync(id);
         if (profile is null)
         {
-            return (null, "Student not found.");
+            return (null, OnboardingErrors.StudentNotFound);
         }
 
-        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
-        var emailExists = await _dbContext.Users.AnyAsync(u => u.Email == normalizedEmail && u.Id != profile.UserId);
-        if (emailExists)
+        var email = IdentityNormalizer.Email(request.Email);
+        var studentNumber = IdentityNormalizer.StudentNumber(request.StudentNumber);
+
+        if (await _dbContext.Users.AnyAsync(u => u.Email == email && u.Id != profile.UserId))
         {
-            return (null, "Email already exists.");
+            return (null, OnboardingErrors.EmailTaken);
         }
 
-        var assignment = await ResolveAssignmentAsync(request.GroupId, request.SupervisorId, profile.GroupId, profile.SupervisorId);
+        if (await _dbContext.StudentProfiles.AnyAsync(p => p.StudentNumber == studentNumber && p.Id != profile.Id))
+        {
+            return (null, OnboardingErrors.StudentNumberTaken);
+        }
+
+        var assignment = await ResolveAssignmentAsync(request.GroupId, request.SupervisorId, profile.SupervisorId);
         if (assignment.error is not null)
         {
             return (null, assignment.error);
         }
 
+        var now = DateTime.UtcNow;
         profile.User.FirstName = request.FirstName.Trim();
         profile.User.LastName = request.LastName.Trim();
-        profile.User.Email = normalizedEmail;
-        profile.User.UpdatedAt = DateTime.UtcNow;
-        profile.DiplomaTopic = request.DiplomaTopic.Trim();
+        profile.User.Patronymic = IdentityNormalizer.Optional(request.Patronymic);
+        profile.User.Email = email;
+        profile.User.UpdatedAt = now;
+        profile.StudentNumber = studentNumber;
+        profile.DiplomaTopic = IdentityNormalizer.Optional(request.DiplomaTopic);
         profile.GroupId = assignment.group!.Id;
-        profile.SupervisorId = assignment.supervisor!.Id;
-        profile.UpdatedAt = DateTime.UtcNow;
+        profile.SupervisorId = assignment.supervisor?.Id;
+        profile.UpdatedAt = now;
 
-        await _dbContext.SaveChangesAsync();
+        var conflict = await SaveWithConflictMappingAsync(email, studentNumber, profile.UserId);
+        if (conflict is not null)
+        {
+            return (null, conflict);
+        }
 
         profile.Group = assignment.group;
         profile.Supervisor = assignment.supervisor;
@@ -129,13 +161,13 @@ public class StudentService : IStudentService
         var profile = await LoadStudentProfileAsync(id);
         if (profile is null)
         {
-            return (null, "Student not found.");
+            return (null, OnboardingErrors.StudentNotFound);
         }
 
         var group = await _dbContext.Groups.FirstOrDefaultAsync(g => g.Id == groupId);
         if (group is null)
         {
-            return (null, "Group not found.");
+            return (null, OnboardingErrors.GroupNotFound);
         }
 
         profile.GroupId = groupId;
@@ -151,23 +183,18 @@ public class StudentService : IStudentService
         var profile = await LoadStudentProfileAsync(id);
         if (profile is null)
         {
-            return (null, "Student not found.");
+            return (null, OnboardingErrors.StudentNotFound);
         }
 
         var supervisor = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == supervisorId);
         if (supervisor is null)
         {
-            return (null, "Supervisor not found.");
+            return (null, OnboardingErrors.SupervisorNotFound);
         }
 
-        if (supervisor.Role != "Teacher")
+        if (supervisor.Role != "Teacher" || !supervisor.IsActive)
         {
-            return (null, "Supervisor must be a teacher.");
-        }
-
-        if (!supervisor.IsActive)
-        {
-            return (null, "Supervisor must be active.");
+            return (null, OnboardingErrors.SupervisorMustBeActiveTeacher);
         }
 
         profile.SupervisorId = supervisorId;
@@ -186,10 +213,28 @@ public class StudentService : IStudentService
 
         if (profile is null)
         {
-            return (false, "Student not found.");
+            return (false, OnboardingErrors.StudentNotFound);
         }
 
         profile.User.IsActive = false;
+        profile.User.UpdatedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync();
+
+        return (true, null);
+    }
+
+    public async Task<(bool success, string? error)> ResetAccessAsync(Guid id)
+    {
+        var profile = await _dbContext.StudentProfiles
+            .Include(s => s.User)
+            .FirstOrDefaultAsync(s => s.Id == id && s.User.Role == "Student");
+
+        if (profile is null)
+        {
+            return (false, OnboardingErrors.StudentNotFound);
+        }
+
+        profile.User.PasswordHash = null;
         profile.User.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync();
 
@@ -205,61 +250,50 @@ public class StudentService : IStudentService
             .FirstOrDefaultAsync(s => s.Id == id && s.User.Role == "Student");
     }
 
-    private async Task<(Group? group, AppUser? supervisor, string? error)> ResolveAssignmentAsync(Guid? requestedGroupId, Guid? requestedSupervisorId, Guid? fallbackGroupId = null, Guid? fallbackSupervisorId = null)
+    private async Task<(Group? group, AppUser? supervisor, string? error)> ResolveAssignmentAsync(
+        Guid groupId,
+        Guid? supervisorId,
+        Guid? currentSupervisorId = null)
     {
-        var groupId = requestedGroupId ?? fallbackGroupId;
-        var supervisorId = requestedSupervisorId ?? fallbackSupervisorId;
-
-        Group? group = null;
-        if (groupId.HasValue)
+        var group = await _dbContext.Groups.FirstOrDefaultAsync(g => g.Id == groupId);
+        if (group is null)
         {
-            group = await _dbContext.Groups.FirstOrDefaultAsync(g => g.Id == groupId.Value);
-            if (group is null)
-            {
-                return (null, null, "Group not found.");
-            }
-        }
-        else
-        {
-            group = await _dbContext.Groups.OrderBy(g => g.CreatedAt).FirstOrDefaultAsync();
-            if (group is null)
-            {
-                return (null, null, "Group not found.");
-            }
+            return (null, null, OnboardingErrors.GroupNotFound);
         }
 
-        AppUser? supervisor = null;
-        if (supervisorId.HasValue)
+        if (supervisorId is null)
         {
-            supervisor = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == supervisorId.Value);
-            if (supervisor is null)
-            {
-                return (null, null, "Supervisor not found.");
-            }
-        }
-        else
-        {
-            supervisor = await _dbContext.Users
-                .Where(u => u.Role == "Teacher" && u.IsActive)
-                .OrderBy(u => u.CreatedAt)
-                .FirstOrDefaultAsync();
-            if (supervisor is null)
-            {
-                return (null, null, "Supervisor not found.");
-            }
+            return (group, null, null);
         }
 
-        if (supervisor.Role != "Teacher")
+        var supervisor = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == supervisorId.Value);
+        if (supervisor is null)
         {
-            return (null, null, "Supervisor must be a teacher.");
+            return (null, null, OnboardingErrors.SupervisorNotFound);
         }
 
-        if (!supervisor.IsActive)
+        var isUnchangedSupervisor = currentSupervisorId is not null && supervisorId == currentSupervisorId;
+        if (supervisor.Role != "Teacher" || (!supervisor.IsActive && !isUnchangedSupervisor))
         {
-            return (null, null, "Supervisor must be active.");
+            return (null, null, OnboardingErrors.SupervisorMustBeActiveTeacher);
         }
 
         return (group, supervisor, null);
+    }
+
+    private async Task<string?> SaveWithConflictMappingAsync(string email, string studentNumber, Guid userId)
+    {
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+            return null;
+        }
+        catch (DbUpdateException exception) when (exception.IsUniqueConstraintViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            var emailTaken = await _dbContext.Users.AnyAsync(u => u.Email == email && u.Id != userId);
+            return emailTaken ? OnboardingErrors.EmailTaken : OnboardingErrors.StudentNumberTaken;
+        }
     }
 
     private static StudentResponse MapStudent(StudentProfile profile)
@@ -270,9 +304,12 @@ public class StudentService : IStudentService
             UserId = profile.UserId,
             FirstName = profile.User.FirstName,
             LastName = profile.User.LastName,
+            Patronymic = profile.User.Patronymic,
             Email = profile.User.Email,
+            StudentNumber = profile.StudentNumber,
             Role = profile.User.Role,
             IsActive = profile.User.IsActive,
+            IsClaimed = profile.User.PasswordHash is not null,
             DiplomaTopic = profile.DiplomaTopic,
             GroupId = profile.GroupId,
             GroupName = profile.Group?.Name,

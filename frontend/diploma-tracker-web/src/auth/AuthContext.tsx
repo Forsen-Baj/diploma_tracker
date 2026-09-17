@@ -36,6 +36,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(result.user)
       return result.user
     },
+    completeSignIn: (result) => {
+      setToken(result.token)
+      setUser(result.user)
+      return result.user
+    },
     logout: () => {
       clearToken()
       setUser(null)

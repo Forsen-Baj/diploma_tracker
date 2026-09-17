@@ -166,6 +166,7 @@ public static class DbSeeder
         {
             Id = Guid.NewGuid(),
             UserId = userId,
+            StudentNumber = "SEED-0001",
             DiplomaTopic = "Seeded diploma topic",
             GroupId = groupId,
             SupervisorId = supervisorId,

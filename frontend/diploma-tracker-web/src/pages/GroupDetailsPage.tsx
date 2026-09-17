@@ -363,7 +363,7 @@ export function GroupDetailsPage() {
                     <h3>{student.firstName} {student.lastName}</h3>
                     <p>{student.email}</p>
                     <p><strong>Status:</strong> <span className={student.isActive ? 'status-active' : 'status-inactive'}>{student.isActive ? 'Active' : 'Inactive'}</span></p>
-                    <p><strong>Diploma topic:</strong> {student.diplomaTopic}</p>
+                    <p><strong>Diploma topic:</strong> {student.diplomaTopic ?? 'Not set'}</p>
                     <p><strong>Supervisor:</strong> {student.supervisorFirstName && student.supervisorLastName ? `${student.supervisorFirstName} ${student.supervisorLastName}` : 'Not assigned'}</p>
                     <p><strong>Supervisor email:</strong> {student.supervisorEmail ?? 'Not assigned'}</p>
                   </article>

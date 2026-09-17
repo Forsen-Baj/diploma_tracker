@@ -44,14 +44,27 @@ namespace DiplomaTracker.Api.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "PlatformSettings",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false),
+                    RegistrationOpen = table.Column<bool>(type: "bit", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_PlatformSettings", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Users",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     FirstName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     LastName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    Patronymic = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     Email = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: false),
-                    PasswordHash = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    PasswordHash = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     Role = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
                     IsActive = table.Column<bool>(type: "bit", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
@@ -167,9 +180,10 @@ namespace DiplomaTracker.Api.Migrations
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    DiplomaTopic = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
+                    StudentNumber = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
+                    DiplomaTopic = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
                     GroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    SupervisorId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    SupervisorId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
@@ -225,6 +239,11 @@ namespace DiplomaTracker.Api.Migrations
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
+
+            migrationBuilder.InsertData(
+                table: "PlatformSettings",
+                columns: new[] { "Id", "RegistrationOpen" },
+                values: new object[] { 1, false });
 
             migrationBuilder.CreateIndex(
                 name: "IX_Departments_FacultyId_Name",
@@ -294,6 +313,12 @@ namespace DiplomaTracker.Api.Migrations
                 column: "GroupId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_StudentProfiles_StudentNumber",
+                table: "StudentProfiles",
+                column: "StudentNumber",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_StudentProfiles_SupervisorId",
                 table: "StudentProfiles",
                 column: "SupervisorId");
@@ -327,6 +352,9 @@ namespace DiplomaTracker.Api.Migrations
         {
             migrationBuilder.DropTable(
                 name: "GroupReviewers");
+
+            migrationBuilder.DropTable(
+                name: "PlatformSettings");
 
             migrationBuilder.DropTable(
                 name: "StudentTasks");

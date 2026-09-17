@@ -1,5 +1,6 @@
 using DiplomaTracker.Api.DTOs.Students;
 using DiplomaTracker.Api.Interfaces;
+using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -20,119 +21,64 @@ public class StudentsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var students = await _studentService.GetStudentsAsync();
-        return Ok(students);
+        return Ok(await _studentService.GetStudentsAsync());
     }
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
         var student = await _studentService.GetStudentByIdAsync(id);
-        if (student is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(student);
+        return student is null ? NotFound() : Ok(student);
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateStudentRequest request)
     {
         var (student, error) = await _studentService.CreateStudentAsync(request);
-        if (student is null)
-        {
-            if (error == "Email already exists.")
-            {
-                return Conflict(new { message = error });
-            }
-
-            if (error == "Group not found." || error == "Supervisor not found.")
-            {
-                return NotFound(new { message = error });
-            }
-
-            return BadRequest(new { message = error });
-        }
-
-        return CreatedAtAction(nameof(GetById), new { id = student.Id }, student);
+        return student is null
+            ? ToErrorResult(error)
+            : CreatedAtAction(nameof(GetById), new { id = student.Id }, student);
     }
 
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateStudentRequest request)
     {
         var (student, error) = await _studentService.UpdateStudentAsync(id, request);
-        if (student is null)
-        {
-            if (error == "Student not found.")
-            {
-                return NotFound();
-            }
-
-            if (error == "Email already exists.")
-            {
-                return Conflict(new { message = error });
-            }
-
-            if (error == "Group not found." || error == "Supervisor not found.")
-            {
-                return NotFound(new { message = error });
-            }
-
-            return BadRequest(new { message = error });
-        }
-
-        return Ok(student);
+        return student is null ? ToErrorResult(error) : Ok(student);
     }
 
     [HttpPatch("{id:guid}/deactivate")]
     public async Task<IActionResult> Deactivate(Guid id)
     {
         var (success, error) = await _studentService.DeactivateStudentAsync(id);
-        if (!success)
-        {
-            if (error == "Student not found.")
-            {
-                return NotFound();
-            }
+        return success ? NoContent() : ToErrorResult(error);
+    }
 
-            return BadRequest(new { message = error });
-        }
-
-        return NoContent();
+    [HttpPost("{id:guid}/reset-access")]
+    public async Task<IActionResult> ResetAccess(Guid id)
+    {
+        var (success, error) = await _studentService.ResetAccessAsync(id);
+        return success ? NoContent() : ToErrorResult(error);
     }
 
     [HttpPut("{id:guid}/group")]
     public async Task<IActionResult> AssignGroup(Guid id, [FromBody] AssignStudentGroupRequest request)
     {
         var (student, error) = await _studentService.AssignGroupAsync(id, request.GroupId);
-        if (student is null)
-        {
-            if (error == "Student not found." || error == "Group not found.")
-            {
-                return NotFound(new { message = error });
-            }
-
-            return BadRequest(new { message = error });
-        }
-
-        return Ok(student);
+        return student is null ? ToErrorResult(error) : Ok(student);
     }
 
     [HttpPut("{id:guid}/supervisor")]
     public async Task<IActionResult> AssignSupervisor(Guid id, [FromBody] AssignStudentSupervisorRequest request)
     {
         var (student, error) = await _studentService.AssignSupervisorAsync(id, request.SupervisorId);
-        if (student is null)
-        {
-            if (error == "Student not found." || error == "Supervisor not found.")
-            {
-                return NotFound(new { message = error });
-            }
-
-            return BadRequest(new { message = error });
-        }
-
-        return Ok(student);
+        return student is null ? ToErrorResult(error) : Ok(student);
     }
+
+    private IActionResult ToErrorResult(string? error) => error switch
+    {
+        OnboardingErrors.StudentNotFound => NotFound(new { message = error }),
+        OnboardingErrors.EmailTaken or OnboardingErrors.StudentNumberTaken => Conflict(new { message = error }),
+        _ => BadRequest(new { message = error })
+    };
 }

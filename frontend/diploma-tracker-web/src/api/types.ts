@@ -25,6 +25,7 @@ export type Teacher = {
   id: string
   firstName: string
   lastName: string
+  patronymic: string | null
   email: string
   isActive: boolean
   createdAt: string
@@ -34,6 +35,7 @@ export type Teacher = {
 export type CreateTeacherRequest = {
   firstName: string
   lastName: string
+  patronymic?: string
   email: string
   password: string
 }
@@ -41,6 +43,7 @@ export type CreateTeacherRequest = {
 export type UpdateTeacherRequest = {
   firstName: string
   lastName: string
+  patronymic?: string
   email: string
 }
 
@@ -49,10 +52,13 @@ export type Student = {
   userId: string
   firstName: string
   lastName: string
+  patronymic: string | null
   email: string
+  studentNumber: string
   role: 'Student'
   isActive: boolean
-  diplomaTopic: string
+  isClaimed: boolean
+  diplomaTopic: string | null
   groupId: string | null
   groupName: string | null
   supervisorId: string | null
@@ -66,19 +72,23 @@ export type Student = {
 export type CreateStudentRequest = {
   firstName: string
   lastName: string
+  patronymic?: string
   email: string
-  password: string
-  diplomaTopic: string
-  groupId?: string
+  studentNumber: string
+  password?: string
+  diplomaTopic?: string
+  groupId: string
   supervisorId?: string
 }
 
 export type UpdateStudentRequest = {
   firstName: string
   lastName: string
+  patronymic?: string
   email: string
-  diplomaTopic: string
-  groupId?: string
+  studentNumber: string
+  diplomaTopic?: string
+  groupId: string
   supervisorId?: string
 }
 
@@ -130,7 +140,7 @@ export type GroupStudent = {
   lastName: string
   email: string
   isActive: boolean
-  diplomaTopic: string
+  diplomaTopic: string | null
   supervisorId: string | null
   supervisorFirstName: string | null
   supervisorLastName: string | null
@@ -284,4 +294,34 @@ export type DepartmentRequest = {
   facultyId: string
   name: string
   shortName: string
+}
+
+export type RegistrationStatus = {
+  open: boolean
+}
+
+export type ClaimAccountRequest = {
+  email: string
+  studentNumber: string
+  password: string
+}
+
+export type ChangePasswordRequest = {
+  currentPassword: string
+  newPassword: string
+}
+
+export type SkippedImportRow = {
+  line: number
+  email: string
+}
+
+export type ImportRowError = {
+  line: number
+  message: string
+}
+
+export type StudentImportResult = {
+  created: number
+  skipped: SkippedImportRow[]
 }

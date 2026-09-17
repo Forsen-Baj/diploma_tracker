@@ -196,6 +196,6 @@ public class AuthServiceTests
             ExpiresInMinutes = 60
         });
 
-        return new AuthService(context, jwtOptions, passwordHasher);
+        return new AuthService(context, jwtOptions, passwordHasher, new RegistrationService(context));
     }
 }

@@ -1,5 +1,7 @@
-import { useState, type FormEvent } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { ApiError } from '../api/apiClient'
+import { getRegistrationStatus } from '../api/registrationApi'
 import { useAuth } from '../auth/useAuth'
 
 function routeByRole(role: 'Admin' | 'Teacher' | 'Student'): string {
@@ -16,6 +18,13 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [registrationOpen, setRegistrationOpen] = useState(false)
+
+  useEffect(() => {
+    getRegistrationStatus()
+      .then((status) => setRegistrationOpen(status.open))
+      .catch(() => setRegistrationOpen(false))
+  }, [])
 
   if (!isInitializing && user) {
     return <Navigate to={routeByRole(user.role)} replace />
@@ -30,8 +39,8 @@ export function LoginPage() {
       const from = (location.state as { from?: string } | null)?.from
       const fallbackRoute = routeByRole(authenticatedUser.role)
       navigate(from && from !== '/login' ? from : fallbackRoute, { replace: true })
-    } catch {
-      setError('Invalid email or password')
+    } catch (err) {
+      setError(err instanceof ApiError && err.status === 429 ? err.message : 'Invalid email or password')
     } finally {
       setIsLoading(false)
     }
@@ -65,6 +74,9 @@ export function LoginPage() {
           </button>
           {error && <p className="error-text">{error}</p>}
         </form>
+        {registrationOpen && (
+          <p className="auth-link">First time here? <Link to="/claim">Claim your account</Link></p>
+        )}
       </section>
     </div>
   )

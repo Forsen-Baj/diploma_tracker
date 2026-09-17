@@ -1,9 +1,11 @@
 export class ApiError extends Error {
   status: number
+  payload: unknown
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, payload: unknown = null) {
     super(message)
     this.status = status
+    this.payload = payload
   }
 }
 
@@ -31,16 +33,28 @@ export function isApiConflict(error: unknown): error is ApiError {
   return error instanceof ApiError && error.status === 409
 }
 
-type ProblemDetailsPayload = {
+type ErrorPayload = {
   message?: string
   title?: string
-  errors?: Record<string, string[]>
+  errors?: unknown
+}
+
+function firstValidationMessage(errors: unknown): string | undefined {
+  if (!errors || typeof errors !== 'object' || Array.isArray(errors)) {
+    return undefined
+  }
+
+  const first = Object.values(errors as Record<string, unknown>)[0]
+  return Array.isArray(first) && typeof first[0] === 'string' ? first[0] : undefined
 }
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken()
   const headers = new Headers(init?.headers)
-  headers.set('Content-Type', 'application/json')
+
+  if (!(init?.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json')
+  }
 
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
@@ -52,10 +66,12 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   })
 
   if (!response.ok) {
-    const payload = await response.json().catch(() => null) as ProblemDetailsPayload | null
-    const firstFieldError = payload?.errors ? Object.values(payload.errors)[0]?.[0] : undefined
-    const message = payload?.message ?? firstFieldError ?? payload?.title ?? `Request failed with status ${response.status}`
-    throw new ApiError(response.status, message)
+    const payload = await response.json().catch(() => null) as ErrorPayload | null
+    const fallback = response.status === 429
+      ? 'Too many attempts. Wait a minute and try again.'
+      : `Request failed with status ${response.status}`
+    const message = payload?.message ?? firstValidationMessage(payload?.errors) ?? payload?.title ?? fallback
+    throw new ApiError(response.status, message, payload)
   }
 
   if (response.status === 204) {

@@ -47,6 +47,9 @@ export function LayoutShell() {
           {user?.role === 'Student' && (
             <NavLink to="/student/tasks" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>My Tasks</NavLink>
           )}
+          {user && (
+            <NavLink to="/account" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>Account</NavLink>
+          )}
           <NavLink to="/health" className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}>Health</NavLink>
         </aside>
         <main className="main-content">

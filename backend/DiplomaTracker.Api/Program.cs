@@ -1,4 +1,7 @@
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
+using System.Threading.RateLimiting;
 using DiplomaTracker.Api.Configuration;
 using DiplomaTracker.Api.Data;
 using DiplomaTracker.Api.Interfaces;
@@ -6,12 +9,36 @@ using DiplomaTracker.Api.Models;
 using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Cors.Infrastructure;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
 const string CorsPolicyName = "FrontendPolicy";
+
+static string GetRateLimitPartitionKey(HttpContext httpContext)
+{
+    var address = httpContext.Connection.RemoteIpAddress;
+    if (address is null)
+    {
+        return "no-ip";
+    }
+
+    if (address.IsIPv4MappedToIPv6)
+    {
+        address = address.MapToIPv4();
+    }
+
+    if (address.AddressFamily == AddressFamily.InterNetworkV6)
+    {
+        var bytes = address.GetAddressBytes();
+        Array.Clear(bytes, 8, 8);
+        address = new IPAddress(bytes);
+    }
+
+    return address.ToString();
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +58,30 @@ builder.Services.AddScoped<ITaskTemplateService, TaskTemplateService>();
 builder.Services.AddScoped<IGroupTaskService, GroupTaskService>();
 builder.Services.AddScoped<IFacultyService, FacultyService>();
 builder.Services.AddScoped<IDepartmentService, DepartmentService>();
+builder.Services.AddScoped<IRegistrationService, RegistrationService>();
+builder.Services.AddScoped<IStudentImportService, StudentImportService>();
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(RateLimitPolicies.Authentication, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            GetRateLimitPartitionKey(httpContext),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = RateLimitPolicies.AuthenticationPermitLimit,
+                Window = RateLimitPolicies.AuthenticationWindow,
+                QueueLimit = 0
+            }));
+
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.Headers.RetryAfter = "60";
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new { message = OnboardingErrors.TooManyAttempts },
+            cancellationToken);
+    };
+});
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -116,6 +167,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors(CorsPolicyName);
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 

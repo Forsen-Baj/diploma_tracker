@@ -8,7 +8,7 @@ public class GroupStudentResponse
     public string LastName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public bool IsActive { get; set; }
-    public string DiplomaTopic { get; set; } = string.Empty;
+    public string? DiplomaTopic { get; set; }
     public Guid? SupervisorId { get; set; }
     public string? SupervisorFirstName { get; set; }
     public string? SupervisorLastName { get; set; }

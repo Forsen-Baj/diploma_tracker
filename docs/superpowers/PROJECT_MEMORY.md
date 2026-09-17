@@ -27,7 +27,7 @@ list import, registration toggle, profile and password management) sits between 
 |---|---|---|---|
 | 1 Platform foundations | Done — `abffb34` | `2026-09-15-diploma-tracker-system-design.md` §5 | `2026-09-15-platform-foundations-and-academic-structure.md` |
 | 2 Academic structure | Done — `65f190d`, review fixes `0e909bc` | same, §6 | same |
-| User onboarding | Planned — next to execute | `2026-09-16-user-onboarding-design.md` | `2026-09-17-user-onboarding.md` |
+| User onboarding | Done — commit `Implement user onboarding` | `2026-09-16-user-onboarding-design.md` | `2026-09-17-user-onboarding.md` |
 | 3 Design system | Planned | `2026-09-17-design-system-design.md` | `2026-09-17-design-system.md` |
 | 4 Topics and reservation | Planned | `2026-09-17-topics-and-reservation-design.md` | `2026-09-17-topics-and-reservation.md` |
 | 5 Submission and review | Planned | `2026-09-17-submission-and-review-design.md` | `2026-09-17-submission-and-review.md` |
@@ -63,6 +63,8 @@ Parked for later (not blocking):
   one on short name), the 409 message may name the short name rather than the name.
 - Tests to write in the end-of-project testing pass are collected in
   `docs/superpowers/test-backlog.md`, one section per phase.
+- Onboarding security, not in scope of the approved design: rate-limit key has no forwarded-headers handling (needed before deploying behind a reverse proxy); `PUT /api/auth/password` is not rate-limited; no security event logging (claims, resets, password changes, 429s).
+- Onboarding owner questions from the review (open): per-IP limit shared by a classroom behind one NAT and by login + claim; restoring one student's access requires opening registration for everyone; student-number normalisation keeps internal spaces and does not fold Latin/Cyrillic lookalikes; administrators may change their own password to 8 characters; group details list shows no student number or claimed status; email + student number is weak proof of identity while registration is open.
 
 ## How work is run
 
@@ -136,6 +138,9 @@ Parked for later (not blocking):
   constant must stay character-for-character equal.
 - Subagents have no browser. Browser checks run from the controller session through the
   in-app browser, and sign-in there is done by the owner.
+- **Auth endpoints are rate-limited** (10 requests per minute per IP on `login` and `claim`). Scripted checks that sign in repeatedly must pace their calls or they receive 429.
+- **Seed student number** is `SEED-0001`; imported and claimable test students need their own unique numbers.
+- **`.superpowers/checks/` is not git-ignored** (only `.superpowers/sdd/` has its own ignore file). Never stage it; commit with explicit paths.
 
 ## Decisions (do not reopen)
 
@@ -159,3 +164,4 @@ Parked for later (not blocking):
   `master` ← `dev` ← `phase1-2`; this file created.
 - 2026-09-17 — Designs for onboarding and phases 3–6 approved and committed; phase 7 deferred.
 - 2026-09-17 — Implementation plans written for onboarding and phases 3–6.
+- 2026-09-17 — User onboarding implemented: CSV import, account claiming, registration switch, password management.

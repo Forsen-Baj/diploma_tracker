@@ -3,6 +3,8 @@ import { LayoutShell } from './components/LayoutShell'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { RoleRedirect } from './auth/RoleRedirect'
 import { LoginPage } from './pages/LoginPage'
+import { ClaimAccountPage } from './pages/ClaimAccountPage'
+import { AccountPage } from './pages/AccountPage'
 import { HealthPage } from './pages/HealthPage'
 import { AdminDashboardPage } from './pages/AdminDashboardPage'
 import { TeacherDashboardPage } from './pages/TeacherDashboardPage'
@@ -20,11 +22,13 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/claim" element={<ClaimAccountPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route path="/" element={<LayoutShell />}>
           <Route index element={<RoleRedirect />} />
           <Route path="health" element={<HealthPage />} />
+          <Route path="account" element={<AccountPage />} />
           <Route element={<ProtectedRoute allowedRoles={['Admin', 'Teacher']} />}>
             <Route path="task-templates" element={<TaskTemplatesPage />} />
           </Route>
