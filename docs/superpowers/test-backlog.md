@@ -129,3 +129,101 @@ its review completes.
 - Batch selection: header checkbox indeterminate state, selection cleared after archive/restore, counts in confirmations and toasts.
 - Ukrainian plurals use one/few/many for counted strings.
 
+### Owner notes follow-up (2026-09-18)
+- `ValidAcademicYearAttribute`: trimmed length boundary (20 vs. 21 characters after trimming);
+  every disallowed character class (letters of any alphabet, punctuation outside
+  `/ \ - .`); an all-whitespace value is refused; `null` passes and is left to `[Required]`.
+- `TaskTemplateService.CreateTaskTemplateAsync`: a duplicate `Order` within the same faculty
+  returns `taskTemplate.orderTaken`; the same `Order` in a different faculty is allowed.
+- `TaskTemplateService.UpdateTaskTemplateAsync` reorder behaviour: moving an order down and up
+  within a faculty shifts exactly the affected neighbours by one and leaves the rest untouched;
+  moving to a different (unassigned) faculty leaves a gap in the old faculty and shifts the new
+  faculty's block; `UpdatedAt` is refreshed on the moved template and every shifted neighbour;
+  unchanged `Order` and faculty performs no shift at all; the existing `TemplateInUse` check still
+  wins over any reorder when the template is assigned to a group.
+
+### SQL Server integration
+- The unique index `IX_DiplomaTaskTemplates_FacultyId_Order` rejects a direct conflicting
+  insert/update at the database (the InMemory provider used by the service tests does not
+  enforce it, and the two-phase negate-then-assign reorder in `TaskTemplateService` exists
+  specifically to avoid tripping it transiently).
+- `Group.AcademicYear` is `nvarchar(20)`; confirm a value that is valid ASCII-only but longer
+  than 20 characters after trimming is rejected by model validation before it ever reaches the
+  database.
+
+
+## Phase 4 — Thesis topics and reservation (Tasks 4-5: catalogue and reservation services)
+
+### Service level, InMemory
+- **`TopicService.GetTopicsAsync`:** student sees only `Available` catalogue topics of their
+  own department plus the topic of their own active (`Pending` or `Approved`) reservation,
+  even when that topic belongs to another department or its supervisor has gone inactive;
+  a teacher's view is scoped to topics they supervise regardless of `DepartmentId`/`Status`
+  filters; an admin's `Status` filter and `DepartmentId` filter combine correctly; the
+  `Search` filter matches title and description case-sensitively vs. `Contains`.
+- **`TopicService.GetTopicAsync`:** a student outside the topic's department or a teacher who
+  does not supervise it gets `topic.notFound` (not `403`), matching the "hide, don't refuse"
+  visibility rule; a student can fetch the topic of their own active reservation even when its
+  status is no longer `Available`.
+- **`TopicService.CreateTopicAsync`:** a teacher's `SupervisorId` in the body is ignored in
+  favor of their own id; an admin must supply a valid `SupervisorId` or gets
+  `topic.supervisorInvalid`; an invalid `DepartmentId` gets `topic.departmentInvalid`.
+- **`TopicService.UpdateTopicAsync`:** an admin may edit a `Reserved`/`Approved` topic and
+  changing its supervisor moves the holding student's `SupervisorId` in the same save; a
+  teacher gets `topic.notEditable` for any topic that is not their own `Available` catalogue
+  topic; `topic.notOwner` vs. `topic.notFound` precedence when a teacher targets someone
+  else's topic.
+- **`TopicService.DeleteTopicAsync`:** an admin is refused with `topic.notEditable` for a
+  `Reserved`/`Approved` topic exactly like a teacher — deletion never bypasses the
+  available-only rule even for admins.
+- **`ReservationService.ReserveAsync`:** wrong department gives `topic.notInYourDepartment`;
+  reserving the topic already held gives `topic.alreadyYours`; an inactive supervisor or a
+  non-`Available` topic gives `topic.notAvailable`; the deadline blocks a first reservation but
+  not a student who already holds an approved topic (change request path).
+  `ReservationAlreadyActive` when a `Pending` request already exists.
+- **`ReservationService.ProposeAsync`:** an inactive or non-teacher `SupervisorId` gives
+  `proposal.teacherInvalid`; the created topic's `Origin` is `StudentProposal` and its
+  `DepartmentId` is copied from the student's group, not from the request.
+- **`ReservationService.ApproveAsync`** on a change request: releases the previously approved
+  reservation (`Released`), returns a catalogue topic to `Available` or deletes a proposed one,
+  and moves `TopicId`/`SupervisorId` to the new topic — all in one save; the decider must be
+  the topic's supervisor or an admin (`reservation.notSupervisor` otherwise); only `Pending`
+  is acceptable (`reservation.invalidState` otherwise).
+- **`ReservationService.RejectAsync`/`CancelAsync`:** a proposed topic is deleted, a catalogue
+  topic returns to `Available`; `CancelAsync` refuses a reservation that is not the caller's
+  own (`reservation.notYours`) and one that is not `Pending`; the deadline exemption for a
+  change-request cancellation mirrors `ReserveAsync`.
+- **`ReservationService.ReleaseAsync`:** clears `StudentProfile.TopicId`/`SupervisorId`,
+  requires `Approved`, requires the decider to be the topic's supervisor or an admin.
+- **`ReservationService.SetStudentTopicAsync`:** replacing an existing `Approved` topic
+  releases it and cancels any coexisting `Pending` request in the same save; assigning the
+  topic the student already holds gives `topic.alreadyYours`; a non-`Available` or
+  non-`Catalogue` topic gives `topic.notAvailable`; `topicId: null` clears both fields and
+  returns `(null, null)`; an archived or unknown student gives `student.archived` /
+  `student.notFound`.
+- **`ReservationService.GetMineAsync`/`GetForDecisionAsync`:** `CurrentTopicId`/
+  `CurrentTopicTitle` populate only on a `Pending` row whose student holds a different
+  `Approved` topic (the change-request projection added while implementing Task 5 — the
+  plan's `QueryRows` omitted it; verify it against `StudentProfile.TopicId`/`Topic.Title`
+  directly since this diverges from the plan text); `CanCancel` reflects
+  `IsSelectionOpenAsync` OR an existing approved reservation.
+
+### HTTP level (would need `WebApplicationFactory`)
+- Role gates: `POST /api/topics` and `PUT/DELETE /api/topics/{id}` as Student give 403;
+  `GET /api/topics/supervisors` succeeds for any authenticated role.
+- `PUT /api/students/{id}/topic` is Admin-only (403 for Teacher/Student) and returns `204`
+  when clearing (`topicId: null`) vs. `200` with the reservation body when assigning.
+- `POST /api/topics/{id}/reserve`, `/api/topics/proposals`, `/api/reservations/{id}/approve|
+  reject|cancel|release` role gates (Student vs. Admin/Teacher) and 401 without a token.
+- `GET /api/reservations/pending?status=Approved` returns the supervisor's approved-with-
+  release-button list, matching the ruling that this endpoint doubles for both lists.
+
+### SQL Server integration (InMemory cannot exercise these)
+- The three `IX_TopicReservations_*` filtered unique indexes actually reject concurrent
+  inserts: two simultaneous `Pending` requests for the same topic, two simultaneous `Pending`
+  requests by the same student, and two simultaneous `Approved` reservations for the same
+  student — each should surface as the mapped conflict error via
+  `SqlUpdateExceptionHelper.IsUniqueConstraintViolation`, not an unhandled 500.
+- `Topic.RowVersion` concurrency: a reserve/approve race on the same topic (two callers
+  loading the same `Available` row, both racing to save) trips `DbUpdateConcurrencyException`
+  and returns `topic.notAvailable`/`topic.notEditable` rather than double-booking the topic.

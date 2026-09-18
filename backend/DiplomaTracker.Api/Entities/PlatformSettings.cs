@@ -6,4 +6,5 @@ public class PlatformSettings
 
     public int Id { get; set; }
     public bool RegistrationOpen { get; set; }
+    public DateTime? TopicSelectionDeadline { get; set; }
 }

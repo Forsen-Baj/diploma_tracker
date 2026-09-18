@@ -16,4 +16,5 @@ public class AppUser
     public StudentProfile? StudentProfile { get; set; }
     public ICollection<StudentProfile> SupervisedStudents { get; set; } = new List<StudentProfile>();
     public ICollection<GroupReviewer> GroupReviews { get; set; } = new List<GroupReviewer>();
+    public ICollection<Topic> SupervisedTopics { get; set; } = new List<Topic>();
 }

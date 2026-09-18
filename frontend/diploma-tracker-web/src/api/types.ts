@@ -59,10 +59,10 @@ export type Student = {
   isActive: boolean
   isClaimed: boolean
   claimReopened: boolean
-  diplomaTopic: string | null
+  topicId: string | null
+  topicTitle: string | null
   groupId: string | null
   groupCode: string | null
-  groupName: string | null
   supervisorId: string | null
   supervisorFirstName: string | null
   supervisorLastName: string | null
@@ -79,7 +79,6 @@ export type CreateStudentRequest = {
   email: string
   studentNumber: string
   password?: string
-  diplomaTopic?: string
   groupId: string
   supervisorId?: string
 }
@@ -90,7 +89,6 @@ export type UpdateStudentRequest = {
   patronymic?: string
   email: string
   studentNumber: string
-  diplomaTopic?: string
   groupId: string
   supervisorId?: string
 }
@@ -102,7 +100,6 @@ export type Group = {
   facultyId: string
   facultyName: string
   code: string
-  name: string | null
   description: string | null
   academicYear: string
   createdAt: string
@@ -112,7 +109,6 @@ export type Group = {
 export type CreateGroupRequest = {
   departmentId: string
   code: string
-  name?: string
   description?: string
   academicYear: string
 }
@@ -120,7 +116,6 @@ export type CreateGroupRequest = {
 export type UpdateGroupRequest = {
   departmentId: string
   code: string
-  name?: string
   description?: string
   academicYear: string
 }
@@ -149,7 +144,7 @@ export type GroupStudent = {
   studentNumber: string
   isActive: boolean
   isClaimed: boolean
-  diplomaTopic: string | null
+  topicTitle: string | null
   supervisorId: string | null
   supervisorFirstName: string | null
   supervisorLastName: string | null
@@ -189,7 +184,6 @@ export type GroupTask = {
   id: string
   groupId: string
   groupCode: string
-  groupName: string | null
   taskTemplateId: string
   taskTitle: string
   taskDescription: string | null
@@ -396,4 +390,79 @@ export type RestoreStudentsResponse = {
 
 export type ArchiveGroupStudentsResponse = {
   archived: number
+}
+
+export type TopicStatus = 'Available' | 'Reserved' | 'Approved'
+export type TopicOrigin = 'Catalogue' | 'StudentProposal'
+export type ReservationStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | 'Released'
+
+export type Topic = {
+  id: string
+  title: string
+  description: string | null
+  supervisorId: string
+  supervisorName: string
+  departmentId: string
+  departmentName: string
+  facultyName: string
+  origin: TopicOrigin
+  status: TopicStatus
+  activeReservationId: string | null
+  activeReservationStatus: ReservationStatus | null
+  studentProfileId: string | null
+  studentName: string | null
+  groupCode: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type TopicRequest = {
+  title: string
+  description?: string
+  departmentId: string
+  supervisorId?: string
+}
+
+export type TopicQuery = {
+  search?: string
+  supervisorId?: string
+  departmentId?: string
+  status?: TopicStatus
+}
+
+export type Reservation = {
+  id: string
+  topicId: string | null
+  topicTitle: string
+  topicDescription: string | null
+  origin: TopicOrigin | null
+  supervisorId: string | null
+  supervisorName: string | null
+  studentProfileId: string
+  studentName: string
+  studentEmail: string
+  groupCode: string
+  status: ReservationStatus
+  decisionComment: string | null
+  createdAt: string
+  decidedAt: string | null
+  canCancel: boolean
+  /** Set only on a pending change request: the topic the student holds today. */
+  currentTopicId: string | null
+  currentTopicTitle: string | null
+}
+
+export type ProposeTopicRequest = {
+  title: string
+  description?: string
+  supervisorId: string
+}
+
+export type TopicSelectionSettings = {
+  deadline: string | null
+}
+
+export type SupervisorOption = {
+  id: string
+  name: string
 }

@@ -10,6 +10,7 @@ public static class TaskErrors
     public const string TemplateTitleTaken = "taskTemplate.titleTaken";
     public const string TemplateFacultyNotFound = "taskTemplate.facultyNotFound";
     public const string TemplateInUse = "taskTemplate.inUse";
+    public const string TemplateOrderTaken = "taskTemplate.orderTaken";
 
     public const string GroupTaskNotFound = "groupTask.notFound";
     public const string GroupTaskGroupNotFound = "groupTask.groupNotFound";
@@ -33,6 +34,7 @@ public static class TaskErrors
         new(TemplateTitleTaken, StatusCodes.Status409Conflict, "Active template with this title already exists."),
         new(TemplateFacultyNotFound, StatusCodes.Status400BadRequest, "The selected faculty does not exist."),
         new(TemplateInUse, StatusCodes.Status409Conflict, "Cannot change the faculty of a task template that is assigned to a group."),
+        new(TemplateOrderTaken, StatusCodes.Status409Conflict, "Another step in this faculty already uses this order."),
         new(GroupTaskNotFound, StatusCodes.Status404NotFound, "Group task not found."),
         new(GroupTaskGroupNotFound, StatusCodes.Status400BadRequest, "The selected group does not exist."),
         new(GroupTaskTemplateNotFound, StatusCodes.Status400BadRequest, "One or more selected task templates do not exist."),

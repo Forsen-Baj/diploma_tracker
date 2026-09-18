@@ -11,9 +11,10 @@ Newest status first; keep entries short.
 | System design (binding authority) | `docs/superpowers/specs/2026-09-15-diploma-tracker-system-design.md` |
 | Increment designs | `docs/superpowers/specs/<date>-<topic>-design.md` |
 | Implementation plans | `docs/superpowers/plans/` |
-| Session handoffs (latest: `2026-09-17-implementation-kickoff.md`) | `docs/superpowers/handoffs/` |
+| Session handoffs (latest: `2026-09-19-phase-5-kickoff.md`) | `docs/superpowers/handoffs/` |
 | Tests to write at the end of the project | `docs/superpowers/test-backlog.md` |
 | Per-plan execution ledger, briefs, reports, review packages (git-ignored, local only) | `.superpowers/sdd/<plan-name>/` |
+| End-to-end check scripts (committed since 2026-09-18) | `.superpowers/checks/` |
 | Local dev server definitions (git-ignored) | `.claude/launch.json` — `api` on :5000, `web` on :5173 |
 
 ## Status
@@ -30,7 +31,7 @@ list import, registration toggle, profile and password management) sits between 
 | User onboarding | Done — commit `Implement user onboarding` | `2026-09-16-user-onboarding-design.md` | `2026-09-17-user-onboarding.md` |
 | 3 Design system | Done — commit `Implement design system and structure refinements` | `2026-09-17-design-system-design.md` | `2026-09-17-design-system.md` |
 | Structure and administration refinements | Done — commit `Implement design system and structure refinements` | `2026-09-17-structure-and-administration-refinements-design.md` | `2026-09-17-structure-and-administration-refinements.md` |
-| 4 Topics and reservation | Planned | `2026-09-17-topics-and-reservation-design.md` | `2026-09-17-topics-and-reservation.md` |
+| 4 Topics and reservation | Done — commit `Implement thesis topics and reservation` | `2026-09-17-topics-and-reservation-design.md` (amended 2026-09-18) | `2026-09-17-topics-and-reservation.md` |
 | 5 Submission and review | Planned | `2026-09-17-submission-and-review-design.md` | `2026-09-17-submission-and-review.md` |
 | 6 Document templates | Planned | `2026-09-17-document-templates-design.md` | `2026-09-17-document-templates.md` |
 | 7 Document preview and commenting | Deferred by the owner; revisit after phase 6 | — | — |
@@ -50,6 +51,16 @@ Cross-design links worth knowing:
 - The optional patronymic on users arrives with onboarding (CSV column too); phase 6 markers
   use it.
 - Phase 4 replaces the free-text student topic with `StudentProfile.TopicId`.
+- **A change request is a `Pending` reservation held alongside an `Approved` one** — no separate
+  entity, no flag. Hence two *separate* filtered unique indexes on `TopicReservations`
+  (`StudentProfileId` where `Pending`, and where `Approved`), never one combined index.
+- **Any operation replacing one of a student's reservations with another saves in two phases
+  inside one transaction**: settle what is displaced, `SaveChanges`, write the replacement,
+  `SaveChanges`, commit. A single save intermittently violates the filtered unique index because
+  EF picks its own statement order. Phase 1 must also clear the holder's `TopicId`/`SupervisorId`
+  before a displaced `StudentProposal` topic is deleted — that FK is `Restrict`.
+- Administrator topic assignment is `PUT /api/students/{id}/topic`; it replaces rather than
+  refuses. The selection deadline binds only a student who has no approved topic.
 - Phase 5 defines teacher visibility (groups they review or where they supervise a student);
   phases 5 and 6 rely on it. Phase 5 also introduces `IFileStorage`, reused by phase 6.
 
@@ -66,9 +77,11 @@ Parked for later (not blocking):
   `docs/superpowers/test-backlog.md`, one section per phase.
 - Rate limiting is built but switched off (`RateLimiting:Enabled` = `false` in `appsettings.json`) until the owner enables it. Before enabling: forwarded-headers handling for a reverse proxy, a per-IP budget that suits a classroom behind one NAT (login and claim share one budget), and whether `PUT /api/auth/password` needs a limit.
 - Onboarding questions still open: student-number normalisation keeps internal spaces and does not fold Latin/Cyrillic lookalikes; administrators may change their own password to 8 characters; email + student number is weak proof of identity while registration is open.
-- Owner notes from the phase 3 browser test, to do first in the next session: check scripts must use realistic academic years (e.g. `2026/2027`) and delete the groups they create — `refinements-check.mjs` leaves rows like `RF-077685-A`; academic year must accept only digits and `/ \ - . ` and whitespace; `Group.Name` is to be removed entirely (code only); step template `Order` must be unique per faculty.
 - Drag-and-drop reordering of step templates: owner wants it in the final phase, after the core workflows.
+- `fix-wave-backend-extra-check.mjs` has three failing checks that predate this work: it asserts a malformed CSV quote is a *file-level* error with `errors: []`, while `StudentImportService` reports it as a row-level `import.row.malformedQuote` carrying the line the quote opened on. The import still rejects the whole file (400, nothing created). Decide whether the script or the API is right when phase 5 touches uploads.
 - Parked from the phase 3 review: a group whose students are all archived cannot be deleted; reviewer lists and the academic structure are readable by any signed-in user; tokens stay valid up to 60 minutes after archiving or deactivation; accessibility pass (request sequencing, modal initial focus, segmented-control keyboard behaviour, loading states announced).
+- Parked from the phase 4 review, owner to decide: `IsSelectionOpenAsync` re-reads `PlatformSettings` on every call; `TopicService` repeats five identical correlated subqueries per topic row; `StudentProfile.TopicId` and the `Approved` reservation are two sources of truth for whether a student holds a topic; a rejection carrying **no** comment shows the student nothing at all on their *My topic* card (the spec ties that block to the comment); `selectionClosedRaw` is computed only at render, so a page left open across the deadline keeps offering the actions until something re-renders (the API refuses the call regardless).
+- The interface ships **one theme only** — `src/index.css` defines a single set of `--color-*` values and there is no `prefers-color-scheme`, `data-theme` or toggle anywhere. Do not assume a dark mode exists when styling.
 
 ## How work is run
 
@@ -93,7 +106,7 @@ Parked for later (not blocking):
 |---|---|
 | Design exploration, specs, plans | controller via `superpowers:brainstorming` → `superpowers:writing-plans` |
 | API contract design (endpoints, status codes, DTO shapes) | `api-designer` |
-| Backend implementation (ASP.NET Core, EF Core, services, controllers) | `csharp-developer` |
+| Backend implementation (ASP.NET Core, EF Core, services, controllers) | `csharp-developer`, or `dotnet-core-expert` where that agent is not installed |
 | Schema, indexes, migrations, query performance | `sql-pro` |
 | Frontend implementation (React, TypeScript, pages, API modules) | `react-specialist` |
 | Phase / feature review | `code-reviewer` |
@@ -104,14 +117,23 @@ Parked for later (not blocking):
 
 ## Environment facts
 
-- Windows 10. The repository path contains spaces and Cyrillic
-  (`C:\Users\c4pgt\Desktop\diplom snaps\маг\diploma_tracker`): always quote paths.
+- The project is worked on from more than one machine, and the checkout path differs between
+  them. On the first it is `C:\Users\c4pgt\Desktop\diplom snaps\маг\diploma_tracker` — spaces and
+  Cyrillic, so always quote paths. On the second (Windows 11) it is `C:\GIT\diploma_tracker`.
+  Never hard-code either; derive paths from the repository root.
 - The Bash tool is Git Bash. Python is not installed; use `node` for JSON and scripting.
 - .NET SDKs 7.0.302 and 9.0.313 (SDK 9 builds the `net8.0` target). `dotnet-ef` 8.0.8 is
   a local tool (`.config/dotnet-tools.json`).
 - Node 20.5.1, npm 9.8.0.
-- SQL Server on `localhost`, database `DiplomaTrackerDb`, application login
-  `diploma_smoke` (member of `dbcreator`, so the API can create the database on startup).
+- SQL Server on `localhost`, database `DiplomaTrackerDb`. The first machine uses the application
+  login `diploma_smoke` (member of `dbcreator`, so the API can create the database on startup);
+  the second uses integrated security (`Trusted_Connection=True;TrustServerCertificate=True`),
+  which also creates the database on first start. Either is fine — the connection string is a
+  user-secret, so each machine chooses its own.
+- **On the second machine NuGet needs an explicit source.** A machine-wide private feed
+  (`pkgs.dev.azure.com/FPipe/...`) answers 401 and fails every restore. Restore with
+  `--source https://api.nuget.org/v3/index.json` and build with `--no-restore`; the resulting
+  `NU1900` warning about that feed is an environment artefact, not a code warning.
 - Secrets (`ConnectionStrings:DefaultConnection`, `Jwt:Secret`) live in user-secrets,
   never in `appsettings*.json`. Never print them.
 - Development seed accounts: `admin@diploma.local`, `teacher@diploma.local`,
@@ -143,7 +165,7 @@ Parked for later (not blocking):
 - **Seed student number** is `SEED-0001`; imported and claimable test students need their own unique numbers.
 - **`.superpowers/` is never committed:** `.superpowers/sdd/` has its own ignore file and `/.superpowers/checks/` is in `.gitignore`.
 - **Error contract:** every API error is `{ code, message }` (`fields` for `validation.failed`, `errors` for import rows); codes live in per-area catalogues and are translated in `src/i18n/{uk,en}.json`. Never compare message text.
-- **Check scripts** (`.superpowers/checks/`) run against the live local database and leave their rows behind; they must use unique values per run.
+- **Check scripts** (`.superpowers/checks/`) run against the live local database. They are committed (they were git-ignored until 2026-09-18). Uniqueness across runs is carried by **codes, emails and student numbers**, never by the academic year — the year is a realistic `2026/2027` and the format rule now rejects stamped values. A script that creates groups deletes them at the end of a successful run; because a group cannot be deleted while any student points at it and students cannot be deleted at all, the script first restores, moves them into the seeded group and archives them there.
 - **i18n:** `npm run i18n:check` validates that uk and en have the same keys and each language's own plural categories (uk one/few/many, en one/other).
 
 ## Decisions (do not reopen)
@@ -172,3 +194,5 @@ Parked for later (not blocking):
 - 2026-09-17 — User onboarding implemented: CSV import, account claiming, registration switch, password management.
 - 2026-09-17 — Onboarding refined: an access reset reopens only that student's account (`ClaimReopened`), account events are logged, rate limiting switched off, group details show student number and claim status.
 - 2026-09-18 — Design system and structure refinements implemented: `{ code, message }` error contract, Tailwind 4 + Headless UI component library, uk/en interface, group codes, steps per faculty with start dates, administrators page, student archiving, steps for late joiners.
+- 2026-09-18 — Owner notes from the phase 3 browser test applied: academic year restricted to digits and `/ \ - .` (max 20, `validation.failed` with `format`), `Group.Name` removed entirely so the code is the only group identity, step template `Order` unique per faculty (`taskTemplate.orderTaken` on create; an update moves the step and shifts its neighbours), check scripts use realistic academic years and delete every group they create.
+- 2026-09-19 — Phase 4 implemented: topic catalogue, reservations, student proposals, change requests for an approved topic, administrator assignment from the student form (`PUT /api/students/{id}/topic`), administrator amendment of a topic at any stage, and the global selection deadline on a new Settings page. Reviewed in two halves (backend 1 Critical / 8 Important, frontend 2 Critical / 9 Important); one fix wave and a scoped re-review returned 39 of 40 findings fixed with no new defects.

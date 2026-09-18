@@ -43,7 +43,7 @@ async function loginAdmin() {
 
 const admin = await loginAdmin()
 const groups = (await call('GET', '/api/groups', { token: admin })).data
-const groupId = groups.find((g) => g.name === 'Seed Group A').id
+const groupId = groups.find((g) => g.code === 'SEED-A').id
 
 // 1a. Stray quote mid-file (matches the review's R1 example).
 const strayQuoteCsv =

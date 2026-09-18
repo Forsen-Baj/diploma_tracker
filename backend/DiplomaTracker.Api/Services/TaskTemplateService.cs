@@ -68,6 +68,13 @@ public class TaskTemplateService : ITaskTemplateService
             return (null, TaskErrors.TemplateTitleTaken);
         }
 
+        var orderTaken = await _dbContext.DiplomaTaskTemplates
+            .AnyAsync(t => t.FacultyId == faculty.Id && t.Order == request.Order);
+        if (orderTaken)
+        {
+            return (null, TaskErrors.TemplateOrderTaken);
+        }
+
         var now = DateTime.UtcNow;
         var template = new DiplomaTaskTemplate
         {
@@ -146,13 +153,78 @@ public class TaskTemplateService : ITaskTemplateService
             }
         }
 
+        var oldFacultyId = template.FacultyId;
+        var oldOrder = template.Order;
+        var newFacultyId = faculty.Id;
+        var newOrder = request.Order;
+        var now = DateTime.UtcNow;
+
+        var description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+
+        if (newOrder == oldOrder && newFacultyId == oldFacultyId)
+        {
+            template.FacultyId = faculty.Id;
+            template.Title = title;
+            template.Description = description;
+            template.IsActive = request.IsActive;
+            template.UpdatedAt = now;
+            await _dbContext.SaveChangesAsync();
+
+            template.Faculty = faculty;
+            return (Map(template), null);
+        }
+
+        // Changing Order (or moving faculty) is a reorder: it shifts neighbouring templates rather
+        // than failing. The shift is done in two phases inside a transaction because a straight
+        // sequence of updates would transiently violate the unique (FacultyId, Order) index.
+        var moves = new List<(DiplomaTaskTemplate Entity, int TargetOrder)> { (template, newOrder) };
+
+        if (newFacultyId == oldFacultyId)
+        {
+            if (newOrder > oldOrder)
+            {
+                var neighbours = await _dbContext.DiplomaTaskTemplates
+                    .Where(t => t.FacultyId == oldFacultyId && t.Id != id && t.Order > oldOrder && t.Order <= newOrder)
+                    .ToListAsync();
+                moves.AddRange(neighbours.Select(n => (n, n.Order - 1)));
+            }
+            else
+            {
+                var neighbours = await _dbContext.DiplomaTaskTemplates
+                    .Where(t => t.FacultyId == oldFacultyId && t.Id != id && t.Order >= newOrder && t.Order < oldOrder)
+                    .ToListAsync();
+                moves.AddRange(neighbours.Select(n => (n, n.Order + 1)));
+            }
+        }
+        else
+        {
+            var neighbours = await _dbContext.DiplomaTaskTemplates
+                .Where(t => t.FacultyId == newFacultyId && t.Id != id && t.Order >= newOrder)
+                .ToListAsync();
+            moves.AddRange(neighbours.Select(n => (n, n.Order + 1)));
+        }
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+
+        foreach (var (entity, _) in moves)
+        {
+            entity.Order = -entity.Order;
+        }
+        await _dbContext.SaveChangesAsync();
+
         template.FacultyId = faculty.Id;
         template.Title = title;
-        template.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
-        template.Order = request.Order;
+        template.Description = description;
         template.IsActive = request.IsActive;
-        template.UpdatedAt = DateTime.UtcNow;
+
+        foreach (var (entity, targetOrder) in moves)
+        {
+            entity.Order = targetOrder;
+            entity.UpdatedAt = now;
+        }
         await _dbContext.SaveChangesAsync();
+
+        await transaction.CommitAsync();
 
         template.Faculty = faculty;
         return (Map(template), null);

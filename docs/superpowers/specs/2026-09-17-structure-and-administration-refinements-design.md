@@ -1,7 +1,7 @@
 # Diploma Tracker — Structure and Administration Refinements Design
 
 Date: 2026-09-17
-Status: draft for owner review
+Status: implemented
 Delivered with: phase 3 (design system), in the same commit
 Related designs: `2026-09-15-diploma-tracker-system-design.md` (§6 academic structure),
 `2026-09-16-user-onboarding-design.md`, `2026-09-17-design-system-design.md`
@@ -17,8 +17,10 @@ no matter when they joined. The interface gains tooltips and a simpler language 
 
 | Topic | Decision |
 |---|---|
-| Group identity | A required `Code` (e.g. `ТВ-52мп`), unique within an academic year; the name becomes optional |
+| Group identity | A required `Code` (e.g. `ТВ-52мп`), unique within an academic year. The code is the group's only identity — a group has no name |
+| Academic year | A short, punctuation-only value (`2026/2027`): digits and `/ \ - .` and whitespace, at most 20 characters |
 | Workflow steps | Each step template belongs to one faculty; a group is assigned only its faculty's steps |
+| Step order | `Order` is unique within a faculty. A new step may not take an occupied position; moving an existing step shifts the steps between its old and new position |
 | Step timeline | Deadline required; start date optional and informational (does not restrict submission) |
 | Administrators | Administrators create, edit, set passwords for, deactivate and reactivate other administrators |
 | Student deactivation | Removed. Students are archived instead, one by one, in batches, or per group |
@@ -31,16 +33,24 @@ no matter when they joined. The interface gains tooltips and a simpler language 
 ## 3. Data model
 
 **`Group`**
-- `Code` — required, at most 32 characters, stored trimmed. Unique together with
-  `AcademicYear` (replaces the unique index on `Name` + `AcademicYear`).
-- `Name` — optional, at most 200 characters (a descriptive title).
-- Everywhere a group is shown to users (lists, selectors, badges, headers, student and teacher
-  pages, future documents) the code is the primary label; the name, when present, is secondary.
+- `Code` — required, at most 32 characters, stored trimmed. Unique together with `AcademicYear`.
+- A group has **no name**. The code is the whole of its identity: everywhere a group is shown to
+  users (lists, selectors, badges, headers, student and teacher pages, future documents) the code
+  is the label, and nothing accompanies it.
+- `AcademicYear` — required, stored trimmed, at most 20 characters, and composed only of ASCII
+  digits, `/`, `\`, `-`, `.` and whitespace. Letters of any alphabet are rejected. The rule is a
+  validation attribute alongside `ValidEmailAttribute`, so a violation is the ordinary
+  `validation.failed` (400) with `academicYear` reported as `format` rather than an error code of
+  its own. `2026/2027` is the intended shape; the rule is deliberately loose enough for
+  `2026-2027` or `2026.2027`.
+- `Description` — optional, at most 1000 characters.
 
 **`DiplomaTaskTemplate`**
 - `FacultyId` — required, foreign key to `Faculty`, `Restrict` on delete. A faculty holding
   step templates cannot be deleted (409).
-- Titles need not be unique across faculties. Order is per faculty.
+- Titles need not be unique across faculties.
+- `Order` — unique within a faculty, across active and inactive templates alike, enforced by a
+  unique index on (`FacultyId`, `Order`). §5 describes what happens when a step is moved.
 
 **`GroupTask`**
 - `Deadline` — required (unchanged).
@@ -51,17 +61,19 @@ no matter when they joined. The interface gains tooltips and a simpler language 
   sets the user's `IsActive` to `false`; restoring clears `ArchivedAt` and sets `IsActive` to
   `true`.
 
-The development seeder assigns the eight seeded step templates to faculty `FICS` and gives
-`Seed Group A` the code `SEED-A`.
+The development seeder assigns the eight seeded step templates to faculty `FICS` at orders 1–8 and
+gives the seeded group the code `SEED-A` in academic year `2026/2027`.
 
 ## 4. Groups
 
-- Create and update require `code`, `academicYear` and `departmentId`; `name` and `description`
-  are optional. A duplicate code within the academic year → 409 `group.codeTaken`.
-- Group responses carry `code` and nullable `name`. Group student responses and student responses
-  carry `groupCode` (student responses keep `groupName` as nullable).
-- The Groups page shows the code as the card or row title with the name beneath it; the group
-  selector in student forms, the import panel and filters list `code` (and `name` when present).
+- Create and update require `code`, `academicYear` and `departmentId`; `description` is optional.
+  A duplicate code within the academic year → 409 `group.codeTaken`. An academic year outside the
+  format in §3 → 400 `validation.failed` with `fields.academicYear = ["format"]`.
+- Group responses carry `code`. Group student responses, student responses and group-task
+  responses carry `groupCode`.
+- The Groups page shows the code as the card or row title; the group selector in student forms,
+  the import panel and filters list the code with the academic year. The academic-year field
+  carries a hint naming the allowed characters and `2026/2027` as an example.
 
 ## 5. Workflow steps per faculty
 
@@ -75,6 +87,23 @@ The development seeder assigns the eight seeded step templates to faculty `FICS`
   the active templates of the group's faculty only.
 - Task templates page: a faculty selector above the list (required choice; the list shows that
   faculty's steps in order); the create form uses the selected faculty.
+
+**Step order.** `Order` is unique within a faculty (§3), which makes the position of a step
+unambiguous and the list stable.
+
+- Creating a step at a position another step in that faculty already holds is refused with
+  409 `taskTemplate.orderTaken`.
+- Changing an existing step's `Order` is a **move**, not a collision: the step takes the requested
+  position and the steps between its old and new position **shift by one** to close the gap it
+  left and open the gap it needs. Moving a step down from 7 to 2 turns 2…6 into 3…7; moving it up
+  from 2 to 7 turns 3…7 into 2…6. The relative order of every other step is preserved, and no
+  step is ever swapped past another. A position beyond the end of the list simply shifts a shorter
+  block; the list is never renumbered wholesale.
+- Moving a step to a different faculty is only possible while it is assigned to no group
+  (`taskTemplate.inUse`, above). It is inserted into the target faculty by the same shift rule
+  and leaves its old faculty's numbering untouched — the gap it leaves there is not closed, because
+  the remaining steps' positions relative to each other have not changed.
+- Activating or deactivating a step does not move it.
 
 ## 6. Step timeline
 
@@ -157,14 +186,19 @@ as they are. This replaces the on-demand creation planned for phase 5.
 ## 11. Error codes added
 
 `group.codeTaken` (409), `taskTemplate.facultyNotFound` (400), `taskTemplate.inUse` (409),
+`taskTemplate.orderTaken` (409),
 `faculty.hasTaskTemplates` (409), `groupTask.templateFacultyMismatch` (400),
 `groupTask.startAfterDeadline` (400), `admin.notFound` (404), `admin.cannotDeactivateSelf` (400),
 `admin.lastActive` (409), `student.archived` (409). Each has uk and en translations.
 
 ## 12. Not included
 
-- Deleting student accounts or their records.
+- Deleting student accounts or their records. A consequence worth naming: because a group cannot
+  be deleted while any student — archived or not — still points at it, a group that ever held a
+  student can only be retired by moving its students elsewhere first.
 - Restricting submission before a step's start date.
+- Reordering steps by dragging them. The order is edited as a number on the step's form; the
+  drag-and-drop gesture belongs to the final phase, after the core workflows.
 - Per-department step templates.
 - Topic assignment, topic change requests and administrator topic amendments — these extend
   phase 4 (`2026-09-17-topics-and-reservation-design.md`).

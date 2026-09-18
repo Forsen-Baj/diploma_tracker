@@ -19,7 +19,7 @@ public class GroupServiceTests
         var (group, error) = await new GroupService(context, NullLogger<GroupService>.Instance).CreateGroupAsync(new CreateGroupRequest
         {
             DepartmentId = Guid.NewGuid(),
-            Name = "SE-21",
+            Code = "SE-21",
             AcademicYear = "2026/2027"
         });
 
@@ -39,12 +39,11 @@ public class GroupServiceTests
         {
             DepartmentId = department.Id,
             Code = "SE-21",
-            Name = " SE-21 ",
             AcademicYear = "2026/2027"
         });
 
         Assert.Null(error);
-        Assert.Equal("SE-21", group!.Name);
+        Assert.Equal("SE-21", group!.Code);
         Assert.Equal(department.Id, group.DepartmentId);
         Assert.Equal("Department of Software Engineering", group.DepartmentName);
         Assert.Equal(faculty.Id, group.FacultyId);
@@ -62,7 +61,7 @@ public class GroupServiceTests
         var (group, error) = await new GroupService(context, NullLogger<GroupService>.Instance).UpdateGroupAsync(existing.Id, new UpdateGroupRequest
         {
             DepartmentId = Guid.NewGuid(),
-            Name = existing.Name,
+            Code = existing.Code,
             AcademicYear = existing.AcademicYear
         });
 

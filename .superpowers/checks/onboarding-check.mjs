@@ -35,7 +35,7 @@ function csvForm(content, name = 'students.csv') {
 
 const admin = (await login('admin@diploma.local', 'Admin123!')).data.token
 const groups = (await call('GET', '/api/groups', { token: admin })).data
-const groupId = groups.find((g) => g.name === 'Seed Group A').id
+const groupId = groups.find((g) => g.code === 'SEED-A').id
 const teachers = (await call('GET', '/api/teachers', { token: admin })).data
 const teacherId = teachers.find((t) => t.email === 'teacher@diploma.local').id
 

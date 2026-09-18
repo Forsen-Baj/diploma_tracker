@@ -20,9 +20,6 @@ public class UpdateStudentRequest
     [Required, MaxLength(32)]
     public string StudentNumber { get; set; } = string.Empty;
 
-    [MaxLength(500)]
-    public string? DiplomaTopic { get; set; }
-
     public Guid GroupId { get; set; }
 
     public Guid? SupervisorId { get; set; }

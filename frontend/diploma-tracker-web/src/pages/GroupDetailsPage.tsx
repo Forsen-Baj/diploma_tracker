@@ -23,7 +23,6 @@ import { Spinner } from '../components/ui/Spinner'
 import { TextField } from '../components/ui/TextField'
 import { useToast } from '../components/ui/useToast'
 import { fromDatetimeLocalValue, toDatetimeLocalValue } from '../utils/datetime'
-import { groupLabel } from '../utils/groupLabel'
 import { formatPeriod } from '../utils/period'
 import type { Group, GroupReviewer, GroupStudent, GroupTask, TaskTemplate, Teacher } from '../api/types'
 
@@ -412,7 +411,7 @@ export function GroupDetailsPage() {
     { key: 'name', header: t('students.lastName'), render: (student) => `${student.firstName} ${student.lastName}` },
     { key: 'studentNumber', header: t('groups.studentNumber'), render: (student) => student.studentNumber },
     { key: 'email', header: t('auth.email'), render: (student) => student.email },
-    { key: 'topic', header: t('groupDetails.topic'), render: (student) => student.diplomaTopic ?? t('common.notSet') },
+    { key: 'topic', header: t('groupDetails.topic'), render: (student) => student.topicTitle ?? t('common.notSet') },
     {
       key: 'supervisor',
       header: t('groupDetails.supervisor'),
@@ -427,7 +426,7 @@ export function GroupDetailsPage() {
     }
   ]
 
-  const groupTitle = group ? groupLabel(group) : ''
+  const groupTitle = group ? group.code : ''
 
   return (
     <>

@@ -10,4 +10,5 @@ public class Department
     public DateTime UpdatedAt { get; set; }
     public Faculty Faculty { get; set; } = null!;
     public ICollection<Group> Groups { get; set; } = new List<Group>();
+    public ICollection<Topic> Topics { get; set; } = new List<Topic>();
 }

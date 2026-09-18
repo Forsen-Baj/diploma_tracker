@@ -22,7 +22,8 @@ public static class ErrorCatalog
             GroupErrors.All,
             TaskErrors.All,
             OnboardingErrors.All,
-            AdminErrors.All
+            AdminErrors.All,
+            TopicErrors.All
         ];
 
         var definitions = new Dictionary<string, ErrorDefinition>(StringComparer.Ordinal);
