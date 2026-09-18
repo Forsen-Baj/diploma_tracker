@@ -23,6 +23,12 @@
   --color-danger: #c5221f;
   --color-danger-soft: #fce8e6;
 
+  /* Hover/focus glow on the "propose a topic" lightbulb. These two are the only knobs:
+     --color-glow is the colour the icon turns and the colour it casts;
+     --glow-radius is how far the light spreads (bigger = softer and more prominent). */
+  --color-glow: #facc15;
+  --glow-radius: 14px;
+
   --radius-card: 20px;
   --radius-control: 8px;
   --radius-pill: 9999px;

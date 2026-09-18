@@ -64,6 +64,9 @@ builder.Services.AddScoped<IFacultyService, FacultyService>();
 builder.Services.AddScoped<IDepartmentService, DepartmentService>();
 builder.Services.AddScoped<IRegistrationService, RegistrationService>();
 builder.Services.AddScoped<IStudentImportService, StudentImportService>();
+builder.Services.AddScoped<ITopicSettingsService, TopicSettingsService>();
+builder.Services.AddScoped<ITopicService, TopicService>();
+builder.Services.AddScoped<IReservationService, ReservationService>();
 
 builder.Services.AddRateLimiter(options =>
 {

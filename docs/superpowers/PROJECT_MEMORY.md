@@ -31,7 +31,7 @@ list import, registration toggle, profile and password management) sits between 
 | User onboarding | Done — commit `Implement user onboarding` | `2026-09-16-user-onboarding-design.md` | `2026-09-17-user-onboarding.md` |
 | 3 Design system | Done — commit `Implement design system and structure refinements` | `2026-09-17-design-system-design.md` | `2026-09-17-design-system.md` |
 | Structure and administration refinements | Done — commit `Implement design system and structure refinements` | `2026-09-17-structure-and-administration-refinements-design.md` | `2026-09-17-structure-and-administration-refinements.md` |
-| 4 Topics and reservation | Planned | `2026-09-17-topics-and-reservation-design.md` | `2026-09-17-topics-and-reservation.md` |
+| 4 Topics and reservation | Done — commit `Implement thesis topics and reservation` | `2026-09-17-topics-and-reservation-design.md` (amended 2026-09-18) | `2026-09-17-topics-and-reservation.md` |
 | 5 Submission and review | Planned | `2026-09-17-submission-and-review-design.md` | `2026-09-17-submission-and-review.md` |
 | 6 Document templates | Planned | `2026-09-17-document-templates-design.md` | `2026-09-17-document-templates.md` |
 | 7 Document preview and commenting | Deferred by the owner; revisit after phase 6 | — | — |
@@ -51,6 +51,16 @@ Cross-design links worth knowing:
 - The optional patronymic on users arrives with onboarding (CSV column too); phase 6 markers
   use it.
 - Phase 4 replaces the free-text student topic with `StudentProfile.TopicId`.
+- **A change request is a `Pending` reservation held alongside an `Approved` one** — no separate
+  entity, no flag. Hence two *separate* filtered unique indexes on `TopicReservations`
+  (`StudentProfileId` where `Pending`, and where `Approved`), never one combined index.
+- **Any operation replacing one of a student's reservations with another saves in two phases
+  inside one transaction**: settle what is displaced, `SaveChanges`, write the replacement,
+  `SaveChanges`, commit. A single save intermittently violates the filtered unique index because
+  EF picks its own statement order. Phase 1 must also clear the holder's `TopicId`/`SupervisorId`
+  before a displaced `StudentProposal` topic is deleted — that FK is `Restrict`.
+- Administrator topic assignment is `PUT /api/students/{id}/topic`; it replaces rather than
+  refuses. The selection deadline binds only a student who has no approved topic.
 - Phase 5 defines teacher visibility (groups they review or where they supervise a student);
   phases 5 and 6 rely on it. Phase 5 also introduces `IFileStorage`, reused by phase 6.
 
@@ -70,6 +80,8 @@ Parked for later (not blocking):
 - Drag-and-drop reordering of step templates: owner wants it in the final phase, after the core workflows.
 - `fix-wave-backend-extra-check.mjs` has three failing checks that predate this work: it asserts a malformed CSV quote is a *file-level* error with `errors: []`, while `StudentImportService` reports it as a row-level `import.row.malformedQuote` carrying the line the quote opened on. The import still rejects the whole file (400, nothing created). Decide whether the script or the API is right when phase 5 touches uploads.
 - Parked from the phase 3 review: a group whose students are all archived cannot be deleted; reviewer lists and the academic structure are readable by any signed-in user; tokens stay valid up to 60 minutes after archiving or deactivation; accessibility pass (request sequencing, modal initial focus, segmented-control keyboard behaviour, loading states announced).
+- Parked from the phase 4 review, owner to decide: `IsSelectionOpenAsync` re-reads `PlatformSettings` on every call; `TopicService` repeats five identical correlated subqueries per topic row; `StudentProfile.TopicId` and the `Approved` reservation are two sources of truth for whether a student holds a topic; a rejection carrying **no** comment shows the student nothing at all on their *My topic* card (the spec ties that block to the comment); `selectionClosedRaw` is computed only at render, so a page left open across the deadline keeps offering the actions until something re-renders (the API refuses the call regardless).
+- The interface ships **one theme only** — `src/index.css` defines a single set of `--color-*` values and there is no `prefers-color-scheme`, `data-theme` or toggle anywhere. Do not assume a dark mode exists when styling.
 
 ## How work is run
 
@@ -183,3 +195,4 @@ Parked for later (not blocking):
 - 2026-09-17 — Onboarding refined: an access reset reopens only that student's account (`ClaimReopened`), account events are logged, rate limiting switched off, group details show student number and claim status.
 - 2026-09-18 — Design system and structure refinements implemented: `{ code, message }` error contract, Tailwind 4 + Headless UI component library, uk/en interface, group codes, steps per faculty with start dates, administrators page, student archiving, steps for late joiners.
 - 2026-09-18 — Owner notes from the phase 3 browser test applied: academic year restricted to digits and `/ \ - .` (max 20, `validation.failed` with `format`), `Group.Name` removed entirely so the code is the only group identity, step template `Order` unique per faculty (`taskTemplate.orderTaken` on create; an update moves the step and shifts its neighbours), check scripts use realistic academic years and delete every group they create.
+- 2026-09-19 — Phase 4 implemented: topic catalogue, reservations, student proposals, change requests for an approved topic, administrator assignment from the student form (`PUT /api/students/{id}/topic`), administrator amendment of a topic at any stage, and the global selection deadline on a new Settings page. Reviewed in two halves (backend 1 Critical / 8 Important, frontend 2 Critical / 9 Important); one fix wave and a scoped re-review returned 39 of 40 findings fixed with no new defects.

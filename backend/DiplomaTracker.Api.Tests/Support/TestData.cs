@@ -58,7 +58,6 @@ public static class TestData
             UserId = userId,
             GroupId = groupId,
             SupervisorId = supervisorId,
-            DiplomaTopic = "Topic",
             CreatedAt = Now,
             UpdatedAt = Now
         };

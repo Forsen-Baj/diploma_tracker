@@ -18,6 +18,10 @@ import { GroupDetailsPage } from './pages/GroupDetailsPage'
 import { TaskTemplatesPage } from './pages/TaskTemplatesPage'
 import { FacultiesPage } from './pages/FacultiesPage'
 import { AdminsPage } from './pages/AdminsPage'
+import { StudentTopicsPage } from './pages/StudentTopicsPage'
+import { TeacherTopicsPage } from './pages/TeacherTopicsPage'
+import { AdminTopicsPage } from './pages/AdminTopicsPage'
+import { AdminSettingsPage } from './pages/AdminSettingsPage'
 
 function App() {
   return (
@@ -40,13 +44,17 @@ function App() {
             <Route path="admin/faculties" element={<FacultiesPage />} />
             <Route path="admin/groups" element={<GroupsPage />} />
             <Route path="admin/groups/:groupId" element={<GroupDetailsPage />} />
+            <Route path="admin/topics" element={<AdminTopicsPage />} />
+            <Route path="admin/settings" element={<AdminSettingsPage />} />
             <Route path="admins" element={<AdminsPage />} />
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['Teacher']} />}>
             <Route path="teacher/dashboard" element={<TeacherDashboardPage />} />
+            <Route path="teacher/topics" element={<TeacherTopicsPage />} />
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['Student']} />}>
             <Route path="student/dashboard" element={<StudentDashboardPage />} />
+            <Route path="student/topics" element={<StudentTopicsPage />} />
             <Route path="student/tasks" element={<StudentMyTasksPage />} />
             <Route path="student/tasks/:id" element={<StudentTaskDetailsPage />} />
           </Route>

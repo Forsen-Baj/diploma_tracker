@@ -31,7 +31,8 @@ namespace DiplomaTracker.Api.Migrations
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false),
-                    RegistrationOpen = table.Column<bool>(type: "bit", nullable: false)
+                    RegistrationOpen = table.Column<bool>(type: "bit", nullable: false),
+                    TopicSelectionDeadline = table.Column<DateTime>(type: "datetime2", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -129,6 +130,38 @@ namespace DiplomaTracker.Api.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "Topics",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Title = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(4000)", maxLength: 4000, nullable: true),
+                    SupervisorId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    DepartmentId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Origin = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Topics", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Topics_Departments_DepartmentId",
+                        column: x => x.DepartmentId,
+                        principalTable: "Departments",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Topics_Users_SupervisorId",
+                        column: x => x.SupervisorId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "GroupReviewers",
                 columns: table => new
                 {
@@ -190,9 +223,9 @@ namespace DiplomaTracker.Api.Migrations
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     StudentNumber = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
-                    DiplomaTopic = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
                     GroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     SupervisorId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    TopicId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     ArchivedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
@@ -204,6 +237,12 @@ namespace DiplomaTracker.Api.Migrations
                         name: "FK_StudentProfiles_Groups_GroupId",
                         column: x => x.GroupId,
                         principalTable: "Groups",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_StudentProfiles_Topics_TopicId",
+                        column: x => x.TopicId,
+                        principalTable: "Topics",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
@@ -250,10 +289,40 @@ namespace DiplomaTracker.Api.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            migrationBuilder.CreateTable(
+                name: "TopicReservations",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    TopicId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    TopicTitle = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
+                    StudentProfileId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    DecisionComment = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    DecidedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_TopicReservations", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_TopicReservations_StudentProfiles_StudentProfileId",
+                        column: x => x.StudentProfileId,
+                        principalTable: "StudentProfiles",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_TopicReservations_Topics_TopicId",
+                        column: x => x.TopicId,
+                        principalTable: "Topics",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                });
+
             migrationBuilder.InsertData(
                 table: "PlatformSettings",
-                columns: new[] { "Id", "RegistrationOpen" },
-                values: new object[] { 1, false });
+                columns: new[] { "Id", "RegistrationOpen", "TopicSelectionDeadline" },
+                values: new object[] { 1, false, null });
 
             migrationBuilder.CreateIndex(
                 name: "IX_Departments_FacultyId_Name",
@@ -345,6 +414,13 @@ namespace DiplomaTracker.Api.Migrations
                 column: "SupervisorId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_StudentProfiles_TopicId",
+                table: "StudentProfiles",
+                column: "TopicId",
+                unique: true,
+                filter: "[TopicId] IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_StudentProfiles_UserId",
                 table: "StudentProfiles",
                 column: "UserId",
@@ -360,6 +436,42 @@ namespace DiplomaTracker.Api.Migrations
                 table: "StudentTasks",
                 columns: new[] { "StudentProfileId", "GroupTaskId" },
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TopicReservations_ActivePerTopic",
+                table: "TopicReservations",
+                column: "TopicId",
+                unique: true,
+                filter: "[TopicId] IS NOT NULL AND [Status] IN ('Pending', 'Approved')");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TopicReservations_ApprovedPerStudent",
+                table: "TopicReservations",
+                column: "StudentProfileId",
+                unique: true,
+                filter: "[Status] = 'Approved'");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TopicReservations_PendingPerStudent",
+                table: "TopicReservations",
+                column: "StudentProfileId",
+                unique: true,
+                filter: "[Status] = 'Pending'");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TopicReservations_StudentProfileId_CreatedAt",
+                table: "TopicReservations",
+                columns: new[] { "StudentProfileId", "CreatedAt" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Topics_DepartmentId_Status",
+                table: "Topics",
+                columns: new[] { "DepartmentId", "Status" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Topics_SupervisorId",
+                table: "Topics",
+                column: "SupervisorId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Users_Email",
@@ -381,6 +493,9 @@ namespace DiplomaTracker.Api.Migrations
                 name: "StudentTasks");
 
             migrationBuilder.DropTable(
+                name: "TopicReservations");
+
+            migrationBuilder.DropTable(
                 name: "GroupTasks");
 
             migrationBuilder.DropTable(
@@ -393,10 +508,13 @@ namespace DiplomaTracker.Api.Migrations
                 name: "Groups");
 
             migrationBuilder.DropTable(
-                name: "Users");
+                name: "Topics");
 
             migrationBuilder.DropTable(
                 name: "Departments");
+
+            migrationBuilder.DropTable(
+                name: "Users");
 
             migrationBuilder.DropTable(
                 name: "Faculties");

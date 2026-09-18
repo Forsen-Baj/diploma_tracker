@@ -204,6 +204,7 @@ public class GroupService : IGroupService
             .AsNoTracking()
             .Include(s => s.User)
             .Include(s => s.Supervisor)
+            .Include(s => s.Topic)
             .Where(s => s.GroupId == groupId && s.User.Role == "Student" && s.ArchivedAt == null)
             .OrderBy(s => s.User.LastName)
             .ThenBy(s => s.User.FirstName)
@@ -367,7 +368,7 @@ public class GroupService : IGroupService
         StudentNumber = profile.StudentNumber,
         IsActive = profile.User.IsActive,
         IsClaimed = profile.User.PasswordHash is not null,
-        DiplomaTopic = profile.DiplomaTopic,
+        TopicTitle = profile.Topic?.Title,
         SupervisorId = profile.SupervisorId,
         SupervisorFirstName = profile.Supervisor?.FirstName,
         SupervisorLastName = profile.Supervisor?.LastName,

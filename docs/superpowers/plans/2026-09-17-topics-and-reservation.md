@@ -14,14 +14,16 @@
 
 ## Global Constraints
 
-- One active (`Pending` or `Approved`) reservation per topic and per student — enforced in the service **and** by filtered unique indexes.
+- Three uniqueness rules, enforced in the service **and** by filtered unique indexes: one active (`Pending` or `Approved`) reservation per **topic**; at most one **`Pending`** reservation per student; at most one **`Approved`** reservation per student. The last two are separate so that a student holding an approved topic can have a pending **change request** at the same time. Both are declared with the `HasIndex(expression, name)` overload — see Task 1 — and the migration must contain **three** `IX_TopicReservations_*` unique indexes; if only two appear, the two student indexes have collapsed into one and the pending rule is unenforced.
 - Students see only topics of their group's department; `Available` catalogue topics whose supervisor is active, plus the topic of their own active reservation.
-- Students may reserve, propose and cancel only while `TopicSelectionDeadline` is empty or in the future (UTC). Supervisors and administrators are never restricted by the deadline.
+- The deadline (`TopicSelectionDeadline` empty or in the future, UTC) restricts reserve, propose and cancel **only for a student who has no approved topic**. A student who already has one may request a change, cancel it and ask again at any time. Supervisors and administrators are never restricted by the deadline.
 - A student cancels only their own `Pending` reservation. Approve and reject require `Pending`; release requires `Approved`.
-- Teachers act only on topics they supervise; administrators act on all.
-- Teachers edit/delete only their own `Catalogue` topics while `Available`; administrators any `Available` catalogue topic.
+- Teachers act only on topics they supervise; administrators act on all. For a change request the decider is the supervisor of the topic being **asked for**.
+- Teachers edit/delete only their own `Catalogue` topics while `Available`. **Administrators edit any topic at any status**; changing the supervisor of a `Reserved` or `Approved` topic moves `StudentProfile.SupervisorId` in the same save. Deleting stays restricted to `Available` topics for everyone.
+- Administrator assignment lives at `PUT /api/students/{id}/topic` (`{ topicId }`, `null` clears) beside the existing `PUT /api/students/{id}/group` and `/supervisor`. It replaces whatever the student had — cancelling a pending request and releasing an approved topic in the same save. There is no `POST /api/topics/{id}/assign`.
 - Student proposals never enter the catalogue: declined, cancelled or released proposals delete the topic; the reservation history keeps `TopicTitle`.
 - Approval sets `StudentProfile.TopicId` and `StudentProfile.SupervisorId`; release clears both.
+- **Any operation that replaces one of a student's reservations with another saves in two phases inside one transaction: settle what is displaced, `SaveChanges`, then write the replacement, `SaveChanges`, then commit.** The filtered unique indexes are evaluated per statement, and EF chooses its own statement order, so releasing an approved reservation and approving its successor in a single save violates `IX_TopicReservations_ApprovedPerStudent` *sometimes* — an intermittent, bogus `reservation.invalidState`. This binds `ApproveAsync` and `SetStudentTopicAsync`. The same discipline already governs step-template reordering elsewhere in the project.
 - The free-text `StudentProfile.DiplomaTopic` is removed; a student's topic is always a `Topic` row.
 - Lengths: title 300, description 4000, decision comment 1000.
 - Status enums are persisted as strings (`nvarchar(50)`).
@@ -34,9 +36,12 @@
 ## Rulings recorded while planning
 
 - **Settings page.** The deadline and the registration switch move together to a new administrator *Settings* page (`/admin/settings`); the switch is removed from the Students page. Spec §6 asks for the deadline "next to the registration switch". Cost if wrong: one card moves back.
-- **Direct assignment ignores department.** Administrators may assign any available catalogue topic to any active student without a topic; the spec does not restrict it and administrators correct exceptions. Cost if wrong: one added check.
+- **Assignment is scoped to the student's department.** The topic selector on the student form lists the `Available` topics of that student's department plus the topic the student currently holds. An administrator who needs another department's topic moves that topic's department first, which the amended spec permits at any status. The endpoint itself does not enforce department — the selector is what shapes the choice. Cost if wrong: one filter widened.
+- **A change request is a pending reservation held alongside an approved one.** No separate entity, no flag: a `Pending` reservation belonging to a student who already has an `Approved` one can only be a change request, and every existing approve/reject/cancel path already does the right thing with two extra steps on approval (release the old, move `TopicId` and `SupervisorId`). Cost if wrong: a `TopicChangeRequest` entity and a parallel decision pipeline.
+- **The deadline does not bind change requests.** Recorded by the owner: changes arise later in the year, while the deadline exists to make everyone choose *something* by a date. Cost if wrong: one condition dropped.
+- **`student.alreadyHasTopic` is removed.** Administrator assignment now replaces rather than refuses, so the code has no caller. `assignment.studentInvalid` is removed too: the student id moved into the URL, so an unknown one is 404 `student.notFound` under the phase 3 status rule.
 - **Decision history endpoint.** `GET /api/reservations/pending` takes an optional `status` query (`Pending` default, or `Approved`) so the teacher's *Approved students* list with *Release* uses the same endpoint. Cost if wrong: none; the default matches the spec.
-- **Unknown ids in bodies** get their own 400 codes (`topic.departmentInvalid`, `topic.supervisorInvalid`, `proposal.teacherInvalid`, `assignment.studentInvalid`), following the phase 3 rule.
+- **Unknown ids in bodies** get their own 400 codes (`topic.departmentInvalid`, `topic.supervisorInvalid`, `proposal.teacherInvalid`), following the phase 3 rule.
 - **Page markup is specified, not transcribed**, as in the design system plan.
 
 ## File Map
@@ -250,10 +255,19 @@ Append to `OnModelCreating`:
             .IsUnique()
             .HasFilter("[TopicId] IS NOT NULL AND [Status] IN ('Pending', 'Approved')")
             .HasDatabaseName("IX_TopicReservations_ActivePerTopic");
-        reservation.HasIndex(x => x.StudentProfileId)
+        // Two separate filters, not one on ('Pending', 'Approved'): a student holding an
+        // approved topic may have a pending change request at the same time.
+        //
+        // Both must use the HasIndex(expression, name) overload. EF Core identifies an index by
+        // its property set, so two plain HasIndex(x => x.StudentProfileId) calls are the SAME
+        // index — the second silently overwrites the first and only one filter reaches the
+        // migration, whatever HasDatabaseName says. Naming them at creation makes them distinct.
+        reservation.HasIndex(x => x.StudentProfileId, "IX_TopicReservations_PendingPerStudent")
             .IsUnique()
-            .HasFilter("[Status] IN ('Pending', 'Approved')")
-            .HasDatabaseName("IX_TopicReservations_ActivePerStudent");
+            .HasFilter("[Status] = 'Pending'");
+        reservation.HasIndex(x => x.StudentProfileId, "IX_TopicReservations_ApprovedPerStudent")
+            .IsUnique()
+            .HasFilter("[Status] = 'Approved'");
         reservation.HasIndex(x => new { x.StudentProfileId, x.CreatedAt });
         reservation.HasOne(x => x.Topic)
             .WithMany(x => x.Reservations)
@@ -386,6 +400,7 @@ public static class TopicErrors
     public const string TopicNotInYourDepartment = "topic.notInYourDepartment";
     public const string TopicNotEditable = "topic.notEditable";
     public const string TopicNotOwner = "topic.notOwner";
+    public const string TopicAlreadyYours = "topic.alreadyYours";
     public const string TopicDepartmentInvalid = "topic.departmentInvalid";
     public const string TopicSupervisorInvalid = "topic.supervisorInvalid";
     public const string ProposalTeacherInvalid = "proposal.teacherInvalid";
@@ -395,8 +410,6 @@ public static class TopicErrors
     public const string ReservationNotYours = "reservation.notYours";
     public const string ReservationNotSupervisor = "reservation.notSupervisor";
     public const string SelectionClosed = "selection.closed";
-    public const string StudentAlreadyHasTopic = "student.alreadyHasTopic";
-    public const string AssignmentStudentInvalid = "assignment.studentInvalid";
     public const string StudentProfileRequired = "topic.studentProfileRequired";
 
     public static readonly ErrorDefinition[] All =
@@ -406,17 +419,16 @@ public static class TopicErrors
         new(TopicNotInYourDepartment, StatusCodes.Status403Forbidden, "The topic belongs to another department."),
         new(TopicNotEditable, StatusCodes.Status409Conflict, "Only available catalogue topics can be changed or deleted."),
         new(TopicNotOwner, StatusCodes.Status403Forbidden, "You can change only topics you supervise."),
+        new(TopicAlreadyYours, StatusCodes.Status409Conflict, "This is already your topic."),
         new(TopicDepartmentInvalid, StatusCodes.Status400BadRequest, "The selected department does not exist."),
         new(TopicSupervisorInvalid, StatusCodes.Status400BadRequest, "The supervisor must be an active teacher."),
         new(ProposalTeacherInvalid, StatusCodes.Status400BadRequest, "The chosen teacher must be an active teacher."),
         new(ReservationNotFound, StatusCodes.Status404NotFound, "Reservation not found."),
-        new(ReservationAlreadyActive, StatusCodes.Status409Conflict, "You already have an active reservation or approved topic."),
+        new(ReservationAlreadyActive, StatusCodes.Status409Conflict, "You already have a request awaiting a decision."),
         new(ReservationInvalidState, StatusCodes.Status409Conflict, "The reservation is not in a state that allows this action."),
         new(ReservationNotYours, StatusCodes.Status403Forbidden, "This reservation belongs to another student."),
         new(ReservationNotSupervisor, StatusCodes.Status403Forbidden, "Only the topic's supervisor can decide on this reservation."),
         new(SelectionClosed, StatusCodes.Status403Forbidden, "The topic selection deadline has passed."),
-        new(StudentAlreadyHasTopic, StatusCodes.Status409Conflict, "The student already has a topic."),
-        new(AssignmentStudentInvalid, StatusCodes.Status400BadRequest, "The selected student does not exist or is inactive."),
         new(StudentProfileRequired, StatusCodes.Status403Forbidden, "Only students with a profile can do this.")
     ];
 }
@@ -619,7 +631,7 @@ Expected: `0 Error(s)`.
 **Interfaces:**
 - Consumes: `UserContext`, `PersonName`, `TopicErrors`, `CommonErrors`.
 - Produces:
-  - `TopicResponse { Id, Title, Description, SupervisorId, SupervisorName, DepartmentId, DepartmentName, FacultyName, Origin, Status, ActiveReservationId?, ActiveReservationStatus?, StudentProfileId?, StudentName?, GroupName?, CreatedAt, UpdatedAt }` — `Origin`, `Status`, `ActiveReservationStatus` serialised as strings.
+  - `TopicResponse { Id, Title, Description, SupervisorId, SupervisorName, DepartmentId, DepartmentName, FacultyName, Origin, Status, ActiveReservationId?, ActiveReservationStatus?, StudentProfileId?, StudentName?, GroupCode?, CreatedAt, UpdatedAt }` — `Origin`, `Status`, `ActiveReservationStatus` serialised as strings.
   - `ITopicService.GetTopicsAsync(UserContext, TopicQuery) : Task<(IReadOnlyList<TopicResponse>? topics, string? error)>`, `GetTopicAsync(UserContext, Guid) : Task<(TopicResponse?, string?)>`, `CreateTopicAsync(UserContext, CreateTopicRequest)`, `UpdateTopicAsync(UserContext, Guid, UpdateTopicRequest)`, `DeleteTopicAsync(UserContext, Guid) : Task<(bool, string?)>`.
   - `ITopicService.GetSupervisorsAsync() : Task<IReadOnlyList<SupervisorOption>>` — active teachers `{ id, name }` ordered by name.
   - HTTP per spec §5: `GET /api/topics`, `GET /api/topics/{id}`, `POST /api/topics`, `PUT /api/topics/{id}`, `DELETE /api/topics/{id}`; plus `GET /api/topics/supervisors` (any authenticated role) so students can choose a teacher for a proposal.
@@ -647,7 +659,7 @@ public class TopicResponse
     public string? ActiveReservationStatus { get; set; }
     public Guid? StudentProfileId { get; set; }
     public string? StudentName { get; set; }
-    public string? GroupName { get; set; }
+    public string? GroupCode { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
@@ -893,7 +905,7 @@ public class TopicService : ITopicService
     public async Task<(TopicResponse? topic, string? error)> UpdateTopicAsync(UserContext user, Guid id, UpdateTopicRequest request)
     {
         var topic = await _dbContext.Topics.FirstOrDefaultAsync(t => t.Id == id);
-        var accessError = CheckEditable(user, topic);
+        var accessError = CheckUpdatable(user, topic);
         if (accessError is not null)
         {
             return (null, accessError);
@@ -905,6 +917,20 @@ public class TopicService : ITopicService
         if (validation is not null)
         {
             return (null, validation);
+        }
+
+        // An administrator may move a topic that a student already holds to another supervisor.
+        // The student's supervisor moves with it, in this same save, so the topic and the
+        // student never disagree about who supervises the work.
+        if (supervisorId != editable.SupervisorId && editable.Status != TopicStatus.Available)
+        {
+            var holder = await _dbContext.StudentProfiles
+                .FirstOrDefaultAsync(p => p.TopicId == editable.Id);
+            if (holder is not null)
+            {
+                holder.SupervisorId = supervisorId;
+                holder.UpdatedAt = DateTime.UtcNow;
+            }
         }
 
         editable.Title = request.Title.Trim();
@@ -928,7 +954,7 @@ public class TopicService : ITopicService
     public async Task<(bool success, string? error)> DeleteTopicAsync(UserContext user, Guid id)
     {
         var topic = await _dbContext.Topics.FirstOrDefaultAsync(t => t.Id == id);
-        var accessError = CheckEditable(user, topic);
+        var accessError = CheckDeletable(user, topic);
         if (accessError is not null)
         {
             return (false, accessError);
@@ -958,21 +984,54 @@ public class TopicService : ITopicService
         return teachers.Select(t => new SupervisorOption(t.Id, PersonName.Full(t))).ToList();
     }
 
-    private static string? CheckEditable(UserContext user, Topic? topic)
+    /// <summary>
+    /// Editing: an administrator may amend any topic at any status — that is how a wording,
+    /// department or supervisor is corrected once work is already under way. A teacher may still
+    /// only touch their own catalogue topics while nobody has reserved them.
+    /// </summary>
+    private static string? CheckUpdatable(UserContext user, Topic? topic)
+    {
+        var access = CheckTopicAccess(user, topic);
+        if (access is not null)
+        {
+            return access;
+        }
+
+        if (user.IsAdmin)
+        {
+            return null;
+        }
+
+        return topic!.Origin != TopicOrigin.Catalogue || topic.Status != TopicStatus.Available
+            ? TopicErrors.TopicNotEditable
+            : null;
+    }
+
+    /// <summary>
+    /// Deleting stays restricted to available catalogue topics for everyone, administrators
+    /// included: removing a topic a student is working on would strand them. Release it first.
+    /// </summary>
+    private static string? CheckDeletable(UserContext user, Topic? topic)
+    {
+        var access = CheckTopicAccess(user, topic);
+        if (access is not null)
+        {
+            return access;
+        }
+
+        return topic!.Origin != TopicOrigin.Catalogue || topic.Status != TopicStatus.Available
+            ? TopicErrors.TopicNotEditable
+            : null;
+    }
+
+    private static string? CheckTopicAccess(UserContext user, Topic? topic)
     {
         if (topic is null || (user.IsTeacher && topic.SupervisorId != user.UserId))
         {
             return user.IsTeacher && topic is not null ? TopicErrors.TopicNotOwner : TopicErrors.TopicNotFound;
         }
 
-        if (!user.IsAdmin && !user.IsTeacher)
-        {
-            return CommonErrors.Forbidden;
-        }
-
-        return topic.Origin != TopicOrigin.Catalogue || topic.Status != TopicStatus.Available
-            ? TopicErrors.TopicNotEditable
-            : null;
+        return !user.IsAdmin && !user.IsTeacher ? CommonErrors.Forbidden : null;
     }
 
     private async Task<string?> ValidateReferencesAsync(Guid departmentId, Guid? supervisorId)
@@ -1018,7 +1077,7 @@ public class TopicService : ITopicService
             ActiveReservationStatus = row.ActiveReservationStatus?.ToString(),
             StudentProfileId = showStudent ? row.StudentProfileId : null,
             StudentName = showStudent ? row.StudentName : null,
-            GroupName = showStudent ? row.GroupName : null,
+            GroupCode = showStudent ? row.GroupCode : null,
             CreatedAt = row.CreatedAt,
             UpdatedAt = row.UpdatedAt
         };
@@ -1055,9 +1114,9 @@ public class TopicService : ITopicService
             .Where(r => r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Approved)
             .Select(r => r.StudentProfile.User.LastName + " " + r.StudentProfile.User.FirstName)
             .FirstOrDefault(),
-        GroupName = t.Reservations
+        GroupCode = t.Reservations
             .Where(r => r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Approved)
-            .Select(r => r.StudentProfile.Group.Name)
+            .Select(r => r.StudentProfile.Group.Code)
             .FirstOrDefault(),
         CreatedAt = t.CreatedAt,
         UpdatedAt = t.UpdatedAt
@@ -1084,7 +1143,7 @@ public class TopicService : ITopicService
         public ReservationStatus? ActiveReservationStatus { get; init; }
         public Guid? StudentProfileId { get; init; }
         public string? StudentName { get; init; }
-        public string? GroupName { get; init; }
+        public string? GroupCode { get; init; }
         public DateTime CreatedAt { get; init; }
         public DateTime UpdatedAt { get; init; }
     }
@@ -1200,7 +1259,7 @@ Expected: `0 Error(s)`.
 ### Task 5: Reservation service and endpoints
 
 **Files:**
-- Create: `backend/DiplomaTracker.Api/DTOs/Topics/ReservationResponse.cs`, `ProposeTopicRequest.cs`, `DecisionRequest.cs`, `AssignTopicRequest.cs`
+- Create: `backend/DiplomaTracker.Api/DTOs/Topics/ReservationResponse.cs`, `ProposeTopicRequest.cs`, `DecisionRequest.cs`, `SetStudentTopicRequest.cs`
 - Create: `backend/DiplomaTracker.Api/Interfaces/IReservationService.cs`
 - Create: `backend/DiplomaTracker.Api/Services/ReservationService.cs`
 - Create: `backend/DiplomaTracker.Api/Controllers/ReservationsController.cs`
@@ -1209,9 +1268,9 @@ Expected: `0 Error(s)`.
 **Interfaces:**
 - Consumes: `ITopicSettingsService.IsSelectionOpenAsync`, `UserContext`, `PersonName`, `TopicErrors`, `SqlUpdateExceptionHelper`.
 - Produces:
-  - `ReservationResponse { Id, TopicId?, TopicTitle, TopicDescription?, Origin?, SupervisorId?, SupervisorName?, StudentProfileId, StudentName, StudentEmail, GroupName, Status, DecisionComment?, CreatedAt, DecidedAt?, CanCancel }`.
-  - `IReservationService`: `ReserveAsync(UserContext, Guid topicId)`, `ProposeAsync(UserContext, ProposeTopicRequest)`, `ApproveAsync(UserContext, Guid id)`, `RejectAsync(UserContext, Guid id, DecisionRequest)`, `CancelAsync(UserContext, Guid id)`, `ReleaseAsync(UserContext, Guid id, DecisionRequest)`, `AssignAsync(Guid topicId, AssignTopicRequest)` — each `Task<(ReservationResponse? reservation, string? error)>`; `GetMineAsync(UserContext) : Task<(IReadOnlyList<ReservationResponse>?, string?)>`; `GetForDecisionAsync(UserContext, ReservationStatus status) : Task<IReadOnlyList<ReservationResponse>>`.
-  - HTTP: `POST /api/topics/{id}/reserve` (Student), `POST /api/topics/proposals` (Student), `POST /api/reservations/{id}/approve|reject|release` (Admin, Teacher), `POST /api/reservations/{id}/cancel` (Student), `POST /api/topics/{id}/assign` (Admin), `GET /api/reservations/mine` (Student), `GET /api/reservations/pending?status=` (Admin, Teacher).
+  - `ReservationResponse { Id, TopicId?, TopicTitle, TopicDescription?, Origin?, SupervisorId?, SupervisorName?, StudentProfileId, StudentName, StudentEmail, GroupCode, Status, DecisionComment?, CreatedAt, DecidedAt?, CanCancel, CurrentTopicId?, CurrentTopicTitle? }`. `CurrentTopic*` is filled only for a `Pending` request whose student already holds an approved topic — a change request.
+  - `IReservationService`: `ReserveAsync(UserContext, Guid topicId)`, `ProposeAsync(UserContext, ProposeTopicRequest)`, `ApproveAsync(UserContext, Guid id)`, `RejectAsync(UserContext, Guid id, DecisionRequest)`, `CancelAsync(UserContext, Guid id)`, `ReleaseAsync(UserContext, Guid id, DecisionRequest)`, `SetStudentTopicAsync(Guid studentId, Guid? topicId)` — each `Task<(ReservationResponse? reservation, string? error)>`; `GetMineAsync(UserContext) : Task<(IReadOnlyList<ReservationResponse>?, string?)>`; `GetForDecisionAsync(UserContext, ReservationStatus status) : Task<IReadOnlyList<ReservationResponse>>`.
+  - HTTP: `POST /api/topics/{id}/reserve` (Student), `POST /api/topics/proposals` (Student), `POST /api/reservations/{id}/approve|reject|release` (Admin, Teacher), `POST /api/reservations/{id}/cancel` (Student), `PUT /api/students/{id}/topic` (Admin), `GET /api/reservations/mine` (Student), `GET /api/reservations/pending?status=` (Admin, Teacher).
 
 - [ ] **Step 1: Create the contracts**
 
@@ -1232,12 +1291,20 @@ public class ReservationResponse
     public Guid StudentProfileId { get; set; }
     public string StudentName { get; set; } = string.Empty;
     public string StudentEmail { get; set; } = string.Empty;
-    public string GroupName { get; set; } = string.Empty;
+    public string GroupCode { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public string? DecisionComment { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? DecidedAt { get; set; }
     public bool CanCancel { get; set; }
+
+    /// <summary>
+    /// The topic the student holds today, when this is a <c>Pending</c> request from a student
+    /// who already has one — that is, a change request. Null otherwise. It lets a teacher see
+    /// what the student would give up before deciding, and the student's own card name both.
+    /// </summary>
+    public Guid? CurrentTopicId { get; set; }
+    public string? CurrentTopicTitle { get; set; }
 }
 ```
 
@@ -1274,14 +1341,15 @@ public class DecisionRequest
 }
 ```
 
-`DTOs/Topics/AssignTopicRequest.cs`:
+`DTOs/Topics/SetStudentTopicRequest.cs`:
 
 ```csharp
 namespace DiplomaTracker.Api.DTOs.Topics;
 
-public class AssignTopicRequest
+public class SetStudentTopicRequest
 {
-    public Guid StudentId { get; set; }
+    /// <summary>The topic to give the student, or null to leave them without one.</summary>
+    public Guid? TopicId { get; set; }
 }
 ```
 
@@ -1302,7 +1370,7 @@ public interface IReservationService
     Task<(ReservationResponse? reservation, string? error)> RejectAsync(UserContext user, Guid reservationId, DecisionRequest request);
     Task<(ReservationResponse? reservation, string? error)> CancelAsync(UserContext user, Guid reservationId);
     Task<(ReservationResponse? reservation, string? error)> ReleaseAsync(UserContext user, Guid reservationId, DecisionRequest request);
-    Task<(ReservationResponse? reservation, string? error)> AssignAsync(Guid topicId, AssignTopicRequest request);
+    Task<(ReservationResponse? reservation, string? error)> SetStudentTopicAsync(Guid studentId, Guid? topicId);
     Task<(IReadOnlyList<ReservationResponse>? reservations, string? error)> GetMineAsync(UserContext user);
     Task<IReadOnlyList<ReservationResponse>> GetForDecisionAsync(UserContext user, ReservationStatus status);
 }
@@ -1356,6 +1424,11 @@ public class ReservationService : IReservationService
         if (topic.DepartmentId != student.Group.DepartmentId)
         {
             return (null, TopicErrors.TopicNotInYourDepartment);
+        }
+
+        if (student.TopicId == topic.Id)
+        {
+            return (null, TopicErrors.TopicAlreadyYours);
         }
 
         if (topic.Status != TopicStatus.Available || !topic.Supervisor.IsActive)
@@ -1442,12 +1515,23 @@ public class ReservationService : IReservationService
             return (null, error);
         }
 
-        if (reservation!.StudentProfile.TopicId is not null)
-        {
-            return (null, TopicErrors.StudentAlreadyHasTopic);
-        }
-
         var now = DateTime.UtcNow;
+
+        // Approving a request from a student who already holds a topic is approving a change
+        // request: the topic they are leaving goes back to the catalogue, or disappears if they
+        // had proposed it.
+        //
+        // The release must be saved BEFORE the new reservation becomes Approved. Both rows are
+        // keyed by the same student under IX_TopicReservations_ApprovedPerStudent, so doing both
+        // in one SaveChanges transiently violates that index whenever EF emits the new row's
+        // UPDATE before the old one's — which it is free to do, so the failure is intermittent
+        // and surfaces as a bogus reservation.invalidState. The transaction keeps the pair
+        // atomic: a student is never left between topics, and nothing commits unless both do.
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+
+        await ReleaseCurrentTopicAsync(reservation!.StudentProfileId, now, null);
+        await _dbContext.SaveChangesAsync();
+
         reservation.Status = ReservationStatus.Approved;
         reservation.DecidedAt = now;
         reservation.Topic!.Status = TopicStatus.Approved;
@@ -1456,7 +1540,13 @@ public class ReservationService : IReservationService
         reservation.StudentProfile.SupervisorId = reservation.Topic.SupervisorId;
         reservation.StudentProfile.UpdatedAt = now;
 
-        return await SaveDecisionAsync(reservation.Id, user);
+        var result = await SaveDecisionAsync(reservation.Id, user);
+        if (result.error is null)
+        {
+            await transaction.CommitAsync();
+        }
+
+        return result;
     }
 
     public async Task<(ReservationResponse? reservation, string? error)> RejectAsync(UserContext user, Guid reservationId, DecisionRequest request)
@@ -1490,7 +1580,10 @@ public class ReservationService : IReservationService
             return (null, TopicErrors.ReservationNotYours);
         }
 
-        if (!await _settings.IsSelectionOpenAsync())
+        // The deadline blocks cancelling a first reservation, but not withdrawing a change
+        // request: a student who already holds a topic is revising, not still choosing.
+        if (!await _settings.IsSelectionOpenAsync()
+            && !await HasApprovedReservationAsync(reservation.StudentProfileId))
         {
             return (null, TopicErrors.SelectionClosed);
         }
@@ -1529,42 +1622,74 @@ public class ReservationService : IReservationService
         return await SaveDecisionAsync(reservation.Id, user);
     }
 
-    public async Task<(ReservationResponse? reservation, string? error)> AssignAsync(Guid topicId, AssignTopicRequest request)
+    /// <summary>
+    /// The administrator's way of setting a student's topic outright, from the student form.
+    /// It replaces rather than refuses: a request awaiting a decision is cancelled and a topic
+    /// the student already holds is released, all in the same save, because a topic set by an
+    /// administrator is a decision, not a request. A null <paramref name="topicId"/> clears the
+    /// student's topic and supervisor.
+    /// </summary>
+    public async Task<(ReservationResponse? reservation, string? error)> SetStudentTopicAsync(Guid studentId, Guid? topicId)
     {
-        var topic = await _dbContext.Topics
-            .Include(t => t.Supervisor)
-            .FirstOrDefaultAsync(t => t.Id == topicId);
-
-        if (topic is null)
-        {
-            return (null, TopicErrors.TopicNotFound);
-        }
-
-        if (topic.Origin != TopicOrigin.Catalogue || topic.Status != TopicStatus.Available || !topic.Supervisor.IsActive)
-        {
-            return (null, TopicErrors.TopicNotAvailable);
-        }
-
         var student = await _dbContext.StudentProfiles
             .Include(p => p.User)
-            .FirstOrDefaultAsync(p => p.Id == request.StudentId && p.User.Role == "Student" && p.User.IsActive);
+            .FirstOrDefaultAsync(p => p.Id == studentId && p.User.Role == "Student");
 
         if (student is null)
         {
-            return (null, TopicErrors.AssignmentStudentInvalid);
+            return (null, OnboardingErrors.StudentNotFound);
         }
 
-        if (student.TopicId is not null)
+        if (student.ArchivedAt is not null)
         {
-            return (null, TopicErrors.StudentAlreadyHasTopic);
-        }
-
-        if (await HasActiveReservationAsync(student.Id))
-        {
-            return (null, TopicErrors.ReservationAlreadyActive);
+            return (null, OnboardingErrors.StudentArchived);
         }
 
         var now = DateTime.UtcNow;
+
+        Topic? topic = null;
+        if (topicId is not null)
+        {
+            topic = await _dbContext.Topics
+                .Include(t => t.Supervisor)
+                .FirstOrDefaultAsync(t => t.Id == topicId.Value);
+
+            if (topic is null)
+            {
+                return (null, TopicErrors.TopicNotFound);
+            }
+
+            if (topic.Id == student.TopicId)
+            {
+                return (null, TopicErrors.TopicAlreadyYours);
+            }
+
+            if (topic.Origin != TopicOrigin.Catalogue || topic.Status != TopicStatus.Available || !topic.Supervisor.IsActive)
+            {
+                return (null, TopicErrors.TopicNotAvailable);
+            }
+        }
+
+        // Same two-phase rule as ApproveAsync, for the same reason: the row being released and
+        // the row being created are both this student's under
+        // IX_TopicReservations_ApprovedPerStudent, so what they displace must be saved before
+        // the replacement is written. The transaction keeps the whole assignment atomic.
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+
+        await CancelPendingRequestAsync(student.Id, now);
+        await ReleaseCurrentTopicAsync(student.Id, now, null);
+        await _dbContext.SaveChangesAsync();
+
+        if (topic is null)
+        {
+            student.TopicId = null;
+            student.SupervisorId = null;
+            student.UpdatedAt = now;
+            await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return (null, null);
+        }
+
         topic.Status = TopicStatus.Approved;
         topic.UpdatedAt = now;
         student.TopicId = topic.Id;
@@ -1584,9 +1709,38 @@ public class ReservationService : IReservationService
         _dbContext.TopicReservations.Add(reservation);
 
         var conflict = await SaveRequestAsync(student.Id, TopicErrors.TopicNotAvailable);
-        return conflict is not null
-            ? (null, conflict)
-            : (await LoadResponseAsync(reservation.Id, new UserContext(Guid.Empty, "Admin")), null);
+        if (conflict is not null)
+        {
+            return (null, conflict);
+        }
+
+        await transaction.CommitAsync();
+        return (await LoadResponseAsync(reservation.Id, new UserContext(Guid.Empty, "Admin")), null);
+    }
+
+    /// <summary>
+    /// Withdraws a request awaiting a decision because an administrator has decided instead.
+    /// A topic the student had proposed disappears with it; a catalogue topic goes back to
+    /// <c>Available</c>. The caller saves.
+    /// </summary>
+    private async Task CancelPendingRequestAsync(Guid studentProfileId, DateTime now)
+    {
+        var pending = await _dbContext.TopicReservations
+            .Include(r => r.Topic)
+            .FirstOrDefaultAsync(r => r.StudentProfileId == studentProfileId
+                && r.Status == ReservationStatus.Pending);
+        if (pending is null)
+        {
+            return;
+        }
+
+        pending.Status = ReservationStatus.Cancelled;
+        pending.DecidedAt = now;
+
+        if (pending.Topic is not null)
+        {
+            ReturnOrRemoveTopic(pending.Topic, now);
+        }
     }
 
     public async Task<(IReadOnlyList<ReservationResponse>? reservations, string? error)> GetMineAsync(UserContext user)
@@ -1601,7 +1755,10 @@ public class ReservationService : IReservationService
             return (null, TopicErrors.StudentProfileRequired);
         }
 
-        var selectionOpen = await _settings.IsSelectionOpenAsync();
+        // A student who already holds a topic may cancel a change request after the deadline —
+        // the deadline governs choosing a topic, not revising the choice.
+        var selectionOpen = await _settings.IsSelectionOpenAsync()
+            || await HasApprovedReservationAsync(studentId.Value);
         var rows = await QueryRows(r => r.StudentProfileId == studentId)
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync();
@@ -1628,20 +1785,65 @@ public class ReservationService : IReservationService
             .FirstOrDefaultAsync(p => p.UserId == userId && p.User.Role == "Student" && p.User.IsActive);
     }
 
+    /// <summary>
+    /// A student may ask for a topic whenever nothing of theirs is awaiting a decision. Already
+    /// holding an approved topic is not an obstacle — such a request is a change request, and the
+    /// selection deadline does not bind it: the deadline exists to make everyone choose
+    /// something by a date, not to freeze the choice for the rest of the year.
+    /// </summary>
     private async Task<string?> CheckStudentMayRequestAsync(Guid studentProfileId)
     {
-        if (!await _settings.IsSelectionOpenAsync())
+        if (await HasPendingReservationAsync(studentProfileId))
+        {
+            return TopicErrors.ReservationAlreadyActive;
+        }
+
+        if (!await HasApprovedReservationAsync(studentProfileId) && !await _settings.IsSelectionOpenAsync())
         {
             return TopicErrors.SelectionClosed;
         }
 
-        return await HasActiveReservationAsync(studentProfileId) ? TopicErrors.ReservationAlreadyActive : null;
+        return null;
     }
 
-    private Task<bool> HasActiveReservationAsync(Guid studentProfileId)
+    private Task<bool> HasPendingReservationAsync(Guid studentProfileId)
     {
         return _dbContext.TopicReservations.AnyAsync(r => r.StudentProfileId == studentProfileId
-            && (r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Approved));
+            && r.Status == ReservationStatus.Pending);
+    }
+
+    private Task<bool> HasApprovedReservationAsync(Guid studentProfileId)
+    {
+        return _dbContext.TopicReservations.AnyAsync(r => r.StudentProfileId == studentProfileId
+            && r.Status == ReservationStatus.Approved);
+    }
+
+    /// <summary>
+    /// Settles the approved topic a student is leaving behind: the reservation becomes
+    /// <c>Released</c>, a catalogue topic returns to <c>Available</c> for someone else, and a
+    /// topic the student had proposed is deleted, since a proposal never enters the catalogue.
+    /// Called when a change request is approved and when an administrator assigns a topic over
+    /// an existing one. The caller saves.
+    /// </summary>
+    private async Task ReleaseCurrentTopicAsync(Guid studentProfileId, DateTime now, string? comment)
+    {
+        var current = await _dbContext.TopicReservations
+            .Include(r => r.Topic)
+            .FirstOrDefaultAsync(r => r.StudentProfileId == studentProfileId
+                && r.Status == ReservationStatus.Approved);
+        if (current is null)
+        {
+            return;
+        }
+
+        current.Status = ReservationStatus.Released;
+        current.DecisionComment = comment;
+        current.DecidedAt = now;
+
+        if (current.Topic is not null)
+        {
+            ReturnOrRemoveTopic(current.Topic, now);
+        }
     }
 
     private async Task<TopicReservation?> LoadForDecisionAsync(Guid reservationId)
@@ -1699,7 +1901,14 @@ public class ReservationService : IReservationService
         catch (DbUpdateException exception) when (exception.IsUniqueConstraintViolation())
         {
             _dbContext.ChangeTracker.Clear();
-            return await HasActiveReservationAsync(studentProfileId)
+
+            // Which per-student index was hit decides the message, and only the *pending* one
+            // can be: reserve and propose insert a Pending row, and the one path that inserts an
+            // Approved row releases the previous one in the same save. Asking whether the student
+            // has any active reservation would misreport the common change-request race — a
+            // student who legitimately holds an approved topic and loses the race for the topic
+            // they asked for would be told they already have a request, not that the topic went.
+            return await HasPendingReservationAsync(studentProfileId)
                 ? TopicErrors.ReservationAlreadyActive
                 : topicConflictError;
         }
@@ -1755,11 +1964,19 @@ public class ReservationService : IReservationService
                 StudentFirstName = r.StudentProfile.User.FirstName,
                 StudentPatronymic = r.StudentProfile.User.Patronymic,
                 StudentEmail = r.StudentProfile.User.Email,
-                GroupName = r.StudentProfile.Group.Name,
+                GroupCode = r.StudentProfile.Group.Code,
                 Status = r.Status,
                 DecisionComment = r.DecisionComment,
                 CreatedAt = r.CreatedAt,
-                DecidedAt = r.DecidedAt
+                DecidedAt = r.DecidedAt,
+                // The topic the student holds right now. ToResponse turns this into
+                // CurrentTopicId/CurrentTopicTitle for a pending request against a different
+                // topic — the change-request indicator the teacher's list and the student's
+                // card both read. Omitting it here leaves that indicator silently null.
+                StudentCurrentTopicId = r.StudentProfile.TopicId,
+                StudentCurrentTopicTitle = r.StudentProfile.Topic != null
+                    ? r.StudentProfile.Topic.Title
+                    : null
             });
     }
 
@@ -1767,6 +1984,10 @@ public class ReservationService : IReservationService
     {
         static string JoinName(params string?[] parts) =>
             string.Join(' ', parts.Where(part => !string.IsNullOrWhiteSpace(part)));
+
+        var isChangeRequest = row.Status == ReservationStatus.Pending
+            && row.StudentCurrentTopicId is not null
+            && row.StudentCurrentTopicId != row.TopicId;
 
         return new ReservationResponse
         {
@@ -1780,12 +2001,16 @@ public class ReservationService : IReservationService
             StudentProfileId = row.StudentProfileId,
             StudentName = JoinName(row.StudentLastName, row.StudentFirstName, row.StudentPatronymic),
             StudentEmail = row.StudentEmail,
-            GroupName = row.GroupName,
+            GroupCode = row.GroupCode,
             Status = row.Status.ToString(),
             DecisionComment = row.DecisionComment,
             CreatedAt = row.CreatedAt,
             DecidedAt = row.DecidedAt,
-            CanCancel = canCancel
+            CanCancel = canCancel,
+            // Only a pending request from a student who already holds a different topic is a
+            // change request; everything else leaves these null.
+            CurrentTopicId = isChangeRequest ? row.StudentCurrentTopicId : null,
+            CurrentTopicTitle = isChangeRequest ? row.StudentCurrentTopicTitle : null
         };
     }
 
@@ -1805,11 +2030,21 @@ public class ReservationService : IReservationService
         public string StudentFirstName { get; init; } = string.Empty;
         public string? StudentPatronymic { get; init; }
         public string StudentEmail { get; init; } = string.Empty;
-        public string GroupName { get; init; } = string.Empty;
+        public string GroupCode { get; init; } = string.Empty;
         public ReservationStatus Status { get; init; }
         public string? DecisionComment { get; init; }
         public DateTime CreatedAt { get; init; }
         public DateTime? DecidedAt { get; init; }
+
+        /// <summary>
+        /// The topic the student holds right now, projected from
+        /// <c>StudentProfile.Topic</c>. <see cref="ToResponse"/> copies it into
+        /// <c>CurrentTopicId</c>/<c>CurrentTopicTitle</c> only when this row is
+        /// <c>Pending</c> and the held topic is a different one — that is, when the row is a
+        /// change request — and leaves both null otherwise.
+        /// </summary>
+        public Guid? StudentCurrentTopicId { get; init; }
+        public string? StudentCurrentTopicTitle { get; init; }
     }
 }
 ```
@@ -1867,11 +2102,6 @@ public class ReservationsController : ApiControllerBase
     public Task<IActionResult> Release(Guid id, [FromBody] DecisionRequest request) =>
         Run(user => _reservationService.ReleaseAsync(user, id, request));
 
-    [Authorize(Roles = "Admin")]
-    [HttpPost("/api/topics/{topicId:guid}/assign")]
-    public Task<IActionResult> Assign(Guid topicId, [FromBody] AssignTopicRequest request) =>
-        Run(_ => _reservationService.AssignAsync(topicId, request));
-
     [Authorize(Roles = "Student")]
     [HttpGet("mine")]
     public async Task<IActionResult> Mine()
@@ -1910,7 +2140,30 @@ public class ReservationsController : ApiControllerBase
 }
 ```
 
-- [ ] **Step 5: Register and build**
+- [ ] **Step 5: Add the assignment action to `Controllers/StudentsController.cs`**
+
+Administrator assignment is a student action, so it belongs on `StudentsController` beside the
+existing `PUT /api/students/{id}/group` and `PUT /api/students/{id}/supervisor` — **not** on
+`ReservationsController`. Inject `IReservationService` alongside the services already there and
+add:
+
+```csharp
+    [Authorize(Roles = "Admin")]
+    [HttpPut("{id:guid}/topic")]
+    public async Task<IActionResult> SetTopic(Guid id, [FromBody] SetStudentTopicRequest request)
+    {
+        var (reservation, error) = await _reservationService.SetStudentTopicAsync(id, request.TopicId);
+        if (error is not null)
+        {
+            return ErrorResult(error);
+        }
+
+        // Clearing a student's topic settles the old reservation and creates no new one.
+        return reservation is null ? NoContent() : Ok(reservation);
+    }
+```
+
+- [ ] **Step 6: Register and build**
 
 In `Program.cs` add `builder.Services.AddScoped<IReservationService, ReservationService>();`.
 
@@ -1996,6 +2249,7 @@ async function createStudent(suffix) {
 const s1 = await createStudent('A')
 const s2 = await createStudent('B')
 const s3 = await createStudent('C')
+const s4 = await createStudent('D') // used only for the change-request sequence
 
 const teacher2Email = `teacher2.${stamp}@diploma.local`
 const teacher2Id = (await call('POST', '/api/teachers', { token: admin, json: { firstName: 'Second', lastName: 'Teacher', email: teacher2Email, password: 'Teacher456!' } })).body.id
@@ -2009,6 +2263,10 @@ check('01 teacher creates topic', t1.status, 201)
 const t2 = (await call('POST', '/api/topics', { token: teacher, json: { title: `Topic Two ${stamp}`, departmentId } })).body
 const t4 = (await call('POST', '/api/topics', { token: admin, json: { title: `Topic Four ${stamp}`, departmentId, supervisorId: teacherId } })).body
 const t5 = (await call('POST', '/api/topics', { token: teacher2, json: { title: `Topic Five ${stamp}`, departmentId } })).body
+// t6, t7 and t8 are all supervised by `teacher` so one token decides every change request
+const t6 = (await call('POST', '/api/topics', { token: teacher, json: { title: `Topic Six ${stamp}`, departmentId } })).body
+const t7 = (await call('POST', '/api/topics', { token: teacher, json: { title: `Topic Seven ${stamp}`, departmentId } })).body
+const t8 = (await call('POST', '/api/topics', { token: teacher, json: { title: `Topic Eight ${stamp}`, departmentId } })).body
 check('02 admin topic without supervisor refused', (await call('POST', '/api/topics', { token: admin, json: { title: 'X', departmentId } })).body.code, 'topic.supervisorInvalid')
 check('03a supervisors list for student', (await call('GET', '/api/topics/supervisors', { token: s1.token })).body.some((t) => t.id === teacherId), true)
 check('03 unknown department refused', (await call('POST', '/api/topics', { token: teacher, json: { title: 'X', departmentId: '00000000-0000-0000-0000-000000000001' } })).body.code, 'topic.departmentInvalid')
@@ -2039,7 +2297,13 @@ check('14 approve', (await call('POST', `/api/reservations/${r1b.id}/approve`, {
 const s1Profile = (await call('GET', `/api/students/${s1.id}`, { token: admin })).body
 check('15 student topic set', s1Profile.topicTitle, `Topic One ${stamp}`)
 check('16 student supervisor set', s1Profile.supervisorId, teacherId)
-check('17 approved topic not editable', (await call('PUT', `/api/topics/${t1.body.id}`, { token: teacher, json: { title: 'Changed', departmentId } })).body.code, 'topic.notEditable')
+check('17 approved topic not editable by its teacher', (await call('PUT', `/api/topics/${t1.body.id}`, { token: teacher, json: { title: 'Changed', departmentId } })).body.code, 'topic.notEditable')
+check('17a admin edits an approved topic', (await call('PUT', `/api/topics/${t1.body.id}`, { token: admin, json: { title: `Topic One Amended ${stamp}`, departmentId, supervisorId: teacher2Id } })).status, 200)
+check('17b student supervisor moved with the topic', (await call('GET', `/api/students/${s1.id}`, { token: admin })).body.supervisorId, teacher2Id)
+check('17c history keeps the original title', (await call('GET', '/api/reservations/mine', { token: s1.token })).body[0].topicTitle, `Topic One ${stamp}`)
+check('17d approved topic cannot be deleted', (await call('DELETE', `/api/topics/${t1.body.id}`, { token: admin })).body.code, 'topic.notEditable')
+// put the supervisor back so the remaining checks read as before
+await call('PUT', `/api/topics/${t1.body.id}`, { token: admin, json: { title: `Topic One ${stamp}`, departmentId, supervisorId: teacherId } })
 check('18 cancel approved refused', (await call('POST', `/api/reservations/${r1b.id}/cancel`, { token: s1.token })).body.code, 'reservation.invalidState')
 check('19 release', (await call('POST', `/api/reservations/${r1b.id}/release`, { token: teacher, json: { comment: 'Changed plans' } })).body.status, 'Released')
 check('20 student topic cleared', (await call('GET', `/api/students/${s1.id}`, { token: admin })).body.topicId, null)
@@ -2072,16 +2336,62 @@ const statuses = race.map((r) => r.status).sort().join(',')
 check('32 concurrent reserve: one wins', statuses, '200,409')
 const loser = race[0].status === 409 ? s2 : s3
 
-// Assignment
-const assigned = await call('POST', `/api/topics/${t4.id}/assign`, { token: admin, json: { studentId: loser.id } })
+// Assignment from the student form
+const assigned = await call('PUT', `/api/students/${loser.id}/topic`, { token: admin, json: { topicId: t4.id } })
 check('33 admin assigns topic', assigned.body.status, 'Approved')
-check('34 assign to student with topic refused', (await call('POST', `/api/topics/${t5.id}/assign`, { token: admin, json: { studentId: loser.id } })).body.code, 'student.alreadyHasTopic')
+check('34 assigning again replaces the topic', (await call('PUT', `/api/students/${loser.id}/topic`, { token: admin, json: { topicId: t5.id } })).body.topicId, t5.id)
+check('35 the displaced topic is available again', (await call('GET', `/api/topics/${t4.id}`, { token: admin })).body.status, 'Available')
+check('36 assigning the topic already held refused', (await call('PUT', `/api/students/${loser.id}/topic`, { token: admin, json: { topicId: t5.id } })).body.code, 'topic.alreadyYours')
+check('37 clearing the topic', (await call('PUT', `/api/students/${loser.id}/topic`, { token: admin, json: { topicId: null } })).status, 204)
+check('38 student has no topic', (await call('GET', `/api/students/${loser.id}`, { token: admin })).body.topicId, null)
+check('39 the cleared topic is available again', (await call('GET', `/api/topics/${t5.id}`, { token: admin })).body.status, 'Available')
+
+// Change requests: a student with an approved topic asks for another one
+const ch1 = (await call('POST', `/api/topics/${t6.id}/reserve`, { token: s4.token })).body
+await call('POST', `/api/reservations/${ch1.id}/approve`, { token: teacher })
+check('40 change request allowed while holding a topic', (await call('POST', `/api/topics/${t7.id}/reserve`, { token: s4.token })).status, 200)
+const ch2 = (await call('GET', '/api/reservations/mine', { token: s4.token })).body.find((r) => r.status === 'Pending')
+check('41 the held topic is still approved', (await call('GET', `/api/topics/${t6.id}`, { token: admin })).body.status, 'Approved')
+check('42 only one request at a time', (await call('POST', `/api/topics/${t8.id}/reserve`, { token: s4.token })).body.code, 'reservation.alreadyActive')
+check('43 rejecting a change leaves the old topic', (await call('POST', `/api/reservations/${ch2.id}/reject`, { token: teacher, json: { comment: 'Not my field' } })).body.status, 'Rejected')
+check('44 student keeps the original topic', (await call('GET', `/api/students/${s4.id}`, { token: admin })).body.topicId, t6.id)
+check('45 requesting the topic already held refused', (await call('POST', `/api/topics/${t6.id}/reserve`, { token: s4.token })).body.code, 'topic.alreadyYours')
+const ch3 = (await call('POST', `/api/topics/${t7.id}/reserve`, { token: s4.token })).body
+check('46 approving a change moves the student', (await call('POST', `/api/reservations/${ch3.id}/approve`, { token: teacher })).body.status, 'Approved')
+check('47 the old topic returns to the catalogue', (await call('GET', `/api/topics/${t6.id}`, { token: admin })).body.status, 'Available')
+check('48 student now holds the new topic', (await call('GET', `/api/students/${s4.id}`, { token: admin })).body.topicId, t7.id)
+check('49 the old reservation is Released', (await call('GET', '/api/reservations/mine', { token: s4.token })).body.some((r) => r.topicId === t6.id && r.status === 'Released'), true)
+
+// Approving a change request releases one reservation and approves another, both keyed by the
+// same student under IX_TopicReservations_ApprovedPerStudent. A single-save implementation
+// violates that index only when EF happens to order the statements badly, so one pass proves
+// nothing — repeat the swap enough times to catch it.
+let swapsOk = true
+let held = t7.id
+for (let i = 0; i < 6 && swapsOk; i++) {
+  const wanted = held === t7.id ? t6.id : t7.id
+  const req = (await call('POST', `/api/topics/${wanted}/reserve`, { token: s4.token })).body
+  const decided = await call('POST', `/api/reservations/${req.id}/approve`, { token: teacher })
+  if (decided.body.status !== 'Approved') {
+    swapsOk = false
+    console.log(`    swap ${i + 1} failed:`, JSON.stringify(decided.body))
+    break
+  }
+  held = wanted
+}
+check('49a six consecutive topic changes all approve', swapsOk, true)
+check('49b student holds the last topic asked for', (await call('GET', `/api/students/${s4.id}`, { token: admin })).body.topicId, held)
+
+// The deadline closes first-time selection but not changes
+await call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: '2000-01-01T00:00:00Z' } })
+check('50 closed selection still allows a change request', (await call('POST', `/api/topics/${t8.id}/reserve`, { token: s4.token })).status, 200)
+await call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: null } })
 
 // Teacher lists and deletion
-check('35 pending list for teacher', (await call('GET', '/api/reservations/pending', { token: teacher })).body.every((r) => r.status === 'Pending'), true)
-check('36 approved list for teacher', (await call('GET', '/api/reservations/pending?status=Approved', { token: teacher })).body.some((r) => r.topicId === t4.id), true)
-check('37 teacher cannot delete other teacher topic', (await call('DELETE', `/api/topics/${t5.id}`, { token: teacher })).body.code, 'topic.notOwner')
-check('38 teacher deletes own available topic', (await call('DELETE', `/api/topics/${t1.body.id}`, { token: teacher })).status, 204)
+check('51 pending list for teacher', (await call('GET', '/api/reservations/pending', { token: teacher })).body.every((r) => r.status === 'Pending'), true)
+check('52 approved list for teacher', (await call('GET', '/api/reservations/pending?status=Approved', { token: teacher })).body.some((r) => r.topicId === t7.id), true)
+check('53 teacher cannot delete other teacher topic', (await call('DELETE', `/api/topics/${t5.id}`, { token: teacher })).body.code, 'topic.notOwner')
+check('54 teacher deletes own available topic', (await call('DELETE', `/api/topics/${t1.body.id}`, { token: teacher })).status, 204)
 
 const passed = results.filter(Boolean).length
 console.log(`\n${passed}/${results.length} checks passed`)
@@ -2143,7 +2453,7 @@ export type Topic = {
   activeReservationStatus: ReservationStatus | null
   studentProfileId: string | null
   studentName: string | null
-  groupName: string | null
+  groupCode: string | null
   createdAt: string
   updatedAt: string
 }
@@ -2173,12 +2483,15 @@ export type Reservation = {
   studentProfileId: string
   studentName: string
   studentEmail: string
-  groupName: string
+  groupCode: string
   status: ReservationStatus
   decisionComment: string | null
   createdAt: string
   decidedAt: string | null
   canCancel: boolean
+  /** Set only on a pending change request: the topic the student holds today. */
+  currentTopicId: string | null
+  currentTopicTitle: string | null
 }
 
 export type ProposeTopicRequest = {
@@ -2267,8 +2580,9 @@ export function releaseReservation(id: string, comment?: string): Promise<Reserv
   return apiRequest<Reservation>(`/api/reservations/${id}/release`, { method: 'POST', body: JSON.stringify({ comment }) })
 }
 
-export function assignTopic(topicId: string, studentId: string): Promise<Reservation> {
-  return apiRequest<Reservation>(`/api/topics/${topicId}/assign`, { method: 'POST', body: JSON.stringify({ studentId }) })
+/** Sets a student's topic outright; `null` leaves them without one. Admin only. */
+export function setStudentTopic(studentId: string, topicId: string | null): Promise<void> {
+  return apiRequest<void>(`/api/students/${studentId}/topic`, { method: 'PUT', body: JSON.stringify({ topicId }) })
 }
 
 export function getMyReservations(): Promise<Reservation[]> {
@@ -2307,6 +2621,7 @@ export const navigationByRole: Record<Role, NavItem[]> = {
     { to: '/admin/groups', labelKey: 'nav.groups' },
     { to: '/admin/students', labelKey: 'nav.students' },
     { to: '/admin/teachers', labelKey: 'nav.teachers' },
+    { to: '/admins', labelKey: 'nav.admins' },
     { to: '/admin/topics', labelKey: 'nav.topics' },
     { to: '/task-templates', labelKey: 'nav.taskTemplates' },
     { to: '/admin/settings', labelKey: 'nav.settings' }
@@ -2344,13 +2659,13 @@ Shared page rules from the design system plan (Tasks 9–12 section) apply.
 - `TopicFormModal({ open, mode: 'create'|'edit', initial?: Topic, showSupervisor: boolean, departments: Department[], teachers: Teacher[], onClose, onSaved })`: fields title (`maxLength` 300), description `Textarea` (`maxLength` 4000), department `Select` (label `{{name}} · {{facultyName}}`, required), supervisor `Select` of active teachers shown only when `showSupervisor`; submits `createTopic`/`updateTopic`; errors via `useErrorMessage` inline at the top of the modal.
 - `DecisionCommentModal({ open, title, confirmLabel, tone, onConfirm(comment?: string), onClose, loading })`: optional `Textarea` `maxLength` 1000.
 - `TopicDetailsModal({ topic, open, onClose, footer? })`: title, supervisor, department · faculty, status badge, full description (`whitespace-pre-line`).
-- `MyTopicCard()`: loads `getMyReservations()`; shows the latest `Pending` or `Approved` reservation (title, `ReservationStatusBadge`, supervisor, `topics.cancel` button when `canCancel`, `ConfirmDialog` `topics.cancelConfirm`); if none is active, shows `topics.noTopicYet` with a primary button to `/student/topics`; when the latest reservation overall is `Rejected` and has a comment, shows `topics.lastRejected` with the comment in a `bg-warning-soft` block.
-- `StudentTopicsPage` (`/student/topics`): `PageHeader` `topics.catalogueTitle`, description shows the deadline (`topics.deadlineInfo` with formatted date, or `topics.noDeadline`), action `topics.propose` (secondary, `Lightbulb`) disabled when selection is closed or an active reservation exists. `MyTopicCard` at the top. Filters row: `TextField` search (debounced 300 ms via `setTimeout` in an effect) and supervisor `Select` from `getTopicSupervisors()` plus `{ value: '', label: t('topics.allSupervisors') }`. `DataTable` columns: title (click opens `TopicDetailsModal`), supervisor, status badge, action `topics.reserve` (primary `sm`) disabled with `title={t('topics.reserveDisabled')}` when not allowed. Reserve asks `ConfirmDialog` `topics.reserveConfirm` (tone primary). Propose `Modal`: title (`maxLength` 300), description (`Textarea`, `maxLength` 4000), teacher `Select` from `getTopicSupervisors()` (label is the teacher's full name); if the list is empty the selector is replaced by `topics.noTeachersAvailable`. When selection is closed, an `EmptyState` with `CalendarX` and `topics.selectionClosed` replaces the actions.
-- `TeacherTopicsPage` (`/teacher/topics`): `PageHeader` `topics.myTopicsTitle` with action `topics.addTopic`. Card `topics.requestsTitle`: `DataTable` of `getReservationsForDecision('Pending')` — columns student (name, group muted), topic (title; `Badge` neutral `topics.proposalBadge` when origin is `StudentProposal`), requested at, actions `topics.approve` (primary `sm`, `ConfirmDialog` tone primary) and `topics.reject` (secondary `sm`, `DecisionCommentModal`). Card `topics.approvedTitle`: `getReservationsForDecision('Approved')` with student, topic, decided at, action `topics.release` (`DecisionCommentModal`, tone danger). Card `topics.catalogueCard`: `DataTable` of own topics (title, department, status badge, student name when reserved/approved, actions edit/delete enabled only for `Available` catalogue topics). Departments for the form come from `getDepartments()` (all departments, any authenticated user).
-- `AdminTopicsPage` (`/admin/topics`): `PageHeader` `topics.adminTitle` with action `topics.addTopic`. Filters: search, department `Select`, supervisor `Select` (from `getTeachers()`), status `SegmentedControl` (`all`, `Available`, `Reserved`, `Approved`). `DataTable` columns: title, supervisor, department, status, student (name · group), actions: edit/delete for available catalogue topics, `topics.assign` for available catalogue topics (opens `Modal` with a student `Select` of active students without `topicId` from `getStudents()`), `topics.release` when `activeReservationStatus` is `Approved`, approve/reject when `Pending`. Uses `TopicFormModal` with `showSupervisor`.
+- `MyTopicCard()`: loads `getMyReservations()`. A student may have **both** an `Approved` reservation and a `Pending` one — that pair is a change request — so the card renders them together, not as alternatives: the approved topic first (title, `ReservationStatusBadge`, supervisor), then, when a `Pending` one exists, a `topics.changeRequested` block beneath it naming the topic asked for, its prospective supervisor, and `topics.cancel` when `canCancel` (`ConfirmDialog` `topics.cancelConfirm`). A student with only a `Pending` reservation sees it alone in the same place. If neither exists, `topics.noTopicYet` with a primary button to `/student/topics`. When the latest reservation overall is `Rejected` and has a comment, `topics.lastRejected` shows it in a `bg-warning-soft` block.
+- `StudentTopicsPage` (`/student/topics`): `PageHeader` `topics.catalogueTitle`, description shows the deadline (`topics.deadlineInfo` with formatted date, or `topics.noDeadline`), action `topics.propose` (secondary, `Lightbulb`), labelled `topics.proposeDifferent` when the student already holds a topic, disabled while a request is pending and — only for a student without a topic — when selection is closed. `MyTopicCard` at the top. Filters row: `TextField` search (debounced 300 ms via `setTimeout` in an effect) and supervisor `Select` from `getTopicSupervisors()` plus `{ value: '', label: t('topics.allSupervisors') }`. `DataTable` columns: title (click opens `TopicDetailsModal`), supervisor, status badge, action `topics.reserve` (primary `sm`), labelled `topics.requestChange` when the student already holds a topic, disabled with `title={t('topics.reserveDisabled')}` when not allowed — a request is pending, the row is the student's own current topic, or the student has no topic and selection is closed. Reserve asks `ConfirmDialog` `topics.reserveConfirm`, or `topics.changeConfirm` (which names the topic being given up) when this is a change request; tone primary. Propose `Modal`: title (`maxLength` 300), description (`Textarea`, `maxLength` 4000), teacher `Select` from `getTopicSupervisors()` (label is the teacher's full name); if the list is empty the selector is replaced by `topics.noTeachersAvailable`. When selection is closed **and the student has no topic**, an `EmptyState` with `CalendarX` and `topics.selectionClosed` replaces the actions; a student who already holds a topic keeps them, because the deadline does not bind changes.
+- `TeacherTopicsPage` (`/teacher/topics`): `PageHeader` `topics.myTopicsTitle` with action `topics.addTopic`. Card `topics.requestsTitle`: `DataTable` of `getReservationsForDecision('Pending')` — columns student (name, group muted), topic (title; `Badge` neutral `topics.proposalBadge` when origin is `StudentProposal`; `Badge` warning `topics.changeBadge` when the student already holds a topic, with that topic's title muted beneath, so the teacher decides knowing what the student would give up), requested at, actions `topics.approve` (primary `sm`, `ConfirmDialog` tone primary) and `topics.reject` (secondary `sm`, `DecisionCommentModal`). Card `topics.approvedTitle`: `getReservationsForDecision('Approved')` with student, topic, decided at, action `topics.release` (`DecisionCommentModal`, tone danger). Card `topics.catalogueCard`: `DataTable` of own topics (title, department, status badge, student name when reserved/approved, actions edit/delete enabled only for `Available` catalogue topics). Departments for the form come from `getDepartments()` (all departments, any authenticated user).
+- `AdminTopicsPage` (`/admin/topics`): `PageHeader` `topics.adminTitle` with action `topics.addTopic`. Filters: search, department `Select`, supervisor `Select` (from `getTeachers()`), status `SegmentedControl` (`all`, `Available`, `Reserved`, `Approved`). `DataTable` columns: title, supervisor, department, status, student (name · group), actions: **edit at any status** (deletion stays limited to available catalogue topics), `topics.release` when `activeReservationStatus` is `Approved`, approve/reject when `Pending`. Uses `TopicFormModal` with `showSupervisor`; when the topic is `Reserved` or `Approved` the modal shows `topics.supervisorMoveWarning` above the supervisor selector, because changing it also changes the student's supervisor. There is no *assign* action here — assignment happens on the student form (see `StudentsPage` below), which is the one code path for it.
 - `AdminSettingsPage` (`/admin/settings`): `PageHeader` `settings.title`. Card `settings.registrationTitle` holds the registration `Switch` (moved from the Students page, same behaviour and toasts). Card `settings.selectionTitle`: `TextField type="datetime-local"` label `settings.deadline` pre-filled from the stored UTC value converted to local time, hint `settings.deadlineHint`; buttons `common.save` (sends `new Date(value).toISOString()`) and `settings.clearDeadline` (sends `null`).
 - `StudentDashboardPage`: render `MyTopicCard` above the existing *My steps* card.
-- `StudentsPage`: remove the registration card; remove the topic field from create/edit; the table shows `topicTitle` (or `common.notSet`) in a `students.topic` column.
+- `StudentsPage`: remove the registration card; the table shows `topicTitle` (or `common.notSet`) in a `students.topic` column. The free-text topic input is replaced by a **topic `Select`** in the edit form, listing the `Available` topics of that student's department (from `getTopics({ departmentId })`) plus the student's current topic, with an empty option labelled `topics.noTopic` that clears it. The selector is absent from the *create* form — a student has no id to assign against until they exist, and the administrator sets the topic on the next edit. On save, if the selection changed, call `setStudentTopic(studentId, topicId)` after the student save; when it replaces an existing topic, `ConfirmDialog` `topics.replaceConfirm` names the topic being given up first. Report the outcome with a toast, and reload the list so the column and any freed topic are current.
 - `GroupDetailsPage`: students table shows `topicTitle`.
 - `App.tsx` routes: inside the Student role group `student/topics` → `StudentTopicsPage`; Teacher group `teacher/topics` → `TeacherTopicsPage`; Admin group `admin/topics` → `AdminTopicsPage` and `admin/settings` → `AdminSettingsPage`.
 
@@ -2419,10 +2734,16 @@ Shared page rules from the design system plan (Tasks 9–12 section) apply.
     "releaseTitle": "Звільнити тему",
     "released": "Тему звільнено",
     "comment": "Коментар для студента",
-    "assign": "Призначити студенту",
-    "assignTitle": "Призначити тему «{{title}}»",
     "assigned": "Тему призначено",
-    "noEligibleStudents": "Немає активних студентів без теми."
+    "noTopic": "Без теми",
+    "replaceConfirm": "Замінити тему «{{current}}» на «{{next}}»? Попередню тему буде звільнено.",
+    "requestChange": "Запросити цю тему",
+    "proposeDifferent": "Запропонувати іншу тему",
+    "changeConfirm": "Запросити «{{next}}» замість «{{current}}»? Поточна тема залишиться вашою, доки запит не схвалять.",
+    "changeRequested": "Запит на зміну теми",
+    "changeBadge": "Зміна теми",
+    "currentTopicLabel": "Поточна тема: {{title}}",
+    "supervisorMoveWarning": "Тему вже закріплено за студентом. Зміна керівника змінить і керівника студента."
   },
   "reservations": {
     "status": {
@@ -2438,7 +2759,7 @@ Shared page rules from the design system plan (Tasks 9–12 section) apply.
     "registrationTitle": "Реєстрація студентів",
     "selectionTitle": "Вибір тем",
     "deadline": "Термін вибору теми",
-    "deadlineHint": "Після цього часу студенти не можуть бронювати, пропонувати чи скасовувати теми.",
+    "deadlineHint": "Після цього часу студенти без теми не можуть бронювати, пропонувати чи скасовувати. Запити на зміну вже обраної теми не обмежуються.",
     "clearDeadline": "Прибрати термін",
     "deadlineSaved": "Термін збережено",
     "deadlineCleared": "Термін прибрано"
@@ -2454,6 +2775,7 @@ Add to the `errors` object in `uk.json`:
       "notInYourDepartment": "Тема належить іншій кафедрі.",
       "notEditable": "Змінювати чи видаляти можна лише вільні теми каталогу.",
       "notOwner": "Можна змінювати лише власні теми.",
+      "alreadyYours": "Це вже ваша тема.",
       "departmentInvalid": "Обраної кафедри не існує.",
       "supervisorInvalid": "Керівником може бути лише активний викладач.",
       "studentProfileRequired": "Ця дія доступна лише студентам із профілем."
@@ -2463,20 +2785,15 @@ Add to the `errors` object in `uk.json`:
     },
     "reservation": {
       "notFound": "Бронювання не знайдено.",
-      "alreadyActive": "У вас уже є активне бронювання або затверджена тема.",
+      "alreadyActive": "У вас уже є запит, який очікує рішення.",
       "invalidState": "Цю дію не можна виконати для бронювання в поточному стані.",
       "notYours": "Це бронювання належить іншому студенту.",
       "notSupervisor": "Рішення може ухвалити лише керівник теми."
     },
     "selection": {
       "closed": "Термін вибору теми минув."
-    },
-    "assignment": {
-      "studentInvalid": "Обраного студента не існує або його деактивовано."
     }
 ```
-
-and add `"alreadyHasTopic": "Студент уже має тему."` inside the existing `errors.student` object.
 
 Add to `en.json`:
 
@@ -2543,10 +2860,16 @@ Add to `en.json`:
     "releaseTitle": "Release topic",
     "released": "Topic released",
     "comment": "Comment for the student",
-    "assign": "Assign to student",
-    "assignTitle": "Assign \"{{title}}\"",
     "assigned": "Topic assigned",
-    "noEligibleStudents": "No active students without a topic."
+    "noTopic": "No topic",
+    "replaceConfirm": "Replace \"{{current}}\" with \"{{next}}\"? The previous topic is released.",
+    "requestChange": "Request this topic",
+    "proposeDifferent": "Propose a different topic",
+    "changeConfirm": "Ask for \"{{next}}\" instead of \"{{current}}\"? You keep your current topic until the request is approved.",
+    "changeRequested": "Change requested",
+    "changeBadge": "Change",
+    "currentTopicLabel": "Current topic: {{title}}",
+    "supervisorMoveWarning": "A student already holds this topic. Changing the supervisor changes theirs too."
   },
   "reservations": {
     "status": {
@@ -2562,7 +2885,7 @@ Add to `en.json`:
     "registrationTitle": "Student registration",
     "selectionTitle": "Topic selection",
     "deadline": "Topic selection deadline",
-    "deadlineHint": "After this time students cannot reserve, propose or cancel topics.",
+    "deadlineHint": "After this time students without a topic cannot reserve, propose or cancel. Requests to change an existing topic are not restricted.",
     "clearDeadline": "Clear deadline",
     "deadlineSaved": "Deadline saved",
     "deadlineCleared": "Deadline cleared"
@@ -2578,6 +2901,7 @@ Add to the `errors` object in `en.json`:
       "notInYourDepartment": "The topic belongs to another department.",
       "notEditable": "Only available catalogue topics can be changed or deleted.",
       "notOwner": "You can change only your own topics.",
+      "alreadyYours": "This is already your topic.",
       "departmentInvalid": "The selected department does not exist.",
       "supervisorInvalid": "The supervisor must be an active teacher.",
       "studentProfileRequired": "Only students with a profile can do this."
@@ -2587,20 +2911,15 @@ Add to the `errors` object in `en.json`:
     },
     "reservation": {
       "notFound": "Reservation not found.",
-      "alreadyActive": "You already have an active reservation or approved topic.",
+      "alreadyActive": "You already have a request awaiting a decision.",
       "invalidState": "This action is not possible for the reservation in its current state.",
       "notYours": "This reservation belongs to another student.",
       "notSupervisor": "Only the topic's supervisor can decide."
     },
     "selection": {
       "closed": "The topic selection deadline has passed."
-    },
-    "assignment": {
-      "studentInvalid": "The selected student does not exist or is inactive."
     }
 ```
-
-and add `"alreadyHasTopic": "The student already has a topic."` inside `errors.student`.
 
 In both files remove the now-unused `students.registrationOpen`, `students.registrationHint`, `students.registrationOpened`, `students.registrationClosed` only if no code references them after moving the switch; otherwise keep them and reference them from `AdminSettingsPage`. (Keeping them is the default.)
 
@@ -2635,7 +2954,9 @@ Start `api` and `web` from `.claude/launch.json`. With the owner signed in:
 2. Teacher → My topics: add two topics for department SE.
 3. Student (seed) → Topics: both visible; reserve one; *My topic* shows *Awaiting decision*; *Reserve* disabled on the other; cancel; reserve again.
 4. Teacher → Requests: reject with a comment; student sees the comment; student proposes a topic to the teacher; teacher approves; student dashboard shows *Approved* with supervisor.
-5. Admin → Topics: release the approved proposal; it disappears from the list; assign an available topic to the seed student.
+5. Admin → Students: set the seed student’s topic from the student form; the Topics page shows it as Approved with that supervisor. Change the selection to another topic and confirm the replacement; the first topic is Available again. Clear it; the student has no topic.
+5a. Admin → Topics: release the approved proposal; it disappears from the list. Edit an Approved topic’s supervisor; the student’s supervisor changes with it.
+5b. Student: with an approved topic, request a different one; the card shows both; the teacher sees it badged as a change; approve it and the old topic returns to the catalogue.
 6. Admin → Settings: set a past deadline; student sees the closed notice.
 7. Switch UK/EN on each page; no untranslated keys appear.
 
@@ -2668,7 +2989,9 @@ Expected: clean.
 - `ReservationService.ProposeAsync`: invalid teacher; department taken from the student's group; topic origin and status.
 - `ApproveAsync`/`RejectAsync`/`ReleaseAsync`: non-supervisor teacher; admin override; wrong state; approval sets student topic and supervisor; rejection returns catalogue topic to Available and deletes proposals; release clears student topic and supervisor and deletes proposals; comments trimmed.
 - `CancelAsync`: other student's reservation; deadline passed; approved reservation; proposal deletion.
-- `AssignAsync`: unknown/inactive student; student with topic; student with pending reservation; non-available topic.
+- `SetStudentTopicAsync`: unknown student; archived student; non-available topic; the topic already held; replacing an approved topic (old one released and Available again); cancelling a pending request in the same save; clearing to null.
+- Change requests: a pending request allowed alongside an approved topic; a second pending request refused; approval releasing the old topic and moving TopicId and SupervisorId; rejection and cancellation leaving the old topic alone; the deadline blocking a first reservation but not a change request or its cancellation.
+- `UpdateTopicAsync` as an administrator on a Reserved/Approved topic: supervisor change moving the student’s supervisor; department change leaving the reservation alone; deletion still refused.
 - `GetMineAsync`: order and `CanCancel` with and without deadline; `GetForDecisionAsync` status filter and teacher scoping.
 - `TopicSettingsService`: UTC normalisation of local and unspecified kinds; open/closed around the deadline.
 

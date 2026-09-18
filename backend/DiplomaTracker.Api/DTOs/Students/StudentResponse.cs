@@ -14,7 +14,8 @@ public class StudentResponse
     public bool IsClaimed { get; set; }
     public bool ClaimReopened { get; set; }
     public DateTime? ArchivedAt { get; set; }
-    public string? DiplomaTopic { get; set; }
+    public Guid? TopicId { get; set; }
+    public string? TopicTitle { get; set; }
     public Guid? GroupId { get; set; }
     public string? GroupCode { get; set; }
     public Guid? SupervisorId { get; set; }

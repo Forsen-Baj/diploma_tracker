@@ -19,6 +19,8 @@ public class AppDbContext : DbContext
     public DbSet<GroupTask> GroupTasks => Set<GroupTask>();
     public DbSet<StudentTask> StudentTasks => Set<StudentTask>();
     public DbSet<PlatformSettings> PlatformSettings => Set<PlatformSettings>();
+    public DbSet<Topic> Topics => Set<Topic>();
+    public DbSet<TopicReservation> TopicReservations => Set<TopicReservation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -65,7 +67,6 @@ public class AppDbContext : DbContext
         studentProfile.HasKey(x => x.Id);
         studentProfile.Property(x => x.StudentNumber).HasMaxLength(32).IsRequired();
         studentProfile.HasIndex(x => x.StudentNumber).IsUnique();
-        studentProfile.Property(x => x.DiplomaTopic).HasMaxLength(500);
         studentProfile.Property(x => x.GroupId).IsRequired();
         studentProfile.Property(x => x.ArchivedAt);
         studentProfile.Property(x => x.CreatedAt).IsRequired();
@@ -82,6 +83,12 @@ public class AppDbContext : DbContext
         studentProfile.HasOne(x => x.Supervisor)
             .WithMany(x => x.SupervisedStudents)
             .HasForeignKey(x => x.SupervisorId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+        studentProfile.HasIndex(x => x.TopicId).IsUnique().HasFilter("[TopicId] IS NOT NULL");
+        studentProfile.HasOne(x => x.Topic)
+            .WithMany()
+            .HasForeignKey(x => x.TopicId)
             .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
 
@@ -169,10 +176,66 @@ public class AppDbContext : DbContext
         platformSettings.HasKey(x => x.Id);
         platformSettings.Property(x => x.Id).ValueGeneratedNever();
         platformSettings.Property(x => x.RegistrationOpen).IsRequired();
+        platformSettings.Property(x => x.TopicSelectionDeadline);
         platformSettings.HasData(new PlatformSettings
         {
             Id = Entities.PlatformSettings.SingletonId,
             RegistrationOpen = false
         });
+
+        var topic = modelBuilder.Entity<Topic>();
+        topic.ToTable("Topics");
+        topic.HasKey(x => x.Id);
+        topic.Property(x => x.Title).HasMaxLength(300).IsRequired();
+        topic.Property(x => x.Description).HasMaxLength(4000);
+        topic.Property(x => x.Origin).HasConversion<string>().HasMaxLength(50).IsRequired();
+        topic.Property(x => x.Status).HasConversion<string>().HasMaxLength(50).IsRequired();
+        topic.Property(x => x.CreatedAt).IsRequired();
+        topic.Property(x => x.UpdatedAt).IsRequired();
+        topic.Property(x => x.RowVersion).IsRowVersion();
+        topic.HasIndex(x => new { x.DepartmentId, x.Status });
+        topic.HasOne(x => x.Supervisor)
+            .WithMany(x => x.SupervisedTopics)
+            .HasForeignKey(x => x.SupervisorId)
+            .OnDelete(DeleteBehavior.Restrict);
+        topic.HasOne(x => x.Department)
+            .WithMany(x => x.Topics)
+            .HasForeignKey(x => x.DepartmentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        var reservation = modelBuilder.Entity<TopicReservation>();
+        reservation.ToTable("TopicReservations");
+        reservation.HasKey(x => x.Id);
+        reservation.Property(x => x.TopicTitle).HasMaxLength(300).IsRequired();
+        reservation.Property(x => x.Status).HasConversion<string>().HasMaxLength(50).IsRequired();
+        reservation.Property(x => x.DecisionComment).HasMaxLength(1000);
+        reservation.Property(x => x.CreatedAt).IsRequired();
+        reservation.HasIndex(x => x.TopicId)
+            .IsUnique()
+            .HasFilter("[TopicId] IS NOT NULL AND [Status] IN ('Pending', 'Approved')")
+            .HasDatabaseName("IX_TopicReservations_ActivePerTopic");
+        // Two separate filters, not one on ('Pending', 'Approved'): a student holding an
+        // approved topic may have a pending change request at the same time.
+        //
+        // Both must use the HasIndex(expression, name) overload. EF Core identifies an index by
+        // its property set, so two plain HasIndex(x => x.StudentProfileId) calls are the SAME
+        // index — the second silently overwrites the first and only one filter reaches the
+        // migration, whatever HasDatabaseName says. Naming them at creation makes them distinct.
+        reservation.HasIndex(x => x.StudentProfileId, "IX_TopicReservations_PendingPerStudent")
+            .IsUnique()
+            .HasFilter("[Status] = 'Pending'");
+        reservation.HasIndex(x => x.StudentProfileId, "IX_TopicReservations_ApprovedPerStudent")
+            .IsUnique()
+            .HasFilter("[Status] = 'Approved'");
+        reservation.HasIndex(x => new { x.StudentProfileId, x.CreatedAt });
+        reservation.HasOne(x => x.Topic)
+            .WithMany(x => x.Reservations)
+            .HasForeignKey(x => x.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.SetNull);
+        reservation.HasOne(x => x.StudentProfile)
+            .WithMany(x => x.TopicReservations)
+            .HasForeignKey(x => x.StudentProfileId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

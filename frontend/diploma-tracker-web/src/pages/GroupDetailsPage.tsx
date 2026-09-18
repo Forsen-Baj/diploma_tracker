@@ -411,7 +411,7 @@ export function GroupDetailsPage() {
     { key: 'name', header: t('students.lastName'), render: (student) => `${student.firstName} ${student.lastName}` },
     { key: 'studentNumber', header: t('groups.studentNumber'), render: (student) => student.studentNumber },
     { key: 'email', header: t('auth.email'), render: (student) => student.email },
-    { key: 'topic', header: t('groupDetails.topic'), render: (student) => student.diplomaTopic ?? t('common.notSet') },
+    { key: 'topic', header: t('groupDetails.topic'), render: (student) => student.topicTitle ?? t('common.notSet') },
     {
       key: 'supervisor',
       header: t('groupDetails.supervisor'),

@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using DiplomaTracker.Api.Errors;
+using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -27,5 +28,17 @@ public abstract class ApiControllerBase : ControllerBase
         role = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
         var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
         return Guid.TryParse(userIdValue, out userId) && role.Length > 0;
+    }
+
+    protected bool TryGetCurrentUser(out UserContext user)
+    {
+        if (TryGetUserContext(out var role, out var userId))
+        {
+            user = new UserContext(userId, role);
+            return true;
+        }
+
+        user = new UserContext(Guid.Empty, string.Empty);
+        return false;
     }
 }

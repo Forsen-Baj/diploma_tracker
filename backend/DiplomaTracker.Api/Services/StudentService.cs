@@ -12,12 +12,18 @@ public class StudentService : IStudentService
 {
     private readonly AppDbContext _dbContext;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly IReservationService _reservationService;
     private readonly ILogger<StudentService> _logger;
 
-    public StudentService(AppDbContext dbContext, IPasswordHasher passwordHasher, ILogger<StudentService> logger)
+    public StudentService(
+        AppDbContext dbContext,
+        IPasswordHasher passwordHasher,
+        IReservationService reservationService,
+        ILogger<StudentService> logger)
     {
         _dbContext = dbContext;
         _passwordHasher = passwordHasher;
+        _reservationService = reservationService;
         _logger = logger;
     }
 
@@ -86,7 +92,6 @@ public class StudentService : IStudentService
             Id = Guid.NewGuid(),
             UserId = user.Id,
             StudentNumber = studentNumber,
-            DiplomaTopic = IdentityNormalizer.Optional(request.DiplomaTopic),
             GroupId = assignment.group!.Id,
             SupervisorId = assignment.supervisor?.Id,
             CreatedAt = now,
@@ -142,6 +147,14 @@ public class StudentService : IStudentService
             return (null, assignment.error);
         }
 
+        // A student who holds a topic gets their supervisor from it (TopicService.UpdateTopicAsync
+        // moves both together); the student form is not a second, competing way to set it, or the
+        // two could disagree about who supervises the work.
+        if (profile.TopicId is not null && assignment.supervisor?.Id != profile.SupervisorId)
+        {
+            return (null, OnboardingErrors.SupervisorLockedByTopic);
+        }
+
         var groupChanged = profile.GroupId != assignment.group!.Id;
 
         var now = DateTime.UtcNow;
@@ -151,7 +164,6 @@ public class StudentService : IStudentService
         profile.User.Email = email;
         profile.User.UpdatedAt = now;
         profile.StudentNumber = studentNumber;
-        profile.DiplomaTopic = IdentityNormalizer.Optional(request.DiplomaTopic);
         profile.GroupId = assignment.group.Id;
         profile.SupervisorId = assignment.supervisor?.Id;
         profile.UpdatedAt = now;
@@ -231,6 +243,13 @@ public class StudentService : IStudentService
             return (null, OnboardingErrors.SupervisorMustBeActiveTeacher);
         }
 
+        // Same rule as UpdateStudentAsync: a student holding a topic gets their supervisor from
+        // it, so this endpoint cannot move it out from under the topic.
+        if (profile.TopicId is not null && supervisorId != profile.SupervisorId)
+        {
+            return (null, OnboardingErrors.SupervisorLockedByTopic);
+        }
+
         profile.SupervisorId = supervisorId;
         profile.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync();
@@ -283,6 +302,15 @@ public class StudentService : IStudentService
 
         var now = DateTime.UtcNow;
         var archivedIds = StudentArchiver.Archive(profiles, now);
+
+        // An archived student's live reservations must not linger: a topic's supervisor would
+        // otherwise still see and could approve a pending request, or hold a topic permanently
+        // approved for an account that can no longer act on it.
+        foreach (var archivedId in archivedIds)
+        {
+            await _reservationService.SettleReservationsForArchiveAsync(archivedId, now);
+        }
+
         await _dbContext.SaveChangesAsync();
 
         _logger.LogInformation(
@@ -334,6 +362,7 @@ public class StudentService : IStudentService
             .Include(s => s.User)
             .Include(s => s.Group)
             .Include(s => s.Supervisor)
+            .Include(s => s.Topic)
             .FirstOrDefaultAsync(s => s.Id == id && s.User.Role == "Student");
     }
 
@@ -397,7 +426,8 @@ public class StudentService : IStudentService
         IsClaimed = profile.User.PasswordHash != null,
         ClaimReopened = profile.User.ClaimReopened,
         ArchivedAt = profile.ArchivedAt,
-        DiplomaTopic = profile.DiplomaTopic,
+        TopicId = profile.TopicId,
+        TopicTitle = profile.Topic != null ? profile.Topic.Title : null,
         GroupId = profile.GroupId,
         GroupCode = profile.Group != null ? profile.Group.Code : null,
         SupervisorId = profile.SupervisorId,

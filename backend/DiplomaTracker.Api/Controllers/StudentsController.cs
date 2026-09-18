@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using DiplomaTracker.Api.DTOs.Students;
+using DiplomaTracker.Api.DTOs.Topics;
 using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
 using DiplomaTracker.Api.Services;
@@ -14,10 +15,12 @@ namespace DiplomaTracker.Api.Controllers;
 public class StudentsController : ApiControllerBase
 {
     private readonly IStudentService _studentService;
+    private readonly IReservationService _reservationService;
 
-    public StudentsController(IStudentService studentService)
+    public StudentsController(IStudentService studentService, IReservationService reservationService)
     {
         _studentService = studentService;
+        _reservationService = reservationService;
     }
 
     [HttpGet]
@@ -97,6 +100,24 @@ public class StudentsController : ApiControllerBase
     {
         var (student, error) = await _studentService.AssignSupervisorAsync(id, request.SupervisorId);
         return student is null ? ErrorResult(error) : Ok(student);
+    }
+
+    [HttpPut("{id:guid}/topic")]
+    public async Task<IActionResult> SetTopic(Guid id, [FromBody] SetStudentTopicRequest request)
+    {
+        if (!TryGetUserId(out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (reservation, error) = await _reservationService.SetStudentTopicAsync(id, request.TopicId, administratorId);
+        if (error is not null)
+        {
+            return ErrorResult(error);
+        }
+
+        // Clearing a student's topic settles the old reservation and creates no new one.
+        return reservation is null ? NoContent() : Ok(reservation);
     }
 
     private bool TryGetUserId(out Guid userId)

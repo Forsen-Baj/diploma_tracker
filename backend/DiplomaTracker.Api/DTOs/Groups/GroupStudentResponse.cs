@@ -11,7 +11,7 @@ public class GroupStudentResponse
     public string StudentNumber { get; set; } = string.Empty;
     public bool IsActive { get; set; }
     public bool IsClaimed { get; set; }
-    public string? DiplomaTopic { get; set; }
+    public string? TopicTitle { get; set; }
     public Guid? SupervisorId { get; set; }
     public string? SupervisorFirstName { get; set; }
     public string? SupervisorLastName { get; set; }

@@ -3,9 +3,10 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ApiError } from '../api/apiClient'
 import { getGroups } from '../api/groupsApi'
-import { getRegistrationStatus, setRegistrationStatus } from '../api/registrationApi'
+import { setStudentTopic } from '../api/reservationsApi'
 import { archiveStudents, createStudent, getStudents, importStudents, resetStudentAccess, restoreStudents, updateStudent } from '../api/studentsApi'
 import { getTeachers } from '../api/teachersApi'
+import { getTopics } from '../api/topicsApi'
 import { useCodeMessage, useErrorMessage } from '../api/useErrorMessage'
 import { PASSWORD_MAX, isPasswordLengthValid } from '../auth/passwordPolicy'
 import { Badge } from '../components/ui/Badge'
@@ -20,11 +21,10 @@ import { Modal } from '../components/ui/Modal'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Select, type SelectOption } from '../components/ui/Select'
 import { SegmentedControl, type SegmentedOption } from '../components/ui/SegmentedControl'
-import { Switch } from '../components/ui/Switch'
 import { TextField } from '../components/ui/TextField'
 import { useToast } from '../components/ui/useToast'
 import { optional } from '../utils/optional'
-import type { Group, ImportRowError, Student, StudentImportResult, Teacher } from '../api/types'
+import type { Group, ImportRowError, Student, StudentImportResult, Teacher, Topic } from '../api/types'
 
 type StudentFormState = {
   firstName: string
@@ -33,7 +33,7 @@ type StudentFormState = {
   email: string
   studentNumber: string
   password: string
-  diplomaTopic: string
+  topicId: string
   groupId: string
   supervisorId: string
 }
@@ -45,9 +45,16 @@ const emptyForm: StudentFormState = {
   email: '',
   studentNumber: '',
   password: '',
-  diplomaTopic: '',
+  topicId: '',
   groupId: '',
   supervisorId: ''
+}
+
+type PendingTopicChange = {
+  studentId: string
+  topicId: string | null
+  currentTitle: string
+  nextTitle: string
 }
 
 const CSV_TEMPLATE = '\uFEFFlastName;firstName;patronymic;email;studentNumber\r\n'
@@ -91,9 +98,6 @@ export function StudentsPage() {
   const [view, setView] = useState<StudentView>('current')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
-  const [registrationOpen, setRegistrationOpen] = useState(false)
-  const [isTogglingRegistration, setIsTogglingRegistration] = useState(false)
-
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [importGroupId, setImportGroupId] = useState('')
   const [importFile, setImportFile] = useState<File | null>(null)
@@ -116,6 +120,10 @@ export function StudentsPage() {
   const [isArchiving, setIsArchiving] = useState(false)
   const [isRestoreConfirmOpen, setIsRestoreConfirmOpen] = useState(false)
   const [isRestoring, setIsRestoring] = useState(false)
+
+  const [formTopics, setFormTopics] = useState<Topic[]>([])
+  const [pendingTopicChange, setPendingTopicChange] = useState<PendingTopicChange | null>(null)
+  const [isApplyingTopicChange, setIsApplyingTopicChange] = useState(false)
 
   const dateFormat = useMemo(
     () => new Intl.DateTimeFormat(i18n.language === 'en' ? 'en-GB' : 'uk-UA', { dateStyle: 'medium' }),
@@ -151,6 +159,41 @@ export function StudentsPage() {
     [groups]
   )
 
+  const topicOptions: SelectOption[] = useMemo(() => {
+    const options: SelectOption[] = [{ value: '', label: t('topics.noTopic') }]
+    const seen = new Set<string>()
+    for (const topic of formTopics) {
+      options.push({ value: topic.id, label: topic.title })
+      seen.add(topic.id)
+    }
+    if (editingStudent?.topicId && editingStudent.topicTitle && !seen.has(editingStudent.topicId)) {
+      options.push({ value: editingStudent.topicId, label: editingStudent.topicTitle })
+    }
+    return options
+  }, [formTopics, editingStudent, t])
+
+  // Assigning or clearing a topic through PUT /api/students/{id}/topic always sets the student's
+  // supervisor to the topic's supervisor (or clears it, when the topic is cleared) — see
+  // ReservationService.SetStudentTopicAsync. Whenever a topic is picked, or the student's existing
+  // topic is being cleared, the supervisor field just shows what will happen instead of letting the
+  // administrator pick a value that the save silently overrides.
+  const topicControlsSupervisor = Boolean(editingStudent) && (Boolean(studentForm.topicId) || Boolean(editingStudent?.topicId))
+
+  const handleTopicIdChange = (value: string) => {
+    setStudentForm((prev) => {
+      if (!value) {
+        // Clearing a topic the student currently holds clears the supervisor with it; clearing a
+        // field that was never set (no current topic) leaves the chosen supervisor untouched.
+        return { ...prev, topicId: value, supervisorId: editingStudent?.topicId ? '' : prev.supervisorId }
+      }
+
+      const chosenTopic = formTopics.find((topic) => topic.id === value)
+      const supervisorId =
+        chosenTopic?.supervisorId ?? (value === editingStudent?.topicId ? editingStudent?.supervisorId ?? '' : prev.supervisorId)
+      return { ...prev, topicId: value, supervisorId }
+    })
+  }
+
   const viewOptions: SegmentedOption[] = [
     { value: 'current', label: t('students.viewCurrent') },
     { value: 'archived', label: t('students.viewArchived') }
@@ -163,16 +206,14 @@ export function StudentsPage() {
     setLoadError('')
     setSelectedIds(new Set())
     try {
-      const [studentsData, teachersData, groupsData, registration] = await Promise.all([
+      const [studentsData, teachersData, groupsData] = await Promise.all([
         getStudents(nextView === 'archived'),
         getTeachers(),
-        getGroups(),
-        getRegistrationStatus()
+        getGroups()
       ])
       setStudents(studentsData)
       setTeachers(teachersData)
       setGroups(groupsData)
-      setRegistrationOpen(registration.open)
     } catch (err) {
       setLoadError(errorMessage(err))
     } finally {
@@ -185,19 +226,41 @@ export function StudentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view])
 
-  const toggleRegistration = async () => {
-    const nextValue = !registrationOpen
-    setIsTogglingRegistration(true)
-    try {
-      await setRegistrationStatus(nextValue)
-      setRegistrationOpen(nextValue)
-      toast.success(t(nextValue ? 'students.registrationOpened' : 'students.registrationClosed'))
-    } catch (err) {
-      toast.error(errorMessage(err))
-    } finally {
-      setIsTogglingRegistration(false)
+  useEffect(() => {
+    if (!isStudentModalOpen || !editingStudent) {
+      setFormTopics([])
+      return
     }
-  }
+
+    const group = groups.find((candidate) => candidate.id === studentForm.groupId)
+    if (!group) {
+      setFormTopics([])
+      return
+    }
+
+    let cancelled = false
+    void getTopics({ departmentId: group.departmentId, status: 'Available' })
+      .then((data) => {
+        if (cancelled) return
+        setFormTopics(data)
+        // A topic picked before the group (and so the department) changed can be left over in the
+        // form even though it no longer belongs to any option for the new department; if it isn't
+        // the student's own current topic (which always stays selectable) and it isn't in the
+        // freshly loaded list, the field would otherwise render blank while still being submitted.
+        setStudentForm((prev) => {
+          if (!prev.topicId || prev.topicId === editingStudent.topicId) return prev
+          const stillOffered = data.some((topic) => topic.id === prev.topicId)
+          return stillOffered ? prev : { ...prev, topicId: '' }
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setFormTopics([])
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isStudentModalOpen, editingStudent, studentForm.groupId, groups])
 
   const openImportModal = () => {
     setImportGroupId('')
@@ -253,7 +316,6 @@ export function StudentsPage() {
     patronymic: optional(form.patronymic),
     email: form.email.trim(),
     studentNumber: form.studentNumber.trim(),
-    diplomaTopic: optional(form.diplomaTopic),
     groupId: form.groupId,
     supervisorId: optional(form.supervisorId)
   })
@@ -275,7 +337,7 @@ export function StudentsPage() {
       email: student.email,
       studentNumber: student.studentNumber,
       password: '',
-      diplomaTopic: student.diplomaTopic ?? '',
+      topicId: student.topicId ?? '',
       groupId: student.groupId ?? '',
       supervisorId: student.supervisorId ?? ''
     })
@@ -304,6 +366,29 @@ export function StudentsPage() {
     try {
       if (editingStudent) {
         await updateStudent(editingStudent.id, toRequest(studentForm))
+
+        const nextTopicId = studentForm.topicId || null
+        const previousTopicId = editingStudent.topicId ?? null
+
+        if (nextTopicId !== previousTopicId) {
+          if (previousTopicId) {
+            // Replacing or clearing the student's current topic releases it (and, when cleared,
+            // clears the supervisor too) — confirm before acting, and before telling the
+            // administrator anything about the topic was saved, so a Cancel here truly changes
+            // nothing about it.
+            const nextTitle = nextTopicId ? topicOptions.find((option) => option.value === nextTopicId)?.label ?? '' : ''
+            setIsStudentModalOpen(false)
+            setPendingTopicChange({
+              studentId: editingStudent.id,
+              topicId: nextTopicId,
+              currentTitle: editingStudent.topicTitle ?? '',
+              nextTitle
+            })
+            return
+          }
+
+          await setStudentTopic(editingStudent.id, nextTopicId)
+        }
       } else {
         await createStudent({
           ...toRequest(studentForm),
@@ -318,6 +403,29 @@ export function StudentsPage() {
     } finally {
       setIsSavingStudent(false)
     }
+  }
+
+  const confirmPendingTopicChange = async () => {
+    if (!pendingTopicChange) return
+
+    setIsApplyingTopicChange(true)
+    try {
+      await setStudentTopic(pendingTopicChange.studentId, pendingTopicChange.topicId)
+      setPendingTopicChange(null)
+      toast.success(t('common.savedToast'))
+      await loadData()
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setIsApplyingTopicChange(false)
+    }
+  }
+
+  const cancelPendingTopicChange = () => {
+    setPendingTopicChange(null)
+    // The student's other fields were already saved by updateStudent before this confirmation was
+    // shown; refresh quietly so the table reflects them even though the topic itself is untouched.
+    void loadData()
   }
 
   const confirmResetAccess = async () => {
@@ -414,6 +522,11 @@ export function StudentsPage() {
       render: (student) => (student.groupCode ? student.groupCode : t('common.notAssigned'))
     },
     {
+      key: 'topic',
+      header: t('students.topic'),
+      render: (student) => student.topicTitle ?? t('common.notSet')
+    },
+    {
       key: 'claimed',
       header: t('common.status'),
       render: (student) => (
@@ -476,6 +589,11 @@ export function StudentsPage() {
       render: (student) => (student.groupCode ? student.groupCode : t('common.notAssigned'))
     },
     {
+      key: 'topic',
+      header: t('students.topic'),
+      render: (student) => student.topicTitle ?? t('common.notSet')
+    },
+    {
       key: 'archivedAt',
       header: t('students.archivedAt'),
       render: (student) => (student.archivedAt ? dateFormat.format(new Date(student.archivedAt)) : '—')
@@ -493,11 +611,6 @@ export function StudentsPage() {
           </>
         }
       />
-
-      <Card className="mb-6">
-        <Switch label={t('students.registrationOpen')} checked={registrationOpen} onChange={() => void toggleRegistration()} disabled={isTogglingRegistration || isLoading} />
-        <p className="mt-1.5 text-xs text-text-muted">{t('students.registrationHint')}</p>
-      </Card>
 
       <Card>
         <div className="mb-4 flex items-center justify-between gap-4">
@@ -640,15 +753,19 @@ export function StudentsPage() {
             value={studentForm.supervisorId}
             onChange={(value) => setStudentForm((prev) => ({ ...prev, supervisorId: value }))}
             options={editingStudent ? editSupervisorOptions : supervisorOptions}
+            disabled={topicControlsSupervisor}
+            hint={topicControlsSupervisor ? t('students.supervisorFollowsTopic') : undefined}
           />
-          <div className="col-span-2">
-            <TextField
-              label={t('students.topic')}
-              maxLength={500}
-              value={studentForm.diplomaTopic}
-              onChange={(e) => setStudentForm((prev) => ({ ...prev, diplomaTopic: e.target.value }))}
-            />
-          </div>
+          {editingStudent && (
+            <div className="col-span-2">
+              <Select
+                label={t('students.topic')}
+                value={studentForm.topicId}
+                onChange={handleTopicIdChange}
+                options={topicOptions}
+              />
+            </div>
+          )}
         </form>
       </Modal>
 
@@ -678,6 +795,22 @@ export function StudentsPage() {
         loading={isRestoring}
         onConfirm={() => void confirmRestoreSelected()}
         onCancel={() => setIsRestoreConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={Boolean(pendingTopicChange)}
+        title={t(pendingTopicChange?.nextTitle ? 'topics.replaceTitle' : 'topics.clearTitle')}
+        message={
+          pendingTopicChange
+            ? pendingTopicChange.nextTitle
+              ? t('topics.replaceConfirm', { current: pendingTopicChange.currentTitle, next: pendingTopicChange.nextTitle })
+              : t('topics.clearConfirm', { current: pendingTopicChange.currentTitle })
+            : ''
+        }
+        tone="primary"
+        loading={isApplyingTopicChange}
+        onConfirm={() => void confirmPendingTopicChange()}
+        onCancel={cancelPendingTopicChange}
       />
     </>
   )
