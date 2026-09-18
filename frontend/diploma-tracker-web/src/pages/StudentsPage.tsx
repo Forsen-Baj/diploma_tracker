@@ -23,7 +23,6 @@ import { SegmentedControl, type SegmentedOption } from '../components/ui/Segment
 import { Switch } from '../components/ui/Switch'
 import { TextField } from '../components/ui/TextField'
 import { useToast } from '../components/ui/useToast'
-import { groupLabel } from '../utils/groupLabel'
 import { optional } from '../utils/optional'
 import type { Group, ImportRowError, Student, StudentImportResult, Teacher } from '../api/types'
 
@@ -148,7 +147,7 @@ export function StudentsPage() {
   }, [editingStudent, activeTeachers, supervisorOptions, t])
 
   const groupOptions: SelectOption[] = useMemo(
-    () => groups.map((group) => ({ value: group.id, label: `${groupLabel(group)} (${group.academicYear})` })),
+    () => groups.map((group) => ({ value: group.id, label: `${group.code} (${group.academicYear})` })),
     [groups]
   )
 
@@ -412,7 +411,7 @@ export function StudentsPage() {
     {
       key: 'group',
       header: t('students.group'),
-      render: (student) => (student.groupCode ? groupLabel({ code: student.groupCode, name: student.groupName }) : t('common.notAssigned'))
+      render: (student) => (student.groupCode ? student.groupCode : t('common.notAssigned'))
     },
     {
       key: 'claimed',
@@ -474,7 +473,7 @@ export function StudentsPage() {
     {
       key: 'group',
       header: t('students.group'),
-      render: (student) => (student.groupCode ? groupLabel({ code: student.groupCode, name: student.groupName }) : t('common.notAssigned'))
+      render: (student) => (student.groupCode ? student.groupCode : t('common.notAssigned'))
     },
     {
       key: 'archivedAt',

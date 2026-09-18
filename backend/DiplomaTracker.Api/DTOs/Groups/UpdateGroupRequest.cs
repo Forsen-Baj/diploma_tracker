@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using DiplomaTracker.Api.Validation;
 
 namespace DiplomaTracker.Api.DTOs.Groups;
 
@@ -9,12 +10,9 @@ public class UpdateGroupRequest
     [Required, MaxLength(32)]
     public string Code { get; set; } = string.Empty;
 
-    [MaxLength(200)]
-    public string? Name { get; set; }
-
     [MaxLength(1000)]
     public string? Description { get; set; }
 
-    [Required, MaxLength(50)]
+    [Required, MaxLength(20), ValidAcademicYear]
     public string AcademicYear { get; set; } = string.Empty;
 }

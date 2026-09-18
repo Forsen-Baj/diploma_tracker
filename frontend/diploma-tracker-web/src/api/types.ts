@@ -62,7 +62,6 @@ export type Student = {
   diplomaTopic: string | null
   groupId: string | null
   groupCode: string | null
-  groupName: string | null
   supervisorId: string | null
   supervisorFirstName: string | null
   supervisorLastName: string | null
@@ -102,7 +101,6 @@ export type Group = {
   facultyId: string
   facultyName: string
   code: string
-  name: string | null
   description: string | null
   academicYear: string
   createdAt: string
@@ -112,7 +110,6 @@ export type Group = {
 export type CreateGroupRequest = {
   departmentId: string
   code: string
-  name?: string
   description?: string
   academicYear: string
 }
@@ -120,7 +117,6 @@ export type CreateGroupRequest = {
 export type UpdateGroupRequest = {
   departmentId: string
   code: string
-  name?: string
   description?: string
   academicYear: string
 }
@@ -189,7 +185,6 @@ export type GroupTask = {
   id: string
   groupId: string
   groupCode: string
-  groupName: string | null
   taskTemplateId: string
   taskTitle: string
   taskDescription: string | null

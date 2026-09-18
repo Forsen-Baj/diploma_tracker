@@ -23,7 +23,6 @@ import { Spinner } from '../components/ui/Spinner'
 import { TextField } from '../components/ui/TextField'
 import { useToast } from '../components/ui/useToast'
 import { fromDatetimeLocalValue, toDatetimeLocalValue } from '../utils/datetime'
-import { groupLabel } from '../utils/groupLabel'
 import { formatPeriod } from '../utils/period'
 import type { Group, GroupReviewer, GroupStudent, GroupTask, TaskTemplate, Teacher } from '../api/types'
 
@@ -427,7 +426,7 @@ export function GroupDetailsPage() {
     }
   ]
 
-  const groupTitle = group ? groupLabel(group) : ''
+  const groupTitle = group ? group.code : ''
 
   return (
     <>

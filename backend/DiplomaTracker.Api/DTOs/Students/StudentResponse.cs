@@ -17,7 +17,6 @@ public class StudentResponse
     public string? DiplomaTopic { get; set; }
     public Guid? GroupId { get; set; }
     public string? GroupCode { get; set; }
-    public string? GroupName { get; set; }
     public Guid? SupervisorId { get; set; }
     public string? SupervisorFirstName { get; set; }
     public string? SupervisorLastName { get; set; }

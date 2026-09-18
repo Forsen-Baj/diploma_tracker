@@ -18,19 +18,17 @@ import { Select, type SelectOption } from '../components/ui/Select'
 import { Textarea } from '../components/ui/Textarea'
 import { TextField } from '../components/ui/TextField'
 import { useToast } from '../components/ui/useToast'
-import { groupLabel } from '../utils/groupLabel'
 import { optional } from '../utils/optional'
 import type { Department, Group, GroupReviewer, Teacher } from '../api/types'
 
 type GroupFormState = {
   departmentId: string
   code: string
-  name: string
   description: string
   academicYear: string
 }
 
-const emptyGroupForm: GroupFormState = { departmentId: '', code: '', name: '', description: '', academicYear: '' }
+const emptyGroupForm: GroupFormState = { departmentId: '', code: '', description: '', academicYear: '' }
 
 export function GroupsPage() {
   const { t } = useTranslation()
@@ -78,7 +76,7 @@ export function GroupsPage() {
   )
 
   const groupOptions: SelectOption[] = useMemo(
-    () => sortedGroups.map((group) => ({ value: group.id, label: `${groupLabel(group)} (${group.academicYear})` })),
+    () => sortedGroups.map((group) => ({ value: group.id, label: `${group.code} (${group.academicYear})` })),
     [sortedGroups]
   )
 
@@ -145,7 +143,6 @@ export function GroupsPage() {
     setGroupForm({
       departmentId: group.departmentId,
       code: group.code,
-      name: group.name ?? '',
       description: group.description ?? '',
       academicYear: group.academicYear
     })
@@ -163,7 +160,6 @@ export function GroupsPage() {
   const submitGroup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const trimmedCode = groupForm.code.trim()
-    const trimmedName = groupForm.name.trim()
     const trimmedAcademicYear = groupForm.academicYear.trim()
     const trimmedDescription = groupForm.description.trim()
     setDepartmentError(groupForm.departmentId ? '' : t('validation.required'))
@@ -177,7 +173,6 @@ export function GroupsPage() {
     const request = {
       departmentId: groupForm.departmentId,
       code: trimmedCode,
-      name: optional(trimmedName),
       description: optional(trimmedDescription),
       academicYear: trimmedAcademicYear
     }
@@ -259,12 +254,7 @@ export function GroupsPage() {
     {
       key: 'code',
       header: t('groups.code'),
-      render: (group) => (
-        <div>
-          <div className="font-semibold">{group.code}</div>
-          {group.name && <div className="text-xs text-text-muted">{group.name}</div>}
-        </div>
-      )
+      render: (group) => <div className="font-semibold">{group.code}</div>
     },
     { key: 'academicYear', header: t('groups.academicYear'), render: (group) => group.academicYear },
     {
@@ -391,15 +381,9 @@ export function GroupsPage() {
             required
           />
           <TextField
-            label={t('groups.name')}
-            maxLength={200}
-            hint={t('common.optional')}
-            value={groupForm.name}
-            onChange={(e) => setGroupForm((prev) => ({ ...prev, name: e.target.value }))}
-          />
-          <TextField
             label={t('groups.academicYear')}
-            maxLength={50}
+            maxLength={20}
+            hint={t('groups.academicYearHint')}
             value={groupForm.academicYear}
             onChange={(e) => setGroupForm((prev) => ({ ...prev, academicYear: e.target.value }))}
             error={academicYearError}

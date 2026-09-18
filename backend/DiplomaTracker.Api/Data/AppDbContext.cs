@@ -89,9 +89,8 @@ public class AppDbContext : DbContext
         group.ToTable("Groups");
         group.HasKey(x => x.Id);
         group.Property(x => x.Code).HasMaxLength(32).IsRequired();
-        group.Property(x => x.Name).HasMaxLength(200);
         group.Property(x => x.Description).HasMaxLength(1000);
-        group.Property(x => x.AcademicYear).HasMaxLength(50).IsRequired();
+        group.Property(x => x.AcademicYear).HasMaxLength(20).IsRequired();
         group.Property(x => x.CreatedAt).IsRequired();
         group.Property(x => x.UpdatedAt).IsRequired();
         group.HasIndex(x => new { x.AcademicYear, x.Code }).IsUnique();
@@ -125,6 +124,7 @@ public class AppDbContext : DbContext
         taskTemplate.Property(x => x.UpdatedAt).IsRequired();
         taskTemplate.HasIndex(x => x.Title);
         taskTemplate.HasIndex(x => x.FacultyId);
+        taskTemplate.HasIndex(x => new { x.FacultyId, x.Order }).IsUnique();
         taskTemplate.HasOne(x => x.Faculty)
             .WithMany(x => x.TaskTemplates)
             .HasForeignKey(x => x.FacultyId)

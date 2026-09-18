@@ -129,3 +129,25 @@ its review completes.
 - Batch selection: header checkbox indeterminate state, selection cleared after archive/restore, counts in confirmations and toasts.
 - Ukrainian plurals use one/few/many for counted strings.
 
+### Owner notes follow-up (2026-09-18)
+- `ValidAcademicYearAttribute`: trimmed length boundary (20 vs. 21 characters after trimming);
+  every disallowed character class (letters of any alphabet, punctuation outside
+  `/ \ - .`); an all-whitespace value is refused; `null` passes and is left to `[Required]`.
+- `TaskTemplateService.CreateTaskTemplateAsync`: a duplicate `Order` within the same faculty
+  returns `taskTemplate.orderTaken`; the same `Order` in a different faculty is allowed.
+- `TaskTemplateService.UpdateTaskTemplateAsync` reorder behaviour: moving an order down and up
+  within a faculty shifts exactly the affected neighbours by one and leaves the rest untouched;
+  moving to a different (unassigned) faculty leaves a gap in the old faculty and shifts the new
+  faculty's block; `UpdatedAt` is refreshed on the moved template and every shifted neighbour;
+  unchanged `Order` and faculty performs no shift at all; the existing `TemplateInUse` check still
+  wins over any reorder when the template is assigned to a group.
+
+### SQL Server integration
+- The unique index `IX_DiplomaTaskTemplates_FacultyId_Order` rejects a direct conflicting
+  insert/update at the database (the InMemory provider used by the service tests does not
+  enforce it, and the two-phase negate-then-assign reorder in `TaskTemplateService` exists
+  specifically to avoid tripping it transiently).
+- `Group.AcademicYear` is `nvarchar(20)`; confirm a value that is valid ASCII-only but longer
+  than 20 characters after trimming is rejected by model validation before it ever reaches the
+  database.
+

@@ -124,6 +124,7 @@
       "orderInvalid": "Order must be greater than 0.",
       "titleRequired": "Enter a title.",
       "titleTaken": "An active step with this title already exists.",
+      "orderTaken": "Another step in this faculty already uses this order.",
       "facultyNotFound": "The selected faculty does not exist.",
       "inUse": "Cannot change the faculty of a step that is assigned to a group."
     },
@@ -234,8 +235,8 @@
     "editGroup": "Edit group",
     "deleteConfirm": "Delete group \"{{code}}\"?",
     "code": "Group code",
-    "name": "Group name",
     "academicYear": "Academic year",
+    "academicYearHint": "Digits and / \\ - . only (for example, 2026/2027)",
     "department": "Department",
     "description": "Description",
     "noGroups": "No groups yet.",

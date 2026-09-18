@@ -52,7 +52,6 @@ public class GroupService : IGroupService
         }
 
         var normalizedCode = request.Code.Trim();
-        var normalizedName = string.IsNullOrWhiteSpace(request.Name) ? null : request.Name.Trim();
         var normalizedAcademicYear = request.AcademicYear.Trim();
 
         if (string.IsNullOrWhiteSpace(normalizedCode) || string.IsNullOrWhiteSpace(normalizedAcademicYear))
@@ -73,7 +72,6 @@ public class GroupService : IGroupService
             DepartmentId = department.Id,
             Department = department,
             Code = normalizedCode,
-            Name = normalizedName,
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
             AcademicYear = normalizedAcademicYear,
             CreatedAt = now,
@@ -115,7 +113,6 @@ public class GroupService : IGroupService
         }
 
         var normalizedCode = request.Code.Trim();
-        var normalizedName = string.IsNullOrWhiteSpace(request.Name) ? null : request.Name.Trim();
         var normalizedAcademicYear = request.AcademicYear.Trim();
 
         if (string.IsNullOrWhiteSpace(normalizedCode) || string.IsNullOrWhiteSpace(normalizedAcademicYear))
@@ -132,7 +129,6 @@ public class GroupService : IGroupService
         group.DepartmentId = department.Id;
         group.Department = department;
         group.Code = normalizedCode;
-        group.Name = normalizedName;
         group.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
         group.AcademicYear = normalizedAcademicYear;
         group.UpdatedAt = DateTime.UtcNow;
@@ -343,7 +339,6 @@ public class GroupService : IGroupService
         FacultyId = group.Department.FacultyId,
         FacultyName = group.Department.Faculty.Name,
         Code = group.Code,
-        Name = group.Name,
         Description = group.Description,
         AcademicYear = group.AcademicYear,
         CreatedAt = group.CreatedAt,

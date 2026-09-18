@@ -31,6 +31,7 @@ public static class ValidationErrorResponseFactory
         if (message.Contains("maximum length", StringComparison.OrdinalIgnoreCase)) return "maxLength";
         if (message.Contains("minimum length", StringComparison.OrdinalIgnoreCase)) return "minLength";
         if (message.Contains("e-mail", StringComparison.OrdinalIgnoreCase)) return "format";
+        if (message.Contains("format", StringComparison.OrdinalIgnoreCase)) return "format";
         return "invalid";
     }
 }

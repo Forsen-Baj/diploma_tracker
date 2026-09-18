@@ -400,7 +400,6 @@ public class StudentService : IStudentService
         DiplomaTopic = profile.DiplomaTopic,
         GroupId = profile.GroupId,
         GroupCode = profile.Group != null ? profile.Group.Code : null,
-        GroupName = profile.Group != null ? profile.Group.Name : null,
         SupervisorId = profile.SupervisorId,
         SupervisorFirstName = profile.Supervisor != null ? profile.Supervisor.FirstName : null,
         SupervisorLastName = profile.Supervisor != null ? profile.Supervisor.LastName : null,

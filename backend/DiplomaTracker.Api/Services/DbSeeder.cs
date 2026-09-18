@@ -29,7 +29,7 @@ public static class DbSeeder
 
         var faculty = await EnsureFacultyAsync(dbContext, "Faculty of Informatics and Computer Science", "FICS", now);
         var department = await EnsureDepartmentAsync(dbContext, faculty.Id, "Department of Software Engineering", "SE", now);
-        var group = await EnsureGroupAsync(dbContext, department.Id, "SEED-A", "Seed Group A", "Default seeded group", "2026/2027", now);
+        var group = await EnsureGroupAsync(dbContext, department.Id, "SEED-A", "Default seeded group", "2026/2027", now);
 
         await EnsureStudentProfileAsync(dbContext, student.Id, group.Id, teacher.Id, now);
         await EnsureTaskTemplatesAsync(dbContext, faculty.Id, now);
@@ -124,7 +124,6 @@ public static class DbSeeder
         AppDbContext dbContext,
         Guid departmentId,
         string code,
-        string name,
         string description,
         string academicYear,
         DateTime now)
@@ -140,7 +139,6 @@ public static class DbSeeder
             Id = Guid.NewGuid(),
             DepartmentId = departmentId,
             Code = code,
-            Name = name,
             Description = description,
             AcademicYear = academicYear,
             CreatedAt = now,
