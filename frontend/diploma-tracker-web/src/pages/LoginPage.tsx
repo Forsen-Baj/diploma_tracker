@@ -1,5 +1,10 @@
 import { useState, type FormEvent } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useErrorMessage } from '../api/useErrorMessage'
+import { AuthLayout } from '../components/layout/AuthLayout'
+import { Button } from '../components/ui/Button'
+import { TextField } from '../components/ui/TextField'
 import { useAuth } from '../auth/useAuth'
 
 function routeByRole(role: 'Admin' | 'Teacher' | 'Student'): string {
@@ -9,6 +14,8 @@ function routeByRole(role: 'Admin' | 'Teacher' | 'Student'): string {
 }
 
 export function LoginPage() {
+  const { t } = useTranslation()
+  const errorMessage = useErrorMessage()
   const { user, login, isInitializing } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
@@ -30,42 +37,41 @@ export function LoginPage() {
       const from = (location.state as { from?: string } | null)?.from
       const fallbackRoute = routeByRole(authenticatedUser.role)
       navigate(from && from !== '/login' ? from : fallbackRoute, { replace: true })
-    } catch {
-      setError('Invalid email or password')
+    } catch (err) {
+      setError(errorMessage(err))
     } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <div className="login-wrap">
-      <section className="login-card">
-        <h1>Diploma Tracker Login</h1>
-        <form onSubmit={handleSubmit} className="login-form">
-          <label className="field-label" htmlFor="email">Email</label>
-          <input
-            id="email"
-            type="email"
-            className="field-input"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-          <label className="field-label" htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            className="field-input"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          <button type="submit" className="primary-button" disabled={isLoading}>
-            {isLoading ? 'Signing in...' : 'Sign In'}
-          </button>
-          {error && <p className="error-text">{error}</p>}
-        </form>
-      </section>
-    </div>
+    <AuthLayout title={t('auth.signInTitle')}>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <TextField
+          label={t('auth.email')}
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+        <TextField
+          label={t('auth.password')}
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+        <Button type="submit" className="w-full" loading={isLoading}>
+          {isLoading ? t('auth.signingIn') : t('auth.signIn')}
+        </Button>
+        {error && <p className="text-sm text-danger">{error}</p>}
+      </form>
+      <p className="mt-6 text-sm text-text-muted">
+        {t('auth.firstTime')}{' '}
+        <Link to="/claim" className="text-accent font-medium hover:underline">
+          {t('auth.claimLink')}
+        </Link>
+      </p>
+    </AuthLayout>
   )
 }

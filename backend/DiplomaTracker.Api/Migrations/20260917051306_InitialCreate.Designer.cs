@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DiplomaTracker.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260916000514_InitialCreate")]
+    [Migration("20260917051306_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -30,6 +30,9 @@ namespace DiplomaTracker.Api.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("ClaimReopened")
+                        .HasColumnType("bit");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -53,8 +56,11 @@ namespace DiplomaTracker.Api.Migrations
                         .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("PasswordHash")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Patronymic")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("Role")
                         .IsRequired()
@@ -121,6 +127,9 @@ namespace DiplomaTracker.Api.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
+                    b.Property<Guid>("FacultyId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
@@ -136,6 +145,8 @@ namespace DiplomaTracker.Api.Migrations
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("FacultyId");
 
                     b.HasIndex("Title");
 
@@ -186,6 +197,11 @@ namespace DiplomaTracker.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -197,7 +213,6 @@ namespace DiplomaTracker.Api.Migrations
                         .HasColumnType("nvarchar(1000)");
 
                     b.Property<string>("Name")
-                        .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
@@ -208,7 +223,7 @@ namespace DiplomaTracker.Api.Migrations
 
                     b.HasIndex("DepartmentId");
 
-                    b.HasIndex("Name", "AcademicYear")
+                    b.HasIndex("AcademicYear", "Code")
                         .IsUnique();
 
                     b.ToTable("Groups", (string)null);
@@ -257,6 +272,9 @@ namespace DiplomaTracker.Api.Migrations
                     b.Property<Guid>("GroupId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTime?>("StartDate")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -270,24 +288,51 @@ namespace DiplomaTracker.Api.Migrations
                     b.ToTable("GroupTasks", (string)null);
                 });
 
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.PlatformSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("RegistrationOpen")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("PlatformSettings", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            RegistrationOpen = false
+                        });
+                });
+
             modelBuilder.Entity("DiplomaTracker.Api.Entities.StudentProfile", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTime?>("ArchivedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("DiplomaTopic")
-                        .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
                     b.Property<Guid>("GroupId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid>("SupervisorId")
+                    b.Property<string>("StudentNumber")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid?>("SupervisorId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -299,6 +344,9 @@ namespace DiplomaTracker.Api.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("GroupId");
+
+                    b.HasIndex("StudentNumber")
+                        .IsUnique();
 
                     b.HasIndex("SupervisorId");
 
@@ -351,6 +399,17 @@ namespace DiplomaTracker.Api.Migrations
                 {
                     b.HasOne("DiplomaTracker.Api.Entities.Faculty", "Faculty")
                         .WithMany("Departments")
+                        .HasForeignKey("FacultyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Faculty");
+                });
+
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.DiplomaTaskTemplate", b =>
+                {
+                    b.HasOne("DiplomaTracker.Api.Entities.Faculty", "Faculty")
+                        .WithMany("TaskTemplates")
                         .HasForeignKey("FacultyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
@@ -418,8 +477,7 @@ namespace DiplomaTracker.Api.Migrations
                     b.HasOne("DiplomaTracker.Api.Entities.AppUser", "Supervisor")
                         .WithMany("SupervisedStudents")
                         .HasForeignKey("SupervisorId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("DiplomaTracker.Api.Entities.AppUser", "User")
                         .WithOne("StudentProfile")
@@ -475,6 +533,8 @@ namespace DiplomaTracker.Api.Migrations
             modelBuilder.Entity("DiplomaTracker.Api.Entities.Faculty", b =>
                 {
                     b.Navigation("Departments");
+
+                    b.Navigation("TaskTemplates");
                 });
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.Group", b =>

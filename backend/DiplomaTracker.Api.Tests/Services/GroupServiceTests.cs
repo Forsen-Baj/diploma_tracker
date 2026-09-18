@@ -1,9 +1,11 @@
 using DiplomaTracker.Api.Data;
 using DiplomaTracker.Api.DTOs.Groups;
 using DiplomaTracker.Api.Entities;
+using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Services;
 using DiplomaTracker.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DiplomaTracker.Api.Tests.Services;
 
@@ -14,7 +16,7 @@ public class GroupServiceTests
     {
         await using var context = TestDbContextFactory.Create();
 
-        var (group, error) = await new GroupService(context).CreateGroupAsync(new CreateGroupRequest
+        var (group, error) = await new GroupService(context, NullLogger<GroupService>.Instance).CreateGroupAsync(new CreateGroupRequest
         {
             DepartmentId = Guid.NewGuid(),
             Name = "SE-21",
@@ -22,7 +24,7 @@ public class GroupServiceTests
         });
 
         Assert.Null(group);
-        Assert.Equal(AcademicStructureErrors.DepartmentNotFound, error);
+        Assert.Equal(GroupErrors.DepartmentNotFound, error);
         Assert.False(await context.Groups.AnyAsync());
     }
 
@@ -33,9 +35,10 @@ public class GroupServiceTests
         var faculty = TestData.AddFaculty(context, "Faculty of Informatics", "FI");
         var department = TestData.AddDepartment(context, faculty.Id, "Department of Software Engineering", "SE");
 
-        var (group, error) = await new GroupService(context).CreateGroupAsync(new CreateGroupRequest
+        var (group, error) = await new GroupService(context, NullLogger<GroupService>.Instance).CreateGroupAsync(new CreateGroupRequest
         {
             DepartmentId = department.Id,
+            Code = "SE-21",
             Name = " SE-21 ",
             AcademicYear = "2026/2027"
         });
@@ -56,7 +59,7 @@ public class GroupServiceTests
         var department = TestData.AddDepartment(context, faculty.Id);
         var existing = TestData.AddGroup(context, department.Id);
 
-        var (group, error) = await new GroupService(context).UpdateGroupAsync(existing.Id, new UpdateGroupRequest
+        var (group, error) = await new GroupService(context, NullLogger<GroupService>.Instance).UpdateGroupAsync(existing.Id, new UpdateGroupRequest
         {
             DepartmentId = Guid.NewGuid(),
             Name = existing.Name,
@@ -64,7 +67,7 @@ public class GroupServiceTests
         });
 
         Assert.Null(group);
-        Assert.Equal(AcademicStructureErrors.DepartmentNotFound, error);
+        Assert.Equal(GroupErrors.DepartmentNotFound, error);
     }
 
     [Fact]
@@ -76,7 +79,7 @@ public class GroupServiceTests
         TestData.AddGroup(context, department.Id, "SE-21");
         context.ChangeTracker.Clear();
 
-        var groups = await new GroupService(context).GetGroupsAsync();
+        var groups = await new GroupService(context, NullLogger<GroupService>.Instance).GetGroupsAsync();
 
         var group = Assert.Single(groups);
         Assert.Equal("Department of Software Engineering", group.DepartmentName);
@@ -90,10 +93,10 @@ public class GroupServiceTests
         var group = AddGroupWithOneStudent(context);
         var outsider = TestData.AddUser(context, "Teacher", "outsider@kpi.ua");
 
-        var (students, error) = await new GroupService(context).GetGroupStudentsAsync(group.Id, "Teacher", outsider.Id);
+        var (students, error) = await new GroupService(context, NullLogger<GroupService>.Instance).GetGroupStudentsAsync(group.Id, "Teacher", outsider.Id);
 
         Assert.Null(students);
-        Assert.Equal("Forbidden.", error);
+        Assert.Equal(CommonErrors.Forbidden, error);
     }
 
     [Fact]
@@ -111,7 +114,7 @@ public class GroupServiceTests
         });
         await context.SaveChangesAsync();
 
-        var (students, error) = await new GroupService(context).GetGroupStudentsAsync(group.Id, "Teacher", reviewer.Id);
+        var (students, error) = await new GroupService(context, NullLogger<GroupService>.Instance).GetGroupStudentsAsync(group.Id, "Teacher", reviewer.Id);
 
         Assert.Null(error);
         var student = Assert.Single(students!);
@@ -124,10 +127,10 @@ public class GroupServiceTests
         await using var context = TestDbContextFactory.Create();
         var group = AddGroupWithOneStudent(context);
 
-        var (success, error) = await new GroupService(context).DeleteGroupAsync(group.Id);
+        var (success, error) = await new GroupService(context, NullLogger<GroupService>.Instance).DeleteGroupAsync(group.Id);
 
         Assert.False(success);
-        Assert.Equal("Cannot delete group because students are assigned.", error);
+        Assert.Equal(GroupErrors.HasStudents, error);
         Assert.True(await context.Groups.AnyAsync(g => g.Id == group.Id));
     }
 

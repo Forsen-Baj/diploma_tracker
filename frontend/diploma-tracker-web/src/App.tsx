@@ -1,8 +1,10 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { LayoutShell } from './components/LayoutShell'
+import { AppShell } from './components/layout/AppShell'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { RoleRedirect } from './auth/RoleRedirect'
 import { LoginPage } from './pages/LoginPage'
+import { ClaimAccountPage } from './pages/ClaimAccountPage'
+import { AccountPage } from './pages/AccountPage'
 import { HealthPage } from './pages/HealthPage'
 import { AdminDashboardPage } from './pages/AdminDashboardPage'
 import { TeacherDashboardPage } from './pages/TeacherDashboardPage'
@@ -15,16 +17,19 @@ import { GroupsPage } from './pages/GroupsPage'
 import { GroupDetailsPage } from './pages/GroupDetailsPage'
 import { TaskTemplatesPage } from './pages/TaskTemplatesPage'
 import { FacultiesPage } from './pages/FacultiesPage'
+import { AdminsPage } from './pages/AdminsPage'
 
 function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/claim" element={<ClaimAccountPage />} />
 
       <Route element={<ProtectedRoute />}>
-        <Route path="/" element={<LayoutShell />}>
+        <Route path="/" element={<AppShell />}>
           <Route index element={<RoleRedirect />} />
           <Route path="health" element={<HealthPage />} />
+          <Route path="account" element={<AccountPage />} />
           <Route element={<ProtectedRoute allowedRoles={['Admin', 'Teacher']} />}>
             <Route path="task-templates" element={<TaskTemplatesPage />} />
           </Route>
@@ -35,6 +40,7 @@ function App() {
             <Route path="admin/faculties" element={<FacultiesPage />} />
             <Route path="admin/groups" element={<GroupsPage />} />
             <Route path="admin/groups/:groupId" element={<GroupDetailsPage />} />
+            <Route path="admins" element={<AdminsPage />} />
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['Teacher']} />}>
             <Route path="teacher/dashboard" element={<TeacherDashboardPage />} />

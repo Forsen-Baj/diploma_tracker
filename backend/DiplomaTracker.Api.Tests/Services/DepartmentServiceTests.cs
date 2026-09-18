@@ -16,7 +16,7 @@ public class DepartmentServiceTests
             new CreateDepartmentRequest { FacultyId = Guid.NewGuid(), Name = "Department of Software Engineering", ShortName = "SE" });
 
         Assert.Null(department);
-        Assert.Equal(AcademicStructureErrors.FacultyNotFound, error);
+        Assert.Equal(AcademicStructureErrors.DepartmentFacultyNotFound, error);
     }
 
     [Fact]
@@ -127,7 +127,7 @@ public class DepartmentServiceTests
             existing.Id, new UpdateDepartmentRequest { FacultyId = Guid.NewGuid(), Name = existing.Name, ShortName = existing.ShortName });
 
         Assert.Null(department);
-        Assert.Equal(AcademicStructureErrors.FacultyNotFound, error);
+        Assert.Equal(AcademicStructureErrors.DepartmentFacultyNotFound, error);
     }
 
     [Fact]

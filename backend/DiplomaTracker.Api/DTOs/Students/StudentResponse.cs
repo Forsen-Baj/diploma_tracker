@@ -6,11 +6,17 @@ public class StudentResponse
     public Guid UserId { get; set; }
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
+    public string? Patronymic { get; set; }
     public string Email { get; set; } = string.Empty;
+    public string StudentNumber { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public bool IsActive { get; set; }
-    public string DiplomaTopic { get; set; } = string.Empty;
+    public bool IsClaimed { get; set; }
+    public bool ClaimReopened { get; set; }
+    public DateTime? ArchivedAt { get; set; }
+    public string? DiplomaTopic { get; set; }
     public Guid? GroupId { get; set; }
+    public string? GroupCode { get; set; }
     public string? GroupName { get; set; }
     public Guid? SupervisorId { get; set; }
     public string? SupervisorFirstName { get; set; }

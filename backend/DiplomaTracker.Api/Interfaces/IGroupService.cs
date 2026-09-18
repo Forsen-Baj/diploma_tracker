@@ -13,4 +13,5 @@ public interface IGroupService
     Task<IReadOnlyList<GroupReviewerResponse>?> GetGroupReviewersAsync(Guid groupId);
     Task<(GroupReviewerResponse? reviewer, string? error)> AddGroupReviewerAsync(Guid groupId, AddGroupReviewerRequest request);
     Task<(bool success, string? error)> RemoveGroupReviewerAsync(Guid groupId, Guid reviewerId);
+    Task<(int? archived, string? error)> ArchiveGroupStudentsAsync(Guid groupId, Guid administratorId);
 }

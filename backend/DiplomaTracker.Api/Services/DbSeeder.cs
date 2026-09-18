@@ -29,10 +29,10 @@ public static class DbSeeder
 
         var faculty = await EnsureFacultyAsync(dbContext, "Faculty of Informatics and Computer Science", "FICS", now);
         var department = await EnsureDepartmentAsync(dbContext, faculty.Id, "Department of Software Engineering", "SE", now);
-        var group = await EnsureGroupAsync(dbContext, department.Id, "Seed Group A", "Default seeded group", "2026/2027", now);
+        var group = await EnsureGroupAsync(dbContext, department.Id, "SEED-A", "Seed Group A", "Default seeded group", "2026/2027", now);
 
         await EnsureStudentProfileAsync(dbContext, student.Id, group.Id, teacher.Id, now);
-        await EnsureTaskTemplatesAsync(dbContext, now);
+        await EnsureTaskTemplatesAsync(dbContext, faculty.Id, now);
     }
 
     private static async Task<AppUser> EnsureUserAsync(
@@ -71,7 +71,7 @@ public static class DbSeeder
 
     private static async Task<Faculty> EnsureFacultyAsync(AppDbContext dbContext, string name, string shortName, DateTime now)
     {
-        var existing = await dbContext.Faculties.FirstOrDefaultAsync(f => f.ShortName == shortName);
+        var existing = await dbContext.Faculties.FirstOrDefaultAsync(f => f.ShortName == shortName || f.Name == name);
         if (existing is not null)
         {
             return existing;
@@ -98,7 +98,8 @@ public static class DbSeeder
         string shortName,
         DateTime now)
     {
-        var existing = await dbContext.Departments.FirstOrDefaultAsync(d => d.FacultyId == facultyId && d.ShortName == shortName);
+        var existing = await dbContext.Departments.FirstOrDefaultAsync(
+            d => d.FacultyId == facultyId && (d.ShortName == shortName || d.Name == name));
         if (existing is not null)
         {
             return existing;
@@ -122,12 +123,13 @@ public static class DbSeeder
     private static async Task<Group> EnsureGroupAsync(
         AppDbContext dbContext,
         Guid departmentId,
+        string code,
         string name,
         string description,
         string academicYear,
         DateTime now)
     {
-        var existing = await dbContext.Groups.FirstOrDefaultAsync(g => g.Name == name && g.AcademicYear == academicYear);
+        var existing = await dbContext.Groups.FirstOrDefaultAsync(g => g.Code == code && g.AcademicYear == academicYear);
         if (existing is not null)
         {
             return existing;
@@ -137,6 +139,7 @@ public static class DbSeeder
         {
             Id = Guid.NewGuid(),
             DepartmentId = departmentId,
+            Code = code,
             Name = name,
             Description = description,
             AcademicYear = academicYear,
@@ -165,6 +168,7 @@ public static class DbSeeder
         {
             Id = Guid.NewGuid(),
             UserId = userId,
+            StudentNumber = "SEED-0001",
             DiplomaTopic = "Seeded diploma topic",
             GroupId = groupId,
             SupervisorId = supervisorId,
@@ -175,7 +179,7 @@ public static class DbSeeder
         await dbContext.SaveChangesAsync();
     }
 
-    private static async Task EnsureTaskTemplatesAsync(AppDbContext dbContext, DateTime now)
+    private static async Task EnsureTaskTemplatesAsync(AppDbContext dbContext, Guid facultyId, DateTime now)
     {
         if (await dbContext.DiplomaTaskTemplates.AnyAsync())
         {
@@ -187,6 +191,7 @@ public static class DbSeeder
             dbContext.DiplomaTaskTemplates.Add(new DiplomaTaskTemplate
             {
                 Id = Guid.NewGuid(),
+                FacultyId = facultyId,
                 Title = DefaultTaskTemplates[i],
                 Order = i + 1,
                 IsActive = true,

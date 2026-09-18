@@ -1,20 +1,22 @@
 using DiplomaTracker.Api.Data;
 using DiplomaTracker.Api.DTOs.Groups;
 using DiplomaTracker.Api.Entities;
+using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DiplomaTracker.Api.Services;
 
 public class GroupService : IGroupService
 {
-    private const string DuplicateGroup = "Group with the same name and academic year already exists.";
-
     private readonly AppDbContext _dbContext;
+    private readonly ILogger<GroupService> _logger;
 
-    public GroupService(AppDbContext dbContext)
+    public GroupService(AppDbContext dbContext, ILogger<GroupService> logger)
     {
         _dbContext = dbContext;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<GroupResponse>> GetGroupsAsync()
@@ -23,7 +25,7 @@ public class GroupService : IGroupService
             .AsNoTracking()
             .Include(g => g.Department)
             .ThenInclude(d => d.Faculty)
-            .OrderBy(g => g.Name)
+            .OrderBy(g => g.Code)
             .ThenBy(g => g.AcademicYear)
             .ToListAsync();
 
@@ -46,16 +48,22 @@ public class GroupService : IGroupService
         var department = await FindDepartmentAsync(request.DepartmentId);
         if (department is null)
         {
-            return (null, AcademicStructureErrors.DepartmentNotFound);
+            return (null, GroupErrors.DepartmentNotFound);
         }
 
-        var normalizedName = request.Name.Trim();
+        var normalizedCode = request.Code.Trim();
+        var normalizedName = string.IsNullOrWhiteSpace(request.Name) ? null : request.Name.Trim();
         var normalizedAcademicYear = request.AcademicYear.Trim();
 
-        var exists = await _dbContext.Groups.AnyAsync(g => g.Name == normalizedName && g.AcademicYear == normalizedAcademicYear);
+        if (string.IsNullOrWhiteSpace(normalizedCode) || string.IsNullOrWhiteSpace(normalizedAcademicYear))
+        {
+            return (null, CommonErrors.ValidationFailed);
+        }
+
+        var exists = await _dbContext.Groups.AnyAsync(g => g.Code == normalizedCode && g.AcademicYear == normalizedAcademicYear);
         if (exists)
         {
-            return (null, DuplicateGroup);
+            return (null, GroupErrors.CodeTaken);
         }
 
         var now = DateTime.UtcNow;
@@ -64,6 +72,7 @@ public class GroupService : IGroupService
             Id = Guid.NewGuid(),
             DepartmentId = department.Id,
             Department = department,
+            Code = normalizedCode,
             Name = normalizedName,
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
             AcademicYear = normalizedAcademicYear,
@@ -72,7 +81,21 @@ public class GroupService : IGroupService
         };
 
         _dbContext.Groups.Add(group);
-        await _dbContext.SaveChangesAsync();
+
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.IsUniqueConstraintViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, GroupErrors.CodeTaken);
+        }
+        catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, GroupErrors.DepartmentNotFound);
+        }
 
         return (MapGroup(group), null);
     }
@@ -82,32 +105,52 @@ public class GroupService : IGroupService
         var group = await _dbContext.Groups.FirstOrDefaultAsync(g => g.Id == id);
         if (group is null)
         {
-            return (null, "Group not found.");
+            return (null, GroupErrors.NotFound);
         }
 
         var department = await FindDepartmentAsync(request.DepartmentId);
         if (department is null)
         {
-            return (null, AcademicStructureErrors.DepartmentNotFound);
+            return (null, GroupErrors.DepartmentNotFound);
         }
 
-        var normalizedName = request.Name.Trim();
+        var normalizedCode = request.Code.Trim();
+        var normalizedName = string.IsNullOrWhiteSpace(request.Name) ? null : request.Name.Trim();
         var normalizedAcademicYear = request.AcademicYear.Trim();
 
-        var exists = await _dbContext.Groups.AnyAsync(g => g.Id != id && g.Name == normalizedName && g.AcademicYear == normalizedAcademicYear);
+        if (string.IsNullOrWhiteSpace(normalizedCode) || string.IsNullOrWhiteSpace(normalizedAcademicYear))
+        {
+            return (null, CommonErrors.ValidationFailed);
+        }
+
+        var exists = await _dbContext.Groups.AnyAsync(g => g.Id != id && g.Code == normalizedCode && g.AcademicYear == normalizedAcademicYear);
         if (exists)
         {
-            return (null, DuplicateGroup);
+            return (null, GroupErrors.CodeTaken);
         }
 
         group.DepartmentId = department.Id;
         group.Department = department;
+        group.Code = normalizedCode;
         group.Name = normalizedName;
         group.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
         group.AcademicYear = normalizedAcademicYear;
         group.UpdatedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync();
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.IsUniqueConstraintViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, GroupErrors.CodeTaken);
+        }
+        catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, GroupErrors.DepartmentNotFound);
+        }
 
         return (MapGroup(group), null);
     }
@@ -117,26 +160,39 @@ public class GroupService : IGroupService
         var group = await _dbContext.Groups.FirstOrDefaultAsync(g => g.Id == id);
         if (group is null)
         {
-            return (false, "Group not found.");
+            return (false, GroupErrors.NotFound);
         }
 
         var hasAssignedStudents = await _dbContext.StudentProfiles.AnyAsync(s => s.GroupId == id);
         if (hasAssignedStudents)
         {
-            return (false, "Cannot delete group because students are assigned.");
+            return (false, GroupErrors.HasStudents);
         }
 
         _dbContext.Groups.Remove(group);
-        await _dbContext.SaveChangesAsync();
+
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (false, GroupErrors.HasStudents);
+        }
+
         return (true, null);
     }
 
     public async Task<(IReadOnlyList<GroupStudentResponse>? students, string? error)> GetGroupStudentsAsync(Guid groupId, string role, Guid userId)
     {
-        var groupExists = await _dbContext.Groups.AnyAsync(g => g.Id == groupId);
-        if (!groupExists)
+        var groupCode = await _dbContext.Groups
+            .Where(g => g.Id == groupId)
+            .Select(g => (string?)g.Code)
+            .FirstOrDefaultAsync();
+        if (groupCode is null)
         {
-            return (null, "Group not found.");
+            return (null, GroupErrors.NotFound);
         }
 
         if (role == "Teacher")
@@ -144,7 +200,7 @@ public class GroupService : IGroupService
             var isReviewer = await _dbContext.GroupReviewers.AnyAsync(gr => gr.GroupId == groupId && gr.ReviewerId == userId);
             if (!isReviewer)
             {
-                return (null, "Forbidden.");
+                return (null, CommonErrors.Forbidden);
             }
         }
 
@@ -152,12 +208,39 @@ public class GroupService : IGroupService
             .AsNoTracking()
             .Include(s => s.User)
             .Include(s => s.Supervisor)
-            .Where(s => s.GroupId == groupId && s.User.Role == "Student")
+            .Where(s => s.GroupId == groupId && s.User.Role == "Student" && s.ArchivedAt == null)
             .OrderBy(s => s.User.LastName)
             .ThenBy(s => s.User.FirstName)
             .ToListAsync();
 
-        return (students.Select(MapGroupStudent).ToList(), null);
+        return (students.Select(s => MapGroupStudent(s, groupCode)).ToList(), null);
+    }
+
+    public async Task<(int? archived, string? error)> ArchiveGroupStudentsAsync(Guid groupId, Guid administratorId)
+    {
+        var groupExists = await _dbContext.Groups.AnyAsync(g => g.Id == groupId);
+        if (!groupExists)
+        {
+            return (null, GroupErrors.NotFound);
+        }
+
+        var profiles = await _dbContext.StudentProfiles
+            .Include(s => s.User)
+            .Where(s => s.GroupId == groupId && s.User.Role == "Student" && s.ArchivedAt == null)
+            .ToListAsync();
+
+        var now = DateTime.UtcNow;
+        var archivedIds = StudentArchiver.Archive(profiles, now);
+        await _dbContext.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Group students archived: GroupId={GroupId}, Count={Count}, StudentProfileIds={StudentProfileIds}, AdministratorId={AdministratorId}",
+            groupId,
+            archivedIds.Count,
+            archivedIds,
+            administratorId);
+
+        return (archivedIds.Count, null);
     }
 
     public async Task<IReadOnlyList<GroupReviewerResponse>?> GetGroupReviewersAsync(Guid groupId)
@@ -184,30 +267,30 @@ public class GroupService : IGroupService
         var groupExists = await _dbContext.Groups.AnyAsync(g => g.Id == groupId);
         if (!groupExists)
         {
-            return (null, "Group not found.");
+            return (null, GroupErrors.NotFound);
         }
 
         var reviewer = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == request.ReviewerId);
         if (reviewer is null)
         {
-            return (null, "Reviewer not found.");
+            return (null, GroupErrors.ReviewerNotFound);
         }
 
         if (reviewer.Role != "Teacher")
         {
-            return (null, "Reviewer must be a teacher.");
+            return (null, GroupErrors.ReviewerMustBeActiveTeacher);
         }
 
         if (!reviewer.IsActive)
         {
-            return (null, "Reviewer must be active.");
+            return (null, GroupErrors.ReviewerMustBeActiveTeacher);
         }
 
         var alreadyAssigned = await _dbContext.GroupReviewers
             .AnyAsync(gr => gr.GroupId == groupId && gr.ReviewerId == request.ReviewerId);
         if (alreadyAssigned)
         {
-            return (null, "Reviewer is already assigned to this group.");
+            return (null, GroupErrors.ReviewerAlreadyAssigned);
         }
 
         var assignment = new GroupReviewer
@@ -230,14 +313,14 @@ public class GroupService : IGroupService
         var groupExists = await _dbContext.Groups.AnyAsync(g => g.Id == groupId);
         if (!groupExists)
         {
-            return (false, "Group not found.");
+            return (false, GroupErrors.NotFound);
         }
 
         var assignment = await _dbContext.GroupReviewers
             .FirstOrDefaultAsync(gr => gr.GroupId == groupId && gr.ReviewerId == reviewerId);
         if (assignment is null)
         {
-            return (false, "Reviewer assignment not found.");
+            return (false, GroupErrors.ReviewerAssignmentNotFound);
         }
 
         _dbContext.GroupReviewers.Remove(assignment);
@@ -259,6 +342,7 @@ public class GroupService : IGroupService
         DepartmentName = group.Department.Name,
         FacultyId = group.Department.FacultyId,
         FacultyName = group.Department.Faculty.Name,
+        Code = group.Code,
         Name = group.Name,
         Description = group.Description,
         AcademicYear = group.AcademicYear,
@@ -277,14 +361,17 @@ public class GroupService : IGroupService
         CreatedAt = groupReviewer.CreatedAt
     };
 
-    private static GroupStudentResponse MapGroupStudent(StudentProfile profile) => new()
+    private static GroupStudentResponse MapGroupStudent(StudentProfile profile, string groupCode) => new()
     {
         StudentProfileId = profile.Id,
         UserId = profile.UserId,
+        GroupCode = groupCode,
         FirstName = profile.User.FirstName,
         LastName = profile.User.LastName,
         Email = profile.User.Email,
+        StudentNumber = profile.StudentNumber,
         IsActive = profile.User.IsActive,
+        IsClaimed = profile.User.PasswordHash is not null,
         DiplomaTopic = profile.DiplomaTopic,
         SupervisorId = profile.SupervisorId,
         SupervisorFirstName = profile.Supervisor?.FirstName,

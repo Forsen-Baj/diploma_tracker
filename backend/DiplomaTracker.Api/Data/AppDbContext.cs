@@ -18,6 +18,7 @@ public class AppDbContext : DbContext
     public DbSet<DiplomaTaskTemplate> DiplomaTaskTemplates => Set<DiplomaTaskTemplate>();
     public DbSet<GroupTask> GroupTasks => Set<GroupTask>();
     public DbSet<StudentTask> StudentTasks => Set<StudentTask>();
+    public DbSet<PlatformSettings> PlatformSettings => Set<PlatformSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -50,9 +51,10 @@ public class AppDbContext : DbContext
         user.HasKey(x => x.Id);
         user.Property(x => x.FirstName).HasMaxLength(100).IsRequired();
         user.Property(x => x.LastName).HasMaxLength(100).IsRequired();
+        user.Property(x => x.Patronymic).HasMaxLength(100);
         user.Property(x => x.Email).HasMaxLength(256).IsRequired();
         user.HasIndex(x => x.Email).IsUnique();
-        user.Property(x => x.PasswordHash).IsRequired();
+        user.Property(x => x.PasswordHash);
         user.Property(x => x.Role).HasMaxLength(50).IsRequired();
         user.Property(x => x.IsActive).IsRequired();
         user.Property(x => x.CreatedAt).IsRequired();
@@ -61,9 +63,11 @@ public class AppDbContext : DbContext
         var studentProfile = modelBuilder.Entity<StudentProfile>();
         studentProfile.ToTable("StudentProfiles");
         studentProfile.HasKey(x => x.Id);
-        studentProfile.Property(x => x.DiplomaTopic).HasMaxLength(500).IsRequired();
+        studentProfile.Property(x => x.StudentNumber).HasMaxLength(32).IsRequired();
+        studentProfile.HasIndex(x => x.StudentNumber).IsUnique();
+        studentProfile.Property(x => x.DiplomaTopic).HasMaxLength(500);
         studentProfile.Property(x => x.GroupId).IsRequired();
-        studentProfile.Property(x => x.SupervisorId).IsRequired();
+        studentProfile.Property(x => x.ArchivedAt);
         studentProfile.Property(x => x.CreatedAt).IsRequired();
         studentProfile.Property(x => x.UpdatedAt).IsRequired();
         studentProfile.HasIndex(x => x.UserId).IsUnique();
@@ -78,17 +82,19 @@ public class AppDbContext : DbContext
         studentProfile.HasOne(x => x.Supervisor)
             .WithMany(x => x.SupervisedStudents)
             .HasForeignKey(x => x.SupervisorId)
+            .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
 
         var group = modelBuilder.Entity<Group>();
         group.ToTable("Groups");
         group.HasKey(x => x.Id);
-        group.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        group.Property(x => x.Code).HasMaxLength(32).IsRequired();
+        group.Property(x => x.Name).HasMaxLength(200);
         group.Property(x => x.Description).HasMaxLength(1000);
         group.Property(x => x.AcademicYear).HasMaxLength(50).IsRequired();
         group.Property(x => x.CreatedAt).IsRequired();
         group.Property(x => x.UpdatedAt).IsRequired();
-        group.HasIndex(x => new { x.Name, x.AcademicYear }).IsUnique();
+        group.HasIndex(x => new { x.AcademicYear, x.Code }).IsUnique();
         group.HasOne(x => x.Department)
             .WithMany(x => x.Groups)
             .HasForeignKey(x => x.DepartmentId)
@@ -118,10 +124,16 @@ public class AppDbContext : DbContext
         taskTemplate.Property(x => x.CreatedAt).IsRequired();
         taskTemplate.Property(x => x.UpdatedAt).IsRequired();
         taskTemplate.HasIndex(x => x.Title);
+        taskTemplate.HasIndex(x => x.FacultyId);
+        taskTemplate.HasOne(x => x.Faculty)
+            .WithMany(x => x.TaskTemplates)
+            .HasForeignKey(x => x.FacultyId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         var groupTask = modelBuilder.Entity<GroupTask>();
         groupTask.ToTable("GroupTasks");
         groupTask.HasKey(x => x.Id);
+        groupTask.Property(x => x.StartDate);
         groupTask.Property(x => x.Deadline).IsRequired();
         groupTask.Property(x => x.CreatedAt).IsRequired();
         groupTask.Property(x => x.UpdatedAt);
@@ -151,5 +163,16 @@ public class AppDbContext : DbContext
             .WithMany(x => x.StudentTasks)
             .HasForeignKey(x => x.GroupTaskId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        var platformSettings = modelBuilder.Entity<PlatformSettings>();
+        platformSettings.ToTable("PlatformSettings");
+        platformSettings.HasKey(x => x.Id);
+        platformSettings.Property(x => x.Id).ValueGeneratedNever();
+        platformSettings.Property(x => x.RegistrationOpen).IsRequired();
+        platformSettings.HasData(new PlatformSettings
+        {
+            Id = Entities.PlatformSettings.SingletonId,
+            RegistrationOpen = false
+        });
     }
 }

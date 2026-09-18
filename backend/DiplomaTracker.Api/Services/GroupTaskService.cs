@@ -2,6 +2,7 @@ using DiplomaTracker.Api.Data;
 using DiplomaTracker.Api.DTOs.GroupTasks;
 using DiplomaTracker.Api.DTOs.Students;
 using DiplomaTracker.Api.Entities;
+using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,11 +19,7 @@ public class GroupTaskService : IGroupTaskService
 
     public async Task<(IReadOnlyList<GroupTaskResponse>? tasks, string? error)> GetGroupTasksAsync(string role, Guid userId)
     {
-        var query = _dbContext.GroupTasks.AsNoTracking()
-            .Include(x => x.Group)
-            .Include(x => x.DiplomaTaskTemplate)
-            .Include(x => x.StudentTasks)
-            .AsQueryable();
+        var query = _dbContext.GroupTasks.AsNoTracking().AsQueryable();
 
         if (role == "Teacher")
         {
@@ -33,26 +30,23 @@ public class GroupTaskService : IGroupTaskService
             query = query.Where(x => groupIds.Contains(x.GroupId));
         }
 
-        var tasks = await query
-            .OrderBy(x => x.Group.Name)
-            .ThenBy(x => x.DiplomaTaskTemplate.Order)
-            .ThenBy(x => x.Deadline)
+        var tasks = await ProjectGroupTasks(query
+                .OrderBy(x => x.Group.Code)
+                .ThenBy(x => x.DiplomaTaskTemplate.Order)
+                .ThenBy(x => x.Deadline))
             .ToListAsync();
 
-        return (tasks.Select(MapGroupTask).ToList(), null);
+        return (tasks, null);
     }
 
     public async Task<(GroupTaskResponse? task, string? error)> GetGroupTaskByIdAsync(Guid id, string role, Guid userId)
     {
-        var groupTask = await _dbContext.GroupTasks.AsNoTracking()
-            .Include(x => x.Group)
-            .Include(x => x.DiplomaTaskTemplate)
-            .Include(x => x.StudentTasks)
-            .FirstOrDefaultAsync(x => x.Id == id);
+        var groupTask = await ProjectGroupTasks(_dbContext.GroupTasks.AsNoTracking().Where(x => x.Id == id))
+            .FirstOrDefaultAsync();
 
         if (groupTask is null)
         {
-            return (null, "Group task not found.");
+            return (null, TaskErrors.GroupTaskNotFound);
         }
 
         if (role == "Teacher")
@@ -60,11 +54,11 @@ public class GroupTaskService : IGroupTaskService
             var allowed = await IsTeacherReviewerOfGroupAsync(userId, groupTask.GroupId);
             if (!allowed)
             {
-                return (null, "Forbidden.");
+                return (null, CommonErrors.Forbidden);
             }
         }
 
-        return (MapGroupTask(groupTask), null);
+        return (groupTask, null);
     }
 
     public async Task<(IReadOnlyList<GroupTaskResponse>? tasks, string? error)> GetTasksForGroupAsync(Guid groupId, string role, Guid userId)
@@ -72,7 +66,7 @@ public class GroupTaskService : IGroupTaskService
         var groupExists = await _dbContext.Groups.AnyAsync(g => g.Id == groupId);
         if (!groupExists)
         {
-            return (null, "Group not found.");
+            return (null, GroupErrors.NotFound);
         }
 
         if (role == "Teacher")
@@ -80,28 +74,27 @@ public class GroupTaskService : IGroupTaskService
             var allowed = await IsTeacherReviewerOfGroupAsync(userId, groupId);
             if (!allowed)
             {
-                return (null, "Forbidden.");
+                return (null, CommonErrors.Forbidden);
             }
         }
 
-        var tasks = await _dbContext.GroupTasks.AsNoTracking()
-            .Include(x => x.Group)
-            .Include(x => x.DiplomaTaskTemplate)
-            .Include(x => x.StudentTasks)
-            .Where(x => x.GroupId == groupId)
-            .OrderBy(x => x.DiplomaTaskTemplate.Order)
-            .ThenBy(x => x.Deadline)
+        var tasks = await ProjectGroupTasks(_dbContext.GroupTasks.AsNoTracking()
+                .Where(x => x.GroupId == groupId)
+                .OrderBy(x => x.DiplomaTaskTemplate.Order)
+                .ThenBy(x => x.Deadline))
             .ToListAsync();
 
-        return (tasks.Select(MapGroupTask).ToList(), null);
+        return (tasks, null);
     }
 
     public async Task<(GroupTaskResponse? task, string? error)> CreateGroupTaskAsync(CreateGroupTaskRequest request, string role, Guid userId)
     {
-        var group = await _dbContext.Groups.FirstOrDefaultAsync(g => g.Id == request.GroupId);
+        var group = await _dbContext.Groups
+            .Include(g => g.Department)
+            .FirstOrDefaultAsync(g => g.Id == request.GroupId);
         if (group is null)
         {
-            return (null, "Group not found.");
+            return (null, TaskErrors.GroupTaskGroupNotFound);
         }
 
         if (role == "Teacher")
@@ -109,26 +102,36 @@ public class GroupTaskService : IGroupTaskService
             var allowed = await IsTeacherReviewerOfGroupAsync(userId, request.GroupId);
             if (!allowed)
             {
-                return (null, "Forbidden.");
+                return (null, CommonErrors.Forbidden);
             }
         }
 
         var template = await _dbContext.DiplomaTaskTemplates.FirstOrDefaultAsync(t => t.Id == request.TaskTemplateId);
         if (template is null)
         {
-            return (null, "Task template not found.");
+            return (null, TaskErrors.GroupTaskTemplateNotFound);
         }
 
         if (!template.IsActive)
         {
-            return (null, "Task template must be active.");
+            return (null, TaskErrors.GroupTaskTemplateInactive);
+        }
+
+        if (template.FacultyId != group.Department.FacultyId)
+        {
+            return (null, TaskErrors.GroupTaskTemplateFacultyMismatch);
+        }
+
+        if (request.StartDate is not null && request.StartDate > request.Deadline)
+        {
+            return (null, TaskErrors.GroupTaskStartAfterDeadline);
         }
 
         var exists = await _dbContext.GroupTasks
             .AnyAsync(x => x.GroupId == request.GroupId && x.DiplomaTaskTemplateId == request.TaskTemplateId);
         if (exists)
         {
-            return (null, "Task template is already assigned to this group.");
+            return (null, TaskErrors.GroupTaskAlreadyAssigned);
         }
 
         var now = DateTime.UtcNow;
@@ -137,7 +140,8 @@ public class GroupTaskService : IGroupTaskService
             Id = Guid.NewGuid(),
             GroupId = request.GroupId,
             DiplomaTaskTemplateId = request.TaskTemplateId,
-            Deadline = request.Deadline,
+            StartDate = request.StartDate,
+            Deadline = request.Deadline!.Value,
             CreatedAt = now,
             UpdatedAt = null
         };
@@ -145,7 +149,7 @@ public class GroupTaskService : IGroupTaskService
         _dbContext.GroupTasks.Add(groupTask);
 
         var students = await _dbContext.StudentProfiles
-            .Where(s => s.GroupId == request.GroupId)
+            .Where(s => s.GroupId == request.GroupId && s.ArchivedAt == null)
             .Select(s => s.Id)
             .ToListAsync();
 
@@ -174,10 +178,12 @@ public class GroupTaskService : IGroupTaskService
 
     public async Task<(AssignAllTaskTemplatesResponse? response, string? error)> AssignAllTaskTemplatesAsync(Guid groupId, AssignAllTaskTemplatesRequest request, string role, Guid userId)
     {
-        var group = await _dbContext.Groups.FirstOrDefaultAsync(g => g.Id == groupId);
+        var group = await _dbContext.Groups
+            .Include(g => g.Department)
+            .FirstOrDefaultAsync(g => g.Id == groupId);
         if (group is null)
         {
-            return (null, "Group not found.");
+            return (null, GroupErrors.NotFound);
         }
 
         if (role == "Teacher")
@@ -185,13 +191,13 @@ public class GroupTaskService : IGroupTaskService
             var allowed = await IsTeacherReviewerOfGroupAsync(userId, groupId);
             if (!allowed)
             {
-                return (null, "Forbidden.");
+                return (null, CommonErrors.Forbidden);
             }
         }
 
         if (request.Items.Count == 0)
         {
-            return (null, "At least one task template is required.");
+            return (null, TaskErrors.GroupTaskNoTemplates);
         }
 
         var duplicateTemplateIds = request.Items
@@ -199,7 +205,7 @@ public class GroupTaskService : IGroupTaskService
             .Any(g => g.Count() > 1);
         if (duplicateTemplateIds)
         {
-            return (null, "Request contains duplicate task template IDs.");
+            return (null, TaskErrors.GroupTaskDuplicateTemplates);
         }
 
         var templateIds = request.Items.Select(x => x.TaskTemplateId).Distinct().ToList();
@@ -209,13 +215,25 @@ public class GroupTaskService : IGroupTaskService
 
         if (templates.Count != templateIds.Count)
         {
-            return (null, "One or more task templates were not found.");
+            return (null, TaskErrors.GroupTaskTemplateNotFound);
         }
 
         var inactiveTemplate = templates.FirstOrDefault(t => !t.IsActive);
         if (inactiveTemplate is not null)
         {
-            return (null, "All selected task templates must be active.");
+            return (null, TaskErrors.GroupTaskTemplateInactive);
+        }
+
+        var mismatchedTemplate = templates.FirstOrDefault(t => t.FacultyId != group.Department.FacultyId);
+        if (mismatchedTemplate is not null)
+        {
+            return (null, TaskErrors.GroupTaskTemplateFacultyMismatch);
+        }
+
+        var invalidStartDate = request.Items.Any(x => x.StartDate is not null && x.StartDate > x.Deadline);
+        if (invalidStartDate)
+        {
+            return (null, TaskErrors.GroupTaskStartAfterDeadline);
         }
 
         var existingTemplateIds = await _dbContext.GroupTasks
@@ -229,7 +247,7 @@ public class GroupTaskService : IGroupTaskService
         var createdStudentTasks = 0;
 
         var studentProfileIds = await _dbContext.StudentProfiles
-            .Where(s => s.GroupId == groupId)
+            .Where(s => s.GroupId == groupId && s.ArchivedAt == null)
             .Select(s => s.Id)
             .ToListAsync();
 
@@ -245,7 +263,8 @@ public class GroupTaskService : IGroupTaskService
                 Id = Guid.NewGuid(),
                 GroupId = groupId,
                 DiplomaTaskTemplateId = item.TaskTemplateId,
-                Deadline = item.Deadline,
+                StartDate = item.StartDate,
+                Deadline = item.Deadline!.Value,
                 CreatedAt = now
             };
             _dbContext.GroupTasks.Add(groupTask);
@@ -295,14 +314,11 @@ public class GroupTaskService : IGroupTaskService
     public async Task<(GroupTaskResponse? task, string? error)> UpdateGroupTaskAsync(Guid id, UpdateGroupTaskRequest request, string role, Guid userId)
     {
         var groupTask = await _dbContext.GroupTasks
-            .Include(x => x.Group)
-            .Include(x => x.DiplomaTaskTemplate)
-            .Include(x => x.StudentTasks)
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (groupTask is null)
         {
-            return (null, "Group task not found.");
+            return (null, TaskErrors.GroupTaskNotFound);
         }
 
         if (role == "Teacher")
@@ -310,15 +326,24 @@ public class GroupTaskService : IGroupTaskService
             var allowed = await IsTeacherReviewerOfGroupAsync(userId, groupTask.GroupId);
             if (!allowed)
             {
-                return (null, "Forbidden.");
+                return (null, CommonErrors.Forbidden);
             }
         }
 
-        groupTask.Deadline = request.Deadline;
+        if (request.StartDate is not null && request.StartDate > request.Deadline)
+        {
+            return (null, TaskErrors.GroupTaskStartAfterDeadline);
+        }
+
+        groupTask.StartDate = request.StartDate;
+        groupTask.Deadline = request.Deadline!.Value;
         groupTask.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync();
 
-        return (MapGroupTask(groupTask), null);
+        var updated = await ProjectGroupTasks(_dbContext.GroupTasks.AsNoTracking().Where(x => x.Id == id))
+            .FirstAsync();
+
+        return (updated, null);
     }
 
     public async Task<(bool success, string? error)> DeleteGroupTaskAsync(Guid id)
@@ -329,13 +354,13 @@ public class GroupTaskService : IGroupTaskService
 
         if (groupTask is null)
         {
-            return (false, "Group task not found.");
+            return (false, TaskErrors.GroupTaskNotFound);
         }
 
         var hasNonPending = groupTask.StudentTasks.Any(st => st.Status != StudentTaskStatus.Pending);
         if (hasNonPending)
         {
-            return (false, "Cannot delete group task because related student tasks are no longer pending.");
+            return (false, TaskErrors.GroupTaskHasProgress);
         }
 
         _dbContext.StudentTasks.RemoveRange(groupTask.StudentTasks);
@@ -349,7 +374,7 @@ public class GroupTaskService : IGroupTaskService
     {
         if (role != "Student")
         {
-            return (null, "Forbidden.");
+            return (null, CommonErrors.Forbidden);
         }
 
         var studentProfile = await _dbContext.StudentProfiles.AsNoTracking()
@@ -357,7 +382,7 @@ public class GroupTaskService : IGroupTaskService
 
         if (studentProfile is null)
         {
-            return (null, "Student profile not found.");
+            return (null, TaskErrors.StudentProfileNotFound);
         }
 
         var tasks = await _dbContext.StudentTasks.AsNoTracking()
@@ -376,7 +401,7 @@ public class GroupTaskService : IGroupTaskService
     {
         if (role != "Student")
         {
-            return (null, "Forbidden.");
+            return (null, CommonErrors.Forbidden);
         }
 
         var studentProfile = await _dbContext.StudentProfiles.AsNoTracking()
@@ -384,7 +409,7 @@ public class GroupTaskService : IGroupTaskService
 
         if (studentProfile is null)
         {
-            return (null, "Student profile not found.");
+            return (null, TaskErrors.StudentProfileNotFound);
         }
 
         var task = await _dbContext.StudentTasks.AsNoTracking()
@@ -394,7 +419,7 @@ public class GroupTaskService : IGroupTaskService
 
         if (task is null)
         {
-            return (null, "Task not found.");
+            return (null, TaskErrors.StudentTaskNotFound);
         }
 
         var now = DateTime.UtcNow;
@@ -406,17 +431,39 @@ public class GroupTaskService : IGroupTaskService
         return await _dbContext.GroupReviewers.AnyAsync(gr => gr.GroupId == groupId && gr.ReviewerId == teacherId);
     }
 
+    private static IQueryable<GroupTaskResponse> ProjectGroupTasks(IQueryable<GroupTask> query)
+    {
+        return query.Select(x => new GroupTaskResponse
+        {
+            Id = x.Id,
+            GroupId = x.GroupId,
+            GroupCode = x.Group.Code,
+            GroupName = x.Group.Name,
+            TaskTemplateId = x.DiplomaTaskTemplateId,
+            TaskTitle = x.DiplomaTaskTemplate.Title,
+            TaskDescription = x.DiplomaTaskTemplate.Description,
+            TaskOrder = x.DiplomaTaskTemplate.Order,
+            StartDate = x.StartDate,
+            Deadline = x.Deadline,
+            CreatedAt = x.CreatedAt,
+            UpdatedAt = x.UpdatedAt,
+            StudentTaskCount = x.StudentTasks.Count(st => st.StudentProfile.ArchivedAt == null)
+        });
+    }
+
     private static GroupTaskResponse MapGroupTask(GroupTask groupTask)
     {
         return new GroupTaskResponse
         {
             Id = groupTask.Id,
             GroupId = groupTask.GroupId,
+            GroupCode = groupTask.Group.Code,
             GroupName = groupTask.Group.Name,
             TaskTemplateId = groupTask.DiplomaTaskTemplateId,
             TaskTitle = groupTask.DiplomaTaskTemplate.Title,
             TaskDescription = groupTask.DiplomaTaskTemplate.Description,
             TaskOrder = groupTask.DiplomaTaskTemplate.Order,
+            StartDate = groupTask.StartDate,
             Deadline = groupTask.Deadline,
             CreatedAt = groupTask.CreatedAt,
             UpdatedAt = groupTask.UpdatedAt,
@@ -436,6 +483,7 @@ public class GroupTaskService : IGroupTaskService
             Title = task.GroupTask.DiplomaTaskTemplate.Title,
             Description = task.GroupTask.DiplomaTaskTemplate.Description,
             Order = task.GroupTask.DiplomaTaskTemplate.Order,
+            StartDate = task.GroupTask.StartDate,
             Deadline = task.GroupTask.Deadline,
             Status = status,
             DisplayStatus = displayStatus,
@@ -460,6 +508,7 @@ public class GroupTaskService : IGroupTaskService
             Title = task.GroupTask.DiplomaTaskTemplate.Title,
             Description = task.GroupTask.DiplomaTaskTemplate.Description,
             Order = task.GroupTask.DiplomaTaskTemplate.Order,
+            StartDate = task.GroupTask.StartDate,
             Deadline = task.GroupTask.Deadline,
             Status = status,
             DisplayStatus = displayStatus,

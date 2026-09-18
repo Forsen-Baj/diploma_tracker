@@ -9,14 +9,6 @@ import type {
   UpdateGroupTaskRequest
 } from './types'
 
-export async function getGroupTasks(): Promise<GroupTask[]> {
-  return apiRequest<GroupTask[]>('/api/group-tasks')
-}
-
-export async function getGroupTask(id: string): Promise<GroupTask> {
-  return apiRequest<GroupTask>(`/api/group-tasks/${id}`)
-}
-
 export async function getTasksForGroup(groupId: string): Promise<GroupTask[]> {
   return apiRequest<GroupTask[]>(`/api/groups/${groupId}/tasks`)
 }

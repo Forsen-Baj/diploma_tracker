@@ -1,5 +1,8 @@
+using System.Security.Claims;
 using DiplomaTracker.Api.DTOs.Students;
+using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
+using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,7 +11,7 @@ namespace DiplomaTracker.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Roles = "Admin")]
-public class StudentsController : ControllerBase
+public class StudentsController : ApiControllerBase
 {
     private readonly IStudentService _studentService;
 
@@ -18,121 +21,87 @@ public class StudentsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll([FromQuery] bool archived = false)
     {
-        var students = await _studentService.GetStudentsAsync();
-        return Ok(students);
+        return Ok(await _studentService.GetStudentsAsync(archived));
     }
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
         var student = await _studentService.GetStudentByIdAsync(id);
-        if (student is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(student);
+        return student is null ? ErrorResult(OnboardingErrors.StudentNotFound) : Ok(student);
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateStudentRequest request)
     {
         var (student, error) = await _studentService.CreateStudentAsync(request);
-        if (student is null)
-        {
-            if (error == "Email already exists.")
-            {
-                return Conflict(new { message = error });
-            }
-
-            if (error == "Group not found." || error == "Supervisor not found.")
-            {
-                return NotFound(new { message = error });
-            }
-
-            return BadRequest(new { message = error });
-        }
-
-        return CreatedAtAction(nameof(GetById), new { id = student.Id }, student);
+        return student is null
+            ? ErrorResult(error)
+            : CreatedAtAction(nameof(GetById), new { id = student.Id }, student);
     }
 
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateStudentRequest request)
     {
         var (student, error) = await _studentService.UpdateStudentAsync(id, request);
-        if (student is null)
-        {
-            if (error == "Student not found.")
-            {
-                return NotFound();
-            }
-
-            if (error == "Email already exists.")
-            {
-                return Conflict(new { message = error });
-            }
-
-            if (error == "Group not found." || error == "Supervisor not found.")
-            {
-                return NotFound(new { message = error });
-            }
-
-            return BadRequest(new { message = error });
-        }
-
-        return Ok(student);
+        return student is null ? ErrorResult(error) : Ok(student);
     }
 
-    [HttpPatch("{id:guid}/deactivate")]
-    public async Task<IActionResult> Deactivate(Guid id)
+    [HttpPost("archive")]
+    public async Task<IActionResult> Archive([FromBody] ArchiveStudentsRequest request)
     {
-        var (success, error) = await _studentService.DeactivateStudentAsync(id);
-        if (!success)
+        if (!TryGetUserId(out var administratorId))
         {
-            if (error == "Student not found.")
-            {
-                return NotFound();
-            }
-
-            return BadRequest(new { message = error });
+            return ErrorResult(CommonErrors.Forbidden);
         }
 
-        return NoContent();
+        var (archived, error) = await _studentService.ArchiveStudentsAsync(request.StudentIds, administratorId);
+        return error is null ? Ok(new ArchiveResultResponse { Archived = archived }) : ErrorResult(error);
+    }
+
+    [HttpPost("restore")]
+    public async Task<IActionResult> Restore([FromBody] RestoreStudentsRequest request)
+    {
+        if (!TryGetUserId(out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (restored, error) = await _studentService.RestoreStudentsAsync(request.StudentIds, administratorId);
+        return error is null ? Ok(new RestoreResultResponse { Restored = restored }) : ErrorResult(error);
+    }
+
+    [HttpPost("{id:guid}/reset-access")]
+    public async Task<IActionResult> ResetAccess(Guid id)
+    {
+        if (!TryGetUserId(out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (success, error) = await _studentService.ResetAccessAsync(id, administratorId);
+        return success ? NoContent() : ErrorResult(error);
     }
 
     [HttpPut("{id:guid}/group")]
     public async Task<IActionResult> AssignGroup(Guid id, [FromBody] AssignStudentGroupRequest request)
     {
         var (student, error) = await _studentService.AssignGroupAsync(id, request.GroupId);
-        if (student is null)
-        {
-            if (error == "Student not found." || error == "Group not found.")
-            {
-                return NotFound(new { message = error });
-            }
-
-            return BadRequest(new { message = error });
-        }
-
-        return Ok(student);
+        return student is null ? ErrorResult(error) : Ok(student);
     }
 
     [HttpPut("{id:guid}/supervisor")]
     public async Task<IActionResult> AssignSupervisor(Guid id, [FromBody] AssignStudentSupervisorRequest request)
     {
         var (student, error) = await _studentService.AssignSupervisorAsync(id, request.SupervisorId);
-        if (student is null)
-        {
-            if (error == "Student not found." || error == "Supervisor not found.")
-            {
-                return NotFound(new { message = error });
-            }
+        return student is null ? ErrorResult(error) : Ok(student);
+    }
 
-            return BadRequest(new { message = error });
-        }
-
-        return Ok(student);
+    private bool TryGetUserId(out Guid userId)
+    {
+        var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(userIdValue, out userId);
     }
 }

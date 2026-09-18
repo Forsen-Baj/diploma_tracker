@@ -9,4 +9,5 @@ public interface ITeacherService
     Task<(TeacherResponse? teacher, string? error)> CreateTeacherAsync(CreateTeacherRequest request);
     Task<(TeacherResponse? teacher, string? error)> UpdateTeacherAsync(Guid id, UpdateTeacherRequest request);
     Task<(bool success, string? error)> DeactivateTeacherAsync(Guid id);
+    Task<(bool success, string? error)> SetPasswordAsync(Guid id, string password, Guid administratorId);
 }
