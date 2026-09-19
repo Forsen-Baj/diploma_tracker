@@ -23,26 +23,36 @@ public class GroupsController : ApiControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var groups = await _groupService.GetGroupsAsync();
+        if (!TryGetCurrentUser(out var user))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var groups = await _groupService.GetGroupsAsync(user);
         return Ok(groups);
     }
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
-        var group = await _groupService.GetGroupByIdAsync(id);
+        if (!TryGetCurrentUser(out var user))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var group = await _groupService.GetGroupByIdAsync(user, id);
         return group is null ? ErrorResult(GroupErrors.NotFound) : Ok(group);
     }
 
     [HttpGet("{groupId:guid}/students")]
     public async Task<IActionResult> GetStudents(Guid groupId)
     {
-        if (!TryGetUserContext(out var role, out var userId))
+        if (!TryGetCurrentUser(out var user))
         {
             return ErrorResult(CommonErrors.Forbidden);
         }
 
-        var (students, error) = await _groupService.GetGroupStudentsAsync(groupId, role, userId);
+        var (students, error) = await _groupService.GetGroupStudentsAsync(user, groupId);
         return students is null ? ErrorResult(error) : Ok(students);
     }
 
@@ -88,7 +98,12 @@ public class GroupsController : ApiControllerBase
     [HttpGet("{groupId:guid}/reviewers")]
     public async Task<IActionResult> GetReviewers(Guid groupId)
     {
-        var reviewers = await _groupService.GetGroupReviewersAsync(groupId);
+        if (!TryGetCurrentUser(out var user))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var reviewers = await _groupService.GetGroupReviewersAsync(user, groupId);
         return reviewers is null ? ErrorResult(GroupErrors.NotFound) : Ok(reviewers);
     }
 

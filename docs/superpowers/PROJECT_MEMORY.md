@@ -11,9 +11,9 @@ Newest status first; keep entries short.
 | System design (binding authority) | `docs/superpowers/specs/2026-09-15-diploma-tracker-system-design.md` |
 | Increment designs | `docs/superpowers/specs/<date>-<topic>-design.md` |
 | Implementation plans | `docs/superpowers/plans/` |
-| Session handoffs (latest: `2026-09-19-phase-5-kickoff.md`) | `docs/superpowers/handoffs/` |
+| Session handoffs (latest: `2026-09-19-phase-5-resume.md`) | `docs/superpowers/handoffs/` |
 | Tests to write at the end of the project | `docs/superpowers/test-backlog.md` |
-| Per-plan execution ledger, briefs, reports, review packages (git-ignored, local only) | `.superpowers/sdd/<plan-name>/` |
+| Per-plan execution ledger, briefs, reports, review packages (git-ignored, local only — does **not** travel between machines, so a handoff must be self-contained) | `.superpowers/sdd/<plan-name>/` |
 | End-to-end check scripts (committed since 2026-09-18) | `.superpowers/checks/` |
 | Local dev server definitions (git-ignored) | `.claude/launch.json` — `api` on :5000, `web` on :5173 |
 
@@ -21,8 +21,9 @@ Newest status first; keep entries short.
 
 Delivery phases (spec §4): 1 Platform foundations · 2 Academic structure · 3 Design
 system · 4 Thesis topics and reservation · 5 Submission and review · 6 Document templates
-and generation · 7 Document preview and commenting. A user-onboarding increment (student
-list import, registration toggle, profile and password management) sits between 2 and 3.
+and generation · 7 Document preview and commenting · 8 Hardening and polish. A
+user-onboarding increment (student list import, registration toggle, profile and password
+management) sits between 2 and 3.
 
 | Phase | State | Design | Plan |
 |---|---|---|---|
@@ -32,11 +33,12 @@ list import, registration toggle, profile and password management) sits between 
 | 3 Design system | Done — commit `Implement design system and structure refinements` | `2026-09-17-design-system-design.md` | `2026-09-17-design-system.md` |
 | Structure and administration refinements | Done — commit `Implement design system and structure refinements` | `2026-09-17-structure-and-administration-refinements-design.md` | `2026-09-17-structure-and-administration-refinements.md` |
 | 4 Topics and reservation | Done — commit `Implement thesis topics and reservation` | `2026-09-17-topics-and-reservation-design.md` (amended 2026-09-18) | `2026-09-17-topics-and-reservation.md` |
-| 5 Submission and review | Planned | `2026-09-17-submission-and-review-design.md` | `2026-09-17-submission-and-review.md` |
+| 5 Submission and review | Done — commits `Added basic submission workflow`, `Complete submission and review` | `2026-09-17-submission-and-review-design.md` | `2026-09-17-submission-and-review.md` |
 | 6 Document templates | Planned | `2026-09-17-document-templates-design.md` | `2026-09-17-document-templates.md` |
 | 7 Document preview and commenting | Deferred by the owner; revisit after phase 6 | — | — |
+| 8 Hardening and polish | Opened by the owner 2026-09-19; design not yet written. Scope: the security items in *Parked* (rate limiting and its prerequisites, security logging, admin password length, identity proof during registration, token lifetime after archiving, world-readable reviewer lists and structure, OOXML container validation), the accessibility pass, step reordering, the orphaned-upload archive (a small feature with its own design paragraph), the performance and data niggles | — | — |
 
-Build order: onboarding → 3 → 4 → 5 → 6. Specs live in `docs/superpowers/specs/`, plans in
+Build order: onboarding → 3 → 4 → 5 → 6 → 8. Specs live in `docs/superpowers/specs/`, plans in
 `docs/superpowers/plans/`. Each plan assumes the previous ones are implemented; execute them
 in order with `superpowers:subagent-driven-development`.
 
@@ -77,8 +79,11 @@ Parked for later (not blocking):
   `docs/superpowers/test-backlog.md`, one section per phase.
 - Rate limiting is built but switched off (`RateLimiting:Enabled` = `false` in `appsettings.json`) until the owner enables it. Before enabling: forwarded-headers handling for a reverse proxy, a per-IP budget that suits a classroom behind one NAT (login and claim share one budget), and whether `PUT /api/auth/password` needs a limit.
 - Onboarding questions still open: student-number normalisation keeps internal spaces and does not fold Latin/Cyrillic lookalikes; administrators may change their own password to 8 characters; email + student number is weak proof of identity while registration is open.
-- Drag-and-drop reordering of step templates: owner wants it in the final phase, after the core workflows.
-- `fix-wave-backend-extra-check.mjs` has three failing checks that predate this work: it asserts a malformed CSV quote is a *file-level* error with `errors: []`, while `StudentImportService` reports it as a row-level `import.row.malformedQuote` carrying the line the quote opened on. The import still rejects the whole file (400, nothing created). Decide whether the script or the API is right when phase 5 touches uploads.
+- Drag-and-drop reordering of step templates: owner wants it in phase 8, after the core workflows.
+- Parked from the phase 5 review and security audit, owner's decision: the upload content check is four bytes of ZIP magic, so a `.jar` (on the supporting blocklist) passes as a `.docx` — a real fix opens a `ZipArchive`, requires `[Content_Types].xml` plus the `word/`/`ppt/` prefix and caps the compression ratio, and the spec's §5 wording should stop implying the blocklist covers `.jar`; `studentTask.notFound`/`notYours` (and the submission pair) are existence oracles the spec's §7 mandates (unexploitable with random v4 ids; the file endpoint does it right); the review queue is unpaginated; spec §8 shortfalls — the student dashboard omits the most recent decision and the teacher dashboard shows a group count instead of the progress of visible groups; progress-matrix keyboard access belongs to the accessibility pass.
+- Orphaned upload files when a group is deleted: the owner wants an archive of them that an administrator can manage — a phase 8 feature, not a bug fix.
+- Owner notes from the phase 5 browser walkthrough, not yet triaged: *My work* shows a blocked step only as *Not started*, with no hint that it is blocked; the step timeline lists versions oldest first; a zero-byte main file is refused with "add the main document"; the teacher's *My groups* rows open on click but show no affordance; the bulk step-assignment date inputs have no accessible names; names read "Demo Teacher" in the header but "Teacher Demo" in the timeline and queue; the native file input's "Choose file" text follows the browser language, not the interface language; the *Late submissions* tile counts late submissions (two versions of one step count twice) exactly as the design's `students/{id}/progress` row says — confirm that is what the owner wants.
+- The check scripts leave about 60 **unarchived** students (and `RF Step …` templates) in `SEED-A` (about 15 per full pass of the six scripts), which crowd the progress matrix and the group page; find which scripts skip the archive step described under *Gotchas*.
 - Parked from the phase 3 review: a group whose students are all archived cannot be deleted; reviewer lists and the academic structure are readable by any signed-in user; tokens stay valid up to 60 minutes after archiving or deactivation; accessibility pass (request sequencing, modal initial focus, segmented-control keyboard behaviour, loading states announced).
 - Parked from the phase 4 review, owner to decide: `IsSelectionOpenAsync` re-reads `PlatformSettings` on every call; `TopicService` repeats five identical correlated subqueries per topic row; `StudentProfile.TopicId` and the `Approved` reservation are two sources of truth for whether a student holds a topic; a rejection carrying **no** comment shows the student nothing at all on their *My topic* card (the spec ties that block to the comment); `selectionClosedRaw` is computed only at render, so a page left open across the deadline keeps offering the actions until something re-renders (the API refuses the call regardless).
 - The interface ships **one theme only** — `src/index.css` defines a single set of `--color-*` values and there is no `prefers-color-scheme`, `data-theme` or toggle anywhere. Do not assume a dark mode exists when styling.
@@ -134,6 +139,10 @@ Parked for later (not blocking):
   (`pkgs.dev.azure.com/FPipe/...`) answers 401 and fails every restore. Restore with
   `--source https://api.nuget.org/v3/index.json` and build with `--no-restore`; the resulting
   `NU1900` warning about that feed is an environment artefact, not a code warning.
+- Uploaded files are stored under `Storage:RootPath` (Development: `App_Data/uploads`, resolved
+  against the content root to `backend/DiplomaTracker.Api/App_Data/uploads`, git-ignored as
+  `App_Data/`); hosted deployments set `Storage__RootPath`. Startup validation refuses a
+  missing or unwritable path.
 - Secrets (`ConnectionStrings:DefaultConnection`, `Jwt:Secret`) live in user-secrets,
   never in `appsettings*.json`. Never print them.
 - Development seed accounts: `admin@diploma.local`, `teacher@diploma.local`,
@@ -150,13 +159,27 @@ Parked for later (not blocking):
   `dotnet build`/`dotnet test` need.
 - **Frontend build needs `VITE_API_BASE_URL`** (`apiClient.ts` throws at module load
   without it): `VITE_API_BASE_URL=http://localhost:5000 npm run build`.
-- **Lint baseline:** 0 errors, 2 `react-hooks/exhaustive-deps` warnings
-  (`GroupDetailsPage.tsx`, `GroupsPage.tsx`).
+- **Lint baseline:** 0 errors, 0 warnings (since phase 5).
 - **EF design-time tooling needs no secrets:** configuration validation runs after
   `builder.Build()`, where design-time host resolution stops.
 - **Recreating the schema:** `dotnet ef database drop --force --project
   DiplomaTracker.Api -- --environment Development`, then start the API; it applies
   migrations and re-seeds. Hand-created rows are not recreated.
+- **Every machine must drop its own database when `InitialCreate` is regenerated.** The new
+  migration has a new id, so a database that recorded the old one fails at startup with
+  "There is already an object named 'Faculties'" (`Program.cs` runs `MigrateAsync`). Ask the
+  owner before dropping.
+- **Student steps exist on join, never on read.** `GroupTaskService` creates a `StudentTask` row
+  for every current member when a step is assigned, and `LateJoinerTaskAssigner` creates the
+  missing rows when a student joins or moves into a group. Reads never create rows; a new
+  path that adds a student to a group must call `LateJoinerTaskAssigner`.
+- **Visibility** for teachers goes through `IAccessScope` (groups they review, or where they
+  supervise a student); new group- or student-scoped queries must use it. A hidden resource
+  answers exactly like a missing one — same status, code and message.
+- **Every `DateTime` on the wire is UTC and ends in `Z`.** `UtcDateTimeJsonConverter` is
+  registered globally in `Program.cs`; an offset-less value sent to the API is read as UTC, so
+  the client must send UTC instants (the admin UI converts local input). Never introduce
+  `DateTime.Now` or `ToLocalTime` on the server.
 - **The InMemory provider enforces neither foreign keys nor unique indexes;** constraint
   behaviour is only proven against SQL Server.
 - Subagents have no browser. Browser checks run from the controller session through the
@@ -195,4 +218,5 @@ Parked for later (not blocking):
 - 2026-09-17 — Onboarding refined: an access reset reopens only that student's account (`ClaimReopened`), account events are logged, rate limiting switched off, group details show student number and claim status.
 - 2026-09-18 — Design system and structure refinements implemented: `{ code, message }` error contract, Tailwind 4 + Headless UI component library, uk/en interface, group codes, steps per faculty with start dates, administrators page, student archiving, steps for late joiners.
 - 2026-09-18 — Owner notes from the phase 3 browser test applied: academic year restricted to digits and `/ \ - .` (max 20, `validation.failed` with `format`), `Group.Name` removed entirely so the code is the only group identity, step template `Order` unique per faculty (`taskTemplate.orderTaken` on create; an update moves the step and shifts its neighbours), check scripts use realistic academic years and delete every group they create.
+- 2026-09-19 — Phase 5 implemented: step submissions with a main document and up to three supporting files, versioned resubmission, reviewer approve (mark 0–100) / return (comment), strict step order, late flag, secured downloads, review queue, group progress matrix, student and teacher dashboards. Whole-plan review (0 Critical, 7 Important) and security audit (1 High, 3 Medium) fixed in one wave; the scoped re-review's two new Minors fixed; seven-step browser walkthrough passed. All API dates now serialise as UTC. Phase 8 "Hardening and polish" opened.
 - 2026-09-19 — Phase 4 implemented: topic catalogue, reservations, student proposals, change requests for an approved topic, administrator assignment from the student form (`PUT /api/students/{id}/topic`), administrator amendment of a topic at any stage, and the global selection deadline on a new Settings page. Reviewed in two halves (backend 1 Critical / 8 Important, frontend 2 Critical / 9 Important); one fix wave and a scoped re-review returned 39 of 40 findings fixed with no new defects.

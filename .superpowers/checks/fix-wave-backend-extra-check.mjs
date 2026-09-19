@@ -54,9 +54,13 @@ const strayQuoteCsv =
   'Koval;Oksana;oksana.stray@x.local;NSTRAY4\r\n'
 const strayResult = await call('POST', `/api/groups/${groupId}/students/import`, { token: admin, form: csvForm(strayQuoteCsv) })
 check('stray-quote CSV rejected: status', strayResult.status, 400)
-check('stray-quote CSV rejected: no row errors (file-level error)', strayResult.data?.errors, [])
-console.log('  message:', strayResult.data?.message)
-check('stray-quote CSV rejected: message mentions quote', /quote/i.test(strayResult.data?.message ?? ''), true)
+// The API reports a malformed quote as a row-level error (StudentImportService.cs:68 ->
+// ImportRowError.Create), not a file-level one: code import.rowErrors with one row error naming
+// the line the quote opened on. The owner decided the API is right and this expectation was stale.
+check('stray-quote CSV rejected: code (row-level, not file-level)', strayResult.data?.code, 'import.rowErrors')
+check('stray-quote CSV rejected: row error names the line the quote opened on', strayResult.data?.errors, [
+  { line: 2, code: 'import.row.malformedQuote', message: 'The file has a misplaced or unclosed quote.', params: null }
+])
 
 const studentsAfterStray = (await call('GET', '/api/students', { token: admin })).data
 check('stray-quote CSV rejected: no Ivan created', studentsAfterStray.some((s) => s.email === 'ivan.stray@x.local'), false)
@@ -68,8 +72,10 @@ const unterminatedCsv =
   '"Ivanenko;Ivan;ivan.unterm@x.local;NUNTERM1\r\n'
 const untermResult = await call('POST', `/api/groups/${groupId}/students/import`, { token: admin, form: csvForm(unterminatedCsv) })
 check('unterminated-quote CSV rejected: status', untermResult.status, 400)
-console.log('  message:', untermResult.data?.message)
-check('unterminated-quote CSV rejected: message mentions quote', /quote/i.test(untermResult.data?.message ?? ''), true)
+check('unterminated-quote CSV rejected: row-level error names the line the quote opened on', { code: untermResult.data?.code, errors: untermResult.data?.errors }, {
+  code: 'import.rowErrors',
+  errors: [{ line: 2, code: 'import.row.malformedQuote', message: 'The file has a misplaced or unclosed quote.', params: null }]
+})
 
 // 1c. Quoted line breaks and doubled quotes still work (regression guard for the tokenizer rewrite).
 const stamp = Date.now().toString().slice(-6)

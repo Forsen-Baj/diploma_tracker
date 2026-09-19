@@ -225,62 +225,6 @@ export type AssignAllTaskTemplatesResponse = {
   groupTasks: GroupTask[]
 }
 
-export type MyStudentTask = {
-  id: string
-  groupTaskId: string
-  taskTemplateId: string
-  title: string
-  description: string | null
-  order: number
-  startDate: string | null
-  deadline: string
-  status: string
-  displayStatus: string
-  currentMark: number | null
-  completedAt: string | null
-  latestSubmissionAt: string | null
-  latestReviewerComment: string | null
-  createdAt: string
-  updatedAt: string | null
-}
-
-export type StudentTaskSubmissionHistoryItem = {
-  id: string
-  originalFileName: string
-  submittedAt: string
-  isLate: boolean
-  comment: string | null
-}
-
-export type StudentTaskReviewHistoryItem = {
-  id: string
-  reviewerFirstName: string
-  reviewerLastName: string
-  mark: number | null
-  comment: string | null
-  decision: string | null
-  createdAt: string
-}
-
-export type MyStudentTaskDetails = {
-  id: string
-  groupTaskId: string
-  taskTemplateId: string
-  title: string
-  description: string | null
-  order: number
-  startDate: string | null
-  deadline: string
-  status: string
-  displayStatus: string
-  currentMark: number | null
-  completedAt: string | null
-  createdAt: string
-  updatedAt: string | null
-  submissions: StudentTaskSubmissionHistoryItem[]
-  reviews: StudentTaskReviewHistoryItem[]
-}
-
 export type Faculty = {
   id: string
   name: string
@@ -465,4 +409,86 @@ export type TopicSelectionSettings = {
 export type SupervisorOption = {
   id: string
   name: string
+}
+
+export type StudentTaskStatus = 'Pending' | 'Submitted' | 'Approved' | 'Returned'
+
+export type StudentStep = {
+  id: string
+  groupTaskId: string
+  title: string
+  description: string | null
+  order: number
+  deadline: string
+  status: StudentTaskStatus
+  mark: number | null
+  completedAt: string | null
+  isLate: boolean
+  latestSubmittedAt: string | null
+  canSubmit: boolean
+  blockReason: string | null
+}
+
+export type SubmissionFileInfo = {
+  id: string
+  kind: 'Main' | 'Supporting'
+  originalName: string
+  sizeBytes: number
+}
+
+export type Submission = {
+  id: string
+  version: number
+  message: string | null
+  submittedAt: string
+  isLate: boolean
+  decision: 'Approved' | 'Returned' | null
+  reviewerName: string | null
+  reviewerComment: string | null
+  mark: number | null
+  decidedAt: string | null
+  files: SubmissionFileInfo[]
+}
+
+export type StepDetails = StudentStep & {
+  studentProfileId: string
+  studentName: string
+  groupCode: string
+  canReview: boolean
+  pendingSubmissionId: string | null
+  timeline: Submission[]
+}
+
+export type ReviewQueueItem = {
+  submissionId: string
+  studentTaskId: string
+  studentProfileId: string
+  studentName: string
+  groupId: string
+  groupCode: string
+  stepTitle: string
+  stepOrder: number
+  version: number
+  submittedAt: string
+  isLate: boolean
+}
+
+export type GroupProgress = {
+  groupId: string
+  groupCode: string
+  steps: { groupTaskId: string; title: string; order: number; deadline: string; approvedCount: number }[]
+  students: {
+    studentProfileId: string
+    name: string
+    cells: { groupTaskId: string; studentTaskId: string; status: StudentTaskStatus; mark: number | null; isLate: boolean }[]
+  }[]
+}
+
+export type StudentProgress = {
+  studentProfileId: string
+  approved: number
+  total: number
+  lateSubmissions: number
+  averageMark: number | null
+  nextDeadline: string | null
 }

@@ -20,6 +20,7 @@ export const navigationByRole: Record<Role, NavItem[]> = {
     { to: '/admin/dashboard', labelKey: 'nav.dashboard' },
     { to: '/admin/faculties', labelKey: 'nav.faculties' },
     { to: '/admin/groups', labelKey: 'nav.groups' },
+    { to: '/review', labelKey: 'nav.review' },
     { to: '/admin/students', labelKey: 'nav.students' },
     { to: '/admin/teachers', labelKey: 'nav.teachers' },
     { to: '/admin/topics', labelKey: 'nav.topics' },
@@ -29,6 +30,8 @@ export const navigationByRole: Record<Role, NavItem[]> = {
   ],
   Teacher: [
     { to: '/teacher/dashboard', labelKey: 'nav.dashboard' },
+    { to: '/review', labelKey: 'nav.review' },
+    { to: '/teacher/groups', labelKey: 'nav.groups' },
     { to: '/teacher/topics', labelKey: 'nav.myTopics' },
     { to: '/task-templates', labelKey: 'nav.taskTemplates' }
   ],

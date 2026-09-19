@@ -23,7 +23,8 @@ public static class ErrorCatalog
             TaskErrors.All,
             OnboardingErrors.All,
             AdminErrors.All,
-            TopicErrors.All
+            TopicErrors.All,
+            WorkflowErrors.All
         ];
 
         var definitions = new Dictionary<string, ErrorDefinition>(StringComparer.Ordinal);

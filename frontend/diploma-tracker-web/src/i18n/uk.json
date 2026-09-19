@@ -34,12 +34,13 @@
     "topics": "Теми",
     "myTopics": "Мої теми",
     "taskTemplates": "Етапи",
-    "myTasks": "Мої етапи",
+    "myTasks": "Моя робота",
     "admins": "Адміністратори",
     "settings": "Налаштування",
     "account": "Обліковий запис",
     "signOut": "Вийти",
-    "language": "Мова"
+    "language": "Мова",
+    "review": "Рецензування"
   },
   "roles": {
     "Admin": "Адміністратор",
@@ -144,7 +145,31 @@
       "hasProgress": "Неможливо видалити етап, бо студенти вже почали його виконувати."
     },
     "studentTask": {
-      "notFound": "Етап не знайдено."
+      "notFound": "Етап не знайдено.",
+      "notYours": "Цей етап належить іншому студенту."
+    },
+    "step": {
+      "previousNotApproved": "Спершу має бути зараховано попередній етап.",
+      "awaitingReview": "Остання робота ще на перевірці.",
+      "alreadyApproved": "Етап уже зараховано."
+    },
+    "submission": {
+      "notFound": "Роботу не знайдено.",
+      "alreadyDecided": "Рішення щодо цієї роботи вже ухвалено.",
+      "notReviewer": "Ви не є рецензентом цього студента."
+    },
+    "file": {
+      "mainMissing": "Додайте основний документ.",
+      "typeNotAllowed": "Такий тип файлу не дозволено.",
+      "tooLarge": "Файл більший за 20 МБ.",
+      "tooMany": "Додайте не більше трьох додаткових файлів.",
+      "contentMismatch": "Вміст основного документа не відповідає його розширенню.",
+      "notFound": "Файл не знайдено."
+    },
+    "review": {
+      "markRequired": "Вкажіть оцінку, щоб зарахувати.",
+      "markOutOfRange": "Оцінка має бути цілим числом від 0 до 100.",
+      "commentRequired": "Напишіть коментар, щоб повернути роботу."
     },
     "admin": {
       "notFound": "Адміністратора не знайдено.",
@@ -235,7 +260,11 @@
     "adminTitle": "Панель адміністратора",
     "teacherTitle": "Панель викладача",
     "studentTitle": "Панель студента",
-    "goToMyTasks": "Перейти до моїх етапів"
+    "goToMyTasks": "Перейти до моїх етапів",
+    "waitingReviews": "Роботи на перевірці",
+    "myGroups": "Мої групи",
+    "openReview": "Відкрити чергу",
+    "openGroups": "Переглянути групи"
   },
   "health": {
     "title": "Стан сервера",
@@ -390,38 +419,85 @@
     "faculty": "Факультет",
     "selectFaculty": "Оберіть факультет, щоб побачити його етапи."
   },
-  "myTasks": {
-    "title": "Мої етапи",
+  "steps": {
+    "myTitle": "Моя робота",
+    "backToMine": "До моєї роботи",
     "order": "№",
     "step": "Етап",
-    "period": "Період",
-    "status": {
-      "label": "Статус",
-      "all": "Усі",
-      "Pending": "Очікує",
-      "Submitted": "Надіслано",
-      "Approved": "Зараховано",
-      "Returned": "Повернуто на доопрацювання",
-      "MissedDeadline": "Термін минув"
-    },
+    "deadline": "Термін",
     "mark": "Оцінка",
-    "open": "Відкрити",
-    "noTasks": "Етапів ще немає.",
-    "back": "До моїх етапів",
-    "currentMark": "Поточна оцінка",
-    "completedAt": "Виконано",
-    "notCompleted": "Не виконано",
-    "submissions": "Надіслані роботи",
-    "file": "Файл",
-    "submittedAt": "Надіслано",
+    "markValue": "Оцінка: {{mark}}",
+    "completedAt": "Завершено",
+    "student": "Студент",
     "late": "Із запізненням",
-    "comment": "Коментар",
-    "reviews": "Рецензії",
-    "reviewer": "Рецензент",
-    "decision": "Рішення",
-    "date": "Дата",
+    "status": {
+      "Pending": "Не розпочато",
+      "Submitted": "На перевірці",
+      "Returned": "Повернуто",
+      "Approved": "Зараховано"
+    },
+    "blocked": {
+      "step_previousNotApproved": "Спершу має бути зараховано попередній етап.",
+      "step_awaitingReview": "Ваша робота на перевірці.",
+      "step_alreadyApproved": "Етап зараховано."
+    },
+    "open": "Відкрити",
+    "noSteps": "Етапів ще немає.",
+    "submitTitle": "Надіслати роботу",
+    "mainFile": "Основний документ",
+    "mainHint": ".docx, .pdf або .pptx, до 20 МБ",
+    "supportingFiles": "Додаткові файли",
+    "supportingHint": "До трьох файлів, до 20 МБ кожен",
+    "fileSize": {
+      "b": "Б",
+      "kb": "КБ",
+      "mb": "МБ"
+    },
+    "message": "Повідомлення для рецензента",
+    "submit": "Надіслати",
+    "submitted": "Роботу надіслано",
+    "timeline": "Історія",
+    "version": "Версія {{version}}",
     "noSubmissions": "Робіт ще не надіслано.",
-    "noReviews": "Рецензій ще немає."
+    "decision": {
+      "Approved": "Зараховано",
+      "Returned": "Повернуто на доопрацювання"
+    },
+    "reviewTitle": "Рішення",
+    "comment": "Коментар",
+    "approve": "Зарахувати",
+    "approveConfirm": "Зарахувати етап з оцінкою {{mark}}?",
+    "approved": "Етап зараховано",
+    "return": "Повернути",
+    "returnConfirm": "Повернути роботу на доопрацювання?",
+    "returned": "Роботу повернуто"
+  },
+  "review": {
+    "title": "Рецензування",
+    "subtitle": "Роботи, що очікують рішення, від найстаріших",
+    "allGroups": "Усі групи",
+    "filterAll": "Усі",
+    "filterLate": "Із запізненням",
+    "filterOnTime": "Вчасно",
+    "lateFilterLabel": "Фільтр за запізненням",
+    "group": "Група",
+    "version": "Версія",
+    "submittedAt": "Надіслано",
+    "empty": "Немає робіт, що очікують рішення.",
+    "backToQueue": "До черги рецензування",
+    "approvedOf": "{{approved}}/{{total}}"
+  },
+  "progress": {
+    "title": "Прогрес групи",
+    "groupsTitle": "Мої групи",
+    "noGroups": "Ви не рецензуєте жодної групи.",
+    "noStudents": "У групі немає студентів.",
+    "noSteps": "Групі ще не призначено етапів.",
+    "backToGroups": "До моїх груп",
+    "approved": "Зараховано етапів",
+    "averageMark": "Середня оцінка",
+    "late": "Надіслано із запізненням",
+    "nextDeadline": "Найближчий термін"
   },
   "admins": {
     "title": "Адміністратори",

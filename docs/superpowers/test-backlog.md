@@ -227,3 +227,37 @@ its review completes.
 - `Topic.RowVersion` concurrency: a reserve/approve race on the same topic (two callers
   loading the same `Available` row, both racing to save) trips `DbUpdateConcurrencyException`
   and returns `topic.notAvailable`/`topic.notEditable` rather than double-booking the topic.
+
+## Submission and review
+
+### Service level, InMemory
+- `StudentWorkflowService.GetMyStepsAsync`: steps exist on join (`LateJoinerTaskAssigner` at membership time, `GroupTaskService` at assignment time) — no row is created on read; only the current group's steps; order by template order then title; `CanSubmit`/`BlockReason` for pending, returned after approved predecessor, submitted, approved, blocked by predecessor.
+- `BuildSteps` truth table, including a **missing** `StudentTask` row for an intermediate step (the only residual risk of creating rows on join rather than on read).
+- `SubmitAsync`: other student's step; step of a former group; each block reason; message over 2000; file rule failures; version numbering; late flag at the deadline boundary.
+- `SubmitAsync` failure paths with an injected throwing `IFileStorage`: a throw on the **second** `StoreAsync` deletes the first stored file; a concurrency or unique-index failure on save deletes every stored file and returns `step.awaitingReview`; any other save failure leaves the files on disk and logs the keys. Assert what survives on disk versus in the database.
+- `ApproveAsync`/`ReturnAsync`: mark missing, below 0, above 100, fractional (`review.markOutOfRange`); comment missing/whitespace; non-reviewer teacher; supervisor who is not a group reviewer; admin; deciding an older version; deciding twice; status and mark propagation to the step.
+- `OpenFileAsync`: student own, other student, reviewer, supervisor, unrelated teacher, missing stored file (a forbidden file is indistinguishable from a nonexistent one); content type for main vs supporting.
+- `GetReviewQueueAsync`: scoping for reviewer, supervisor and admin; group and late filters; ordering.
+- `GetGroupProgressAsync` / `GetStudentProgressAsync`: visibility, approved counts, late count (counts late submissions, not late steps), average mark rounding, next deadline including an overdue unapproved step.
+- `AccessScope`: group visibility for reviewer, supervisor-only, unrelated teacher, student; archived students (`ArchivedAt != null`) excluded everywhere.
+- `GroupTaskService` create/update by a teacher: a nonexistent id and a real id in a group the teacher does not review return identical status, code and message (`groupTask.groupNotFound` 400 on create, `groupTask.notFound` 404 on update); `AssignAllTaskTemplatesAsync` likewise returns `group.notFound` for both.
+- `SubmissionFileRules`: signatures for docx/pptx/pdf, blocked extensions case-insensitive, size limits; name normalisation for `"x.exe "`, `"x.exe."`, `"x.EXE"`, a name of only dots/spaces; `SafeOriginalName` on a 300-character name with a surrogate pair on the 255 boundary keeps the head and the extension.
+- `UtcDateTimeJsonConverter`: naive, `Z` and offset input all read as the same UTC instant; output always ends in `Z`; empty string and `null` for the nullable converter.
+- `LocalFileStorage` and `StartupValidation.ValidateStorageSettings`: missing path, relative path under content root, unwritable path, key traversal refused, partial file deleted when the copy throws.
+
+### SQL Server integration
+- `StudentTasks.RowVersion`: concurrent submissions of one step and concurrent approve/return on one submission produce exactly one success.
+- Unique `(StudentTaskId, Version)`.
+
+### HTTP level
+- Multipart binding of `mainFile`, `supportingFiles`, `message`; 90 MB request limit; `RequestFormLimits` (`ValueCountLimit`, `MemoryBufferThreshold`); download headers (`Content-Disposition`, `nosniff`); role restrictions on every route; `students/me/progress` vs `students/{id}/progress`.
+- `StudentTaskOwnershipFilter` short-circuits before `[FromForm]` binding: a large body with a foreign or unknown `studentTaskId` is refused with the service's `{ code, message }` without being buffered.
+- `IsLate` end to end: a deadline set from the admin UI in local time, a submission just before and just after local midnight — the flag must follow the UTC instant.
+
+### Frontend
+- `SubmitWorkForm.validate()` table-driven against `SubmissionFileRules` (extension lists, the 20 MB constant, max 3 supporting files, trailing dot/space trim, zero-byte main file) so the two languages cannot drift; include a zero-byte file with a disallowed extension to pin the check order.
+- `DecisionPanel` mark validation (integer 0–100) and comment requirement on return; errors cleared on retry.
+- `parseFileName` in `apiClient.ts`; object-URL revoke after download; download failure toast and disabled button.
+- Request-sequencing guards in `ReviewQueuePage`, `StepDetails`, `GroupProgressPage` (a stale response never overwrites a newer one).
+- `formatBytes` values and unit keys in both languages; `StepDetails.blockedMessage` prefers `steps.blocked.*` and falls back to the error catalogue.
+- Timeline rendering of decided and undecided versions; progress matrix cell navigation; queue filters.

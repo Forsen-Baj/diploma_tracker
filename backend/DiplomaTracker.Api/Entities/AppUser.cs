@@ -17,4 +17,5 @@ public class AppUser
     public ICollection<StudentProfile> SupervisedStudents { get; set; } = new List<StudentProfile>();
     public ICollection<GroupReviewer> GroupReviews { get; set; } = new List<GroupReviewer>();
     public ICollection<Topic> SupervisedTopics { get; set; } = new List<Topic>();
+    public ICollection<Submission> ReviewedSubmissions { get; set; } = new List<Submission>();
 }

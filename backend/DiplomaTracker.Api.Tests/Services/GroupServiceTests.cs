@@ -16,7 +16,7 @@ public class GroupServiceTests
     {
         await using var context = TestDbContextFactory.Create();
 
-        var (group, error) = await new GroupService(context, NullLogger<GroupService>.Instance).CreateGroupAsync(new CreateGroupRequest
+        var (group, error) = await new GroupService(context, NullLogger<GroupService>.Instance, new AccessScope(context)).CreateGroupAsync(new CreateGroupRequest
         {
             DepartmentId = Guid.NewGuid(),
             Code = "SE-21",
@@ -35,7 +35,7 @@ public class GroupServiceTests
         var faculty = TestData.AddFaculty(context, "Faculty of Informatics", "FI");
         var department = TestData.AddDepartment(context, faculty.Id, "Department of Software Engineering", "SE");
 
-        var (group, error) = await new GroupService(context, NullLogger<GroupService>.Instance).CreateGroupAsync(new CreateGroupRequest
+        var (group, error) = await new GroupService(context, NullLogger<GroupService>.Instance, new AccessScope(context)).CreateGroupAsync(new CreateGroupRequest
         {
             DepartmentId = department.Id,
             Code = "SE-21",
@@ -58,7 +58,7 @@ public class GroupServiceTests
         var department = TestData.AddDepartment(context, faculty.Id);
         var existing = TestData.AddGroup(context, department.Id);
 
-        var (group, error) = await new GroupService(context, NullLogger<GroupService>.Instance).UpdateGroupAsync(existing.Id, new UpdateGroupRequest
+        var (group, error) = await new GroupService(context, NullLogger<GroupService>.Instance, new AccessScope(context)).UpdateGroupAsync(existing.Id, new UpdateGroupRequest
         {
             DepartmentId = Guid.NewGuid(),
             Code = existing.Code,
@@ -78,7 +78,7 @@ public class GroupServiceTests
         TestData.AddGroup(context, department.Id, "SE-21");
         context.ChangeTracker.Clear();
 
-        var groups = await new GroupService(context, NullLogger<GroupService>.Instance).GetGroupsAsync();
+        var groups = await new GroupService(context, NullLogger<GroupService>.Instance, new AccessScope(context)).GetGroupsAsync(new UserContext(Guid.NewGuid(), "Admin"));
 
         var group = Assert.Single(groups);
         Assert.Equal("Department of Software Engineering", group.DepartmentName);
@@ -86,16 +86,16 @@ public class GroupServiceTests
     }
 
     [Fact]
-    public async Task GetGroupStudentsAsync_ForTeacherWhoIsNotAReviewer_IsForbidden()
+    public async Task GetGroupStudentsAsync_ForTeacherWhoIsNotAReviewer_ReturnsGroupNotFound()
     {
         await using var context = TestDbContextFactory.Create();
         var group = AddGroupWithOneStudent(context);
         var outsider = TestData.AddUser(context, "Teacher", "outsider@kpi.ua");
 
-        var (students, error) = await new GroupService(context, NullLogger<GroupService>.Instance).GetGroupStudentsAsync(group.Id, "Teacher", outsider.Id);
+        var (students, error) = await new GroupService(context, NullLogger<GroupService>.Instance, new AccessScope(context)).GetGroupStudentsAsync(new UserContext(outsider.Id, "Teacher"), group.Id);
 
         Assert.Null(students);
-        Assert.Equal(CommonErrors.Forbidden, error);
+        Assert.Equal(GroupErrors.NotFound, error);
     }
 
     [Fact]
@@ -113,7 +113,7 @@ public class GroupServiceTests
         });
         await context.SaveChangesAsync();
 
-        var (students, error) = await new GroupService(context, NullLogger<GroupService>.Instance).GetGroupStudentsAsync(group.Id, "Teacher", reviewer.Id);
+        var (students, error) = await new GroupService(context, NullLogger<GroupService>.Instance, new AccessScope(context)).GetGroupStudentsAsync(new UserContext(reviewer.Id, "Teacher"), group.Id);
 
         Assert.Null(error);
         var student = Assert.Single(students!);
@@ -126,7 +126,7 @@ public class GroupServiceTests
         await using var context = TestDbContextFactory.Create();
         var group = AddGroupWithOneStudent(context);
 
-        var (success, error) = await new GroupService(context, NullLogger<GroupService>.Instance).DeleteGroupAsync(group.Id);
+        var (success, error) = await new GroupService(context, NullLogger<GroupService>.Instance, new AccessScope(context)).DeleteGroupAsync(group.Id);
 
         Assert.False(success);
         Assert.Equal(GroupErrors.HasStudents, error);

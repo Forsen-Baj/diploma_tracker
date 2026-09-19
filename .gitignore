@@ -364,3 +364,4 @@ FodyWeavers.xsd
 /backend/DiplomaTracker.Api.Tests/.github
 /backend/DiplomaTracker.Api/.github
 /.claude
+App_Data/

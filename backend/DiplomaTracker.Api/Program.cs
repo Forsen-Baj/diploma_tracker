@@ -5,6 +5,7 @@ using System.Threading.RateLimiting;
 using DiplomaTracker.Api.Configuration;
 using DiplomaTracker.Api.Data;
 using DiplomaTracker.Api.Errors;
+using DiplomaTracker.Api.Filters;
 using DiplomaTracker.Api.Interfaces;
 using DiplomaTracker.Api.Models;
 using DiplomaTracker.Api.Services;
@@ -48,6 +49,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<CorsSettings>(builder.Configuration.GetSection("Cors"));
 builder.Services.Configure<BootstrapSettings>(builder.Configuration.GetSection("Bootstrap"));
+builder.Services.Configure<StorageSettings>(builder.Configuration.GetSection("Storage"));
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -67,6 +69,15 @@ builder.Services.AddScoped<IStudentImportService, StudentImportService>();
 builder.Services.AddScoped<ITopicSettingsService, TopicSettingsService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
 builder.Services.AddScoped<IReservationService, ReservationService>();
+builder.Services.AddScoped<IAccessScope, AccessScope>();
+builder.Services.AddScoped<IStudentWorkflowService, StudentWorkflowService>();
+
+builder.Services.AddSingleton<IFileStorage>(serviceProvider =>
+{
+    var settings = serviceProvider.GetRequiredService<IOptions<StorageSettings>>().Value;
+    var environment = serviceProvider.GetRequiredService<IWebHostEnvironment>();
+    return new LocalFileStorage(StartupValidation.ValidateStorageSettings(settings, environment.ContentRootPath));
+});
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -94,7 +105,13 @@ builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
 {
     options.InvalidModelStateResponseFactory = context =>
         new BadRequestObjectResult(ValidationErrorResponseFactory.Create(context.ModelState));
+}).AddJsonOptions(options =>
+{
+    options.JsonSerializerOptions.Converters.Add(new UtcDateTimeJsonConverter());
+    options.JsonSerializerOptions.Converters.Add(new UtcNullableDateTimeJsonConverter());
 });
+
+builder.Services.AddScoped<StudentTaskOwnershipFilter>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -191,6 +208,7 @@ app.UseStatusCodePages(async context =>
 
 StartupValidation.ValidateJwtSettings(app.Services.GetRequiredService<IOptions<JwtSettings>>().Value);
 StartupValidation.ValidateCorsSettings(app.Services.GetRequiredService<IOptions<CorsSettings>>().Value);
+_ = app.Services.GetRequiredService<IFileStorage>();
 
 using (var scope = app.Services.CreateScope())
 {

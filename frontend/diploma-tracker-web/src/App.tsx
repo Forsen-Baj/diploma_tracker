@@ -22,6 +22,10 @@ import { StudentTopicsPage } from './pages/StudentTopicsPage'
 import { TeacherTopicsPage } from './pages/TeacherTopicsPage'
 import { AdminTopicsPage } from './pages/AdminTopicsPage'
 import { AdminSettingsPage } from './pages/AdminSettingsPage'
+import { ReviewQueuePage } from './pages/ReviewQueuePage'
+import { ReviewStepPage } from './pages/ReviewStepPage'
+import { TeacherGroupsPage } from './pages/TeacherGroupsPage'
+import { GroupProgressPage } from './pages/GroupProgressPage'
 
 function App() {
   return (
@@ -36,6 +40,8 @@ function App() {
           <Route path="account" element={<AccountPage />} />
           <Route element={<ProtectedRoute allowedRoles={['Admin', 'Teacher']} />}>
             <Route path="task-templates" element={<TaskTemplatesPage />} />
+            <Route path="review" element={<ReviewQueuePage />} />
+            <Route path="review/steps/:id" element={<ReviewStepPage />} />
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['Admin']} />}>
             <Route path="admin/dashboard" element={<AdminDashboardPage />} />
@@ -51,6 +57,8 @@ function App() {
           <Route element={<ProtectedRoute allowedRoles={['Teacher']} />}>
             <Route path="teacher/dashboard" element={<TeacherDashboardPage />} />
             <Route path="teacher/topics" element={<TeacherTopicsPage />} />
+            <Route path="teacher/groups" element={<TeacherGroupsPage />} />
+            <Route path="teacher/groups/:groupId" element={<GroupProgressPage />} />
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['Student']} />}>
             <Route path="student/dashboard" element={<StudentDashboardPage />} />

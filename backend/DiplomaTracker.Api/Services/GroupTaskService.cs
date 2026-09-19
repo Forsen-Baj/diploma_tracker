@@ -1,6 +1,5 @@
 using DiplomaTracker.Api.Data;
 using DiplomaTracker.Api.DTOs.GroupTasks;
-using DiplomaTracker.Api.DTOs.Students;
 using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
@@ -11,23 +10,22 @@ namespace DiplomaTracker.Api.Services;
 public class GroupTaskService : IGroupTaskService
 {
     private readonly AppDbContext _dbContext;
+    private readonly IAccessScope _accessScope;
 
-    public GroupTaskService(AppDbContext dbContext)
+    public GroupTaskService(AppDbContext dbContext, IAccessScope accessScope)
     {
         _dbContext = dbContext;
+        _accessScope = accessScope;
     }
 
     public async Task<(IReadOnlyList<GroupTaskResponse>? tasks, string? error)> GetGroupTasksAsync(string role, Guid userId)
     {
         var query = _dbContext.GroupTasks.AsNoTracking().AsQueryable();
 
-        if (role == "Teacher")
+        if (role != "Admin")
         {
-            var groupIds = await _dbContext.GroupReviewers
-                .Where(gr => gr.ReviewerId == userId)
-                .Select(gr => gr.GroupId)
-                .ToListAsync();
-            query = query.Where(x => groupIds.Contains(x.GroupId));
+            var visibleGroupIds = _accessScope.VisibleGroups(new UserContext(userId, role)).Select(g => g.Id);
+            query = query.Where(x => visibleGroupIds.Contains(x.GroupId));
         }
 
         var tasks = await ProjectGroupTasks(query
@@ -49,13 +47,9 @@ public class GroupTaskService : IGroupTaskService
             return (null, TaskErrors.GroupTaskNotFound);
         }
 
-        if (role == "Teacher")
+        if (!await _accessScope.CanSeeGroupAsync(new UserContext(userId, role), groupTask.GroupId))
         {
-            var allowed = await IsTeacherReviewerOfGroupAsync(userId, groupTask.GroupId);
-            if (!allowed)
-            {
-                return (null, CommonErrors.Forbidden);
-            }
+            return (null, TaskErrors.GroupTaskNotFound);
         }
 
         return (groupTask, null);
@@ -63,19 +57,9 @@ public class GroupTaskService : IGroupTaskService
 
     public async Task<(IReadOnlyList<GroupTaskResponse>? tasks, string? error)> GetTasksForGroupAsync(Guid groupId, string role, Guid userId)
     {
-        var groupExists = await _dbContext.Groups.AnyAsync(g => g.Id == groupId);
-        if (!groupExists)
+        if (!await _accessScope.CanSeeGroupAsync(new UserContext(userId, role), groupId))
         {
             return (null, GroupErrors.NotFound);
-        }
-
-        if (role == "Teacher")
-        {
-            var allowed = await IsTeacherReviewerOfGroupAsync(userId, groupId);
-            if (!allowed)
-            {
-                return (null, CommonErrors.Forbidden);
-            }
         }
 
         var tasks = await ProjectGroupTasks(_dbContext.GroupTasks.AsNoTracking()
@@ -102,7 +86,13 @@ public class GroupTaskService : IGroupTaskService
             var allowed = await IsTeacherReviewerOfGroupAsync(userId, request.GroupId);
             if (!allowed)
             {
-                return (null, CommonErrors.Forbidden);
+                // A group that exists but this teacher does not review must look identical to a
+                // group that does not exist at all (spec §6) - Forbidden would let a teacher
+                // distinguish the two on this write path exactly as the read paths already refuse
+                // to. The authorisation rule itself is unchanged: writes stay reviewer-only.
+                // GroupId comes from the request body, so this must match the same
+                // GroupTaskGroupNotFound (400) code used above for an unknown GroupId.
+                return (null, TaskErrors.GroupTaskGroupNotFound);
             }
         }
 
@@ -161,7 +151,7 @@ public class GroupTaskService : IGroupTaskService
                 StudentProfileId = studentId,
                 GroupTaskId = groupTask.Id,
                 Status = StudentTaskStatus.Pending,
-                CurrentMark = null,
+                Mark = null,
                 CompletedAt = null,
                 CreatedAt = now,
                 UpdatedAt = null
@@ -191,7 +181,8 @@ public class GroupTaskService : IGroupTaskService
             var allowed = await IsTeacherReviewerOfGroupAsync(userId, groupId);
             if (!allowed)
             {
-                return (null, CommonErrors.Forbidden);
+                // See CreateGroupTaskAsync: not-found, not forbidden, so existence isn't leaked.
+                return (null, GroupErrors.NotFound);
             }
         }
 
@@ -326,7 +317,10 @@ public class GroupTaskService : IGroupTaskService
             var allowed = await IsTeacherReviewerOfGroupAsync(userId, groupTask.GroupId);
             if (!allowed)
             {
-                return (null, CommonErrors.Forbidden);
+                // See CreateGroupTaskAsync: not-found, not forbidden, so existence isn't leaked.
+                // Id comes from the URL here, so this must match the same GroupTaskNotFound (404)
+                // code used above for an unknown group task id.
+                return (null, TaskErrors.GroupTaskNotFound);
             }
         }
 
@@ -368,62 +362,6 @@ public class GroupTaskService : IGroupTaskService
         await _dbContext.SaveChangesAsync();
 
         return (true, null);
-    }
-
-    public async Task<(IReadOnlyList<MyStudentTaskResponse>? tasks, string? error)> GetMyTasksAsync(Guid currentUserId, string role)
-    {
-        if (role != "Student")
-        {
-            return (null, CommonErrors.Forbidden);
-        }
-
-        var studentProfile = await _dbContext.StudentProfiles.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.UserId == currentUserId);
-
-        if (studentProfile is null)
-        {
-            return (null, TaskErrors.StudentProfileNotFound);
-        }
-
-        var tasks = await _dbContext.StudentTasks.AsNoTracking()
-            .Include(st => st.GroupTask)
-            .ThenInclude(gt => gt.DiplomaTaskTemplate)
-            .Where(st => st.StudentProfileId == studentProfile.Id)
-            .OrderBy(st => st.GroupTask.DiplomaTaskTemplate.Order)
-            .ThenBy(st => st.GroupTask.Deadline)
-            .ToListAsync();
-
-        var now = DateTime.UtcNow;
-        return (tasks.Select(t => MapMyTask(t, now)).ToList(), null);
-    }
-
-    public async Task<(MyStudentTaskDetailsResponse? task, string? error)> GetMyTaskByIdAsync(Guid id, Guid currentUserId, string role)
-    {
-        if (role != "Student")
-        {
-            return (null, CommonErrors.Forbidden);
-        }
-
-        var studentProfile = await _dbContext.StudentProfiles.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.UserId == currentUserId);
-
-        if (studentProfile is null)
-        {
-            return (null, TaskErrors.StudentProfileNotFound);
-        }
-
-        var task = await _dbContext.StudentTasks.AsNoTracking()
-            .Include(st => st.GroupTask)
-            .ThenInclude(gt => gt.DiplomaTaskTemplate)
-            .FirstOrDefaultAsync(st => st.Id == id && st.StudentProfileId == studentProfile.Id);
-
-        if (task is null)
-        {
-            return (null, TaskErrors.StudentTaskNotFound);
-        }
-
-        var now = DateTime.UtcNow;
-        return (MapMyTaskDetails(task, now), null);
     }
 
     private async Task<bool> IsTeacherReviewerOfGroupAsync(Guid teacherId, Guid groupId)
@@ -469,53 +407,4 @@ public class GroupTaskService : IGroupTaskService
         };
     }
 
-    private static MyStudentTaskResponse MapMyTask(StudentTask task, DateTime now)
-    {
-        var status = task.Status.ToString();
-        var displayStatus = task.Status == StudentTaskStatus.Pending && task.GroupTask.Deadline < now ? "MissedDeadline" : status;
-        return new MyStudentTaskResponse
-        {
-            Id = task.Id,
-            GroupTaskId = task.GroupTaskId,
-            TaskTemplateId = task.GroupTask.DiplomaTaskTemplateId,
-            Title = task.GroupTask.DiplomaTaskTemplate.Title,
-            Description = task.GroupTask.DiplomaTaskTemplate.Description,
-            Order = task.GroupTask.DiplomaTaskTemplate.Order,
-            StartDate = task.GroupTask.StartDate,
-            Deadline = task.GroupTask.Deadline,
-            Status = status,
-            DisplayStatus = displayStatus,
-            CurrentMark = task.CurrentMark,
-            CompletedAt = task.CompletedAt,
-            LatestSubmissionAt = null,
-            LatestReviewerComment = null,
-            CreatedAt = task.CreatedAt,
-            UpdatedAt = task.UpdatedAt
-        };
-    }
-
-    private static MyStudentTaskDetailsResponse MapMyTaskDetails(StudentTask task, DateTime now)
-    {
-        var status = task.Status.ToString();
-        var displayStatus = task.Status == StudentTaskStatus.Pending && task.GroupTask.Deadline < now ? "MissedDeadline" : status;
-        return new MyStudentTaskDetailsResponse
-        {
-            Id = task.Id,
-            GroupTaskId = task.GroupTaskId,
-            TaskTemplateId = task.GroupTask.DiplomaTaskTemplateId,
-            Title = task.GroupTask.DiplomaTaskTemplate.Title,
-            Description = task.GroupTask.DiplomaTaskTemplate.Description,
-            Order = task.GroupTask.DiplomaTaskTemplate.Order,
-            StartDate = task.GroupTask.StartDate,
-            Deadline = task.GroupTask.Deadline,
-            Status = status,
-            DisplayStatus = displayStatus,
-            CurrentMark = task.CurrentMark,
-            CompletedAt = task.CompletedAt,
-            CreatedAt = task.CreatedAt,
-            UpdatedAt = task.UpdatedAt,
-            Submissions = [],
-            Reviews = []
-        };
-    }
 }

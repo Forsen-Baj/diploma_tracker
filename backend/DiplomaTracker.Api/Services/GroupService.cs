@@ -12,16 +12,18 @@ public class GroupService : IGroupService
 {
     private readonly AppDbContext _dbContext;
     private readonly ILogger<GroupService> _logger;
+    private readonly IAccessScope _accessScope;
 
-    public GroupService(AppDbContext dbContext, ILogger<GroupService> logger)
+    public GroupService(AppDbContext dbContext, ILogger<GroupService> logger, IAccessScope accessScope)
     {
         _dbContext = dbContext;
         _logger = logger;
+        _accessScope = accessScope;
     }
 
-    public async Task<IReadOnlyList<GroupResponse>> GetGroupsAsync()
+    public async Task<IReadOnlyList<GroupResponse>> GetGroupsAsync(UserContext user)
     {
-        var groups = await _dbContext.Groups
+        var groups = await _accessScope.VisibleGroups(user)
             .AsNoTracking()
             .Include(g => g.Department)
             .ThenInclude(d => d.Faculty)
@@ -32,9 +34,9 @@ public class GroupService : IGroupService
         return groups.Select(MapGroup).ToList();
     }
 
-    public async Task<GroupResponse?> GetGroupByIdAsync(Guid id)
+    public async Task<GroupResponse?> GetGroupByIdAsync(UserContext user, Guid id)
     {
-        var group = await _dbContext.Groups
+        var group = await _accessScope.VisibleGroups(user)
             .AsNoTracking()
             .Include(g => g.Department)
             .ThenInclude(d => d.Faculty)
@@ -180,25 +182,17 @@ public class GroupService : IGroupService
         return (true, null);
     }
 
-    public async Task<(IReadOnlyList<GroupStudentResponse>? students, string? error)> GetGroupStudentsAsync(Guid groupId, string role, Guid userId)
+    public async Task<(IReadOnlyList<GroupStudentResponse>? students, string? error)> GetGroupStudentsAsync(UserContext user, Guid groupId)
     {
-        var groupCode = await _dbContext.Groups
-            .Where(g => g.Id == groupId)
-            .Select(g => (string?)g.Code)
-            .FirstOrDefaultAsync();
-        if (groupCode is null)
+        if (!await _accessScope.CanSeeGroupAsync(user, groupId))
         {
             return (null, GroupErrors.NotFound);
         }
 
-        if (role == "Teacher")
-        {
-            var isReviewer = await _dbContext.GroupReviewers.AnyAsync(gr => gr.GroupId == groupId && gr.ReviewerId == userId);
-            if (!isReviewer)
-            {
-                return (null, CommonErrors.Forbidden);
-            }
-        }
+        var groupCode = await _dbContext.Groups
+            .Where(g => g.Id == groupId)
+            .Select(g => g.Code)
+            .FirstAsync();
 
         var students = await _dbContext.StudentProfiles
             .AsNoTracking()
@@ -240,10 +234,9 @@ public class GroupService : IGroupService
         return (archivedIds.Count, null);
     }
 
-    public async Task<IReadOnlyList<GroupReviewerResponse>?> GetGroupReviewersAsync(Guid groupId)
+    public async Task<IReadOnlyList<GroupReviewerResponse>?> GetGroupReviewersAsync(UserContext user, Guid groupId)
     {
-        var groupExists = await _dbContext.Groups.AnyAsync(g => g.Id == groupId);
-        if (!groupExists)
+        if (!await _accessScope.CanSeeGroupAsync(user, groupId))
         {
             return null;
         }
