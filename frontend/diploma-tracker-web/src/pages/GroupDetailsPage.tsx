@@ -1,12 +1,13 @@
 import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { assignAllTaskTemplates, createGroupTask, deleteGroupTask, getTasksForGroup, updateGroupTask } from '../api/groupTasksApi'
 import { addGroupReviewer, getGroupReviewers, getGroups, getGroupStudents, removeGroupReviewer } from '../api/groupsApi'
 import { archiveGroupStudents } from '../api/studentsApi'
 import { getTaskTemplates } from '../api/taskTemplatesApi'
 import { getTeachers } from '../api/teachersApi'
+import { getGroupProgress } from '../api/workflowApi'
 import { useErrorMessage } from '../api/useErrorMessage'
 import { useAuth } from '../auth/useAuth'
 import { Badge } from '../components/ui/Badge'
@@ -22,9 +23,10 @@ import { Select, type SelectOption } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { TextField } from '../components/ui/TextField'
 import { useToast } from '../components/ui/useToast'
+import { GroupProgressMatrix } from '../components/workflow/GroupProgressMatrix'
 import { fromDatetimeLocalValue, toDatetimeLocalValue } from '../utils/datetime'
 import { formatPeriod } from '../utils/period'
-import type { Group, GroupReviewer, GroupStudent, GroupTask, TaskTemplate, Teacher } from '../api/types'
+import type { Group, GroupProgress, GroupReviewer, GroupStudent, GroupTask, TaskTemplate, Teacher } from '../api/types'
 
 type BulkSelection = {
   startDate: string
@@ -37,6 +39,7 @@ export function GroupDetailsPage() {
   const toast = useToast()
   const { groupId } = useParams<{ groupId: string }>()
   const { user } = useAuth()
+  const navigate = useNavigate()
 
   const [group, setGroup] = useState<Group | null>(null)
   const [reviewers, setReviewers] = useState<GroupReviewer[]>([])
@@ -44,6 +47,9 @@ export function GroupDetailsPage() {
   const [tasks, setTasks] = useState<GroupTask[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([])
+  const [progress, setProgress] = useState<GroupProgress | null>(null)
+  const [isProgressLoading, setIsProgressLoading] = useState(true)
+  const [progressError, setProgressError] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
@@ -128,6 +134,19 @@ export function GroupDetailsPage() {
       setLoadError(errorMessage(err))
     } finally {
       setIsLoading(false)
+    }
+
+    // The progress matrix is a read-only, decorative projection: its failure must not take down
+    // group details, reviewers, students, templates or the step-assignment UI.
+    setIsProgressLoading(true)
+    setProgressError('')
+    try {
+      setProgress(await getGroupProgress(groupId))
+    } catch (err) {
+      setProgress(null)
+      setProgressError(errorMessage(err))
+    } finally {
+      setIsProgressLoading(false)
     }
   }
 
@@ -536,6 +555,18 @@ export function GroupDetailsPage() {
                   </Button>
                 </div>
               </>
+            )}
+          </Card>
+
+          <Card title={t('progress.title')} className="mb-6">
+            {isProgressLoading && (
+              <div className="flex justify-center py-6">
+                <Spinner />
+              </div>
+            )}
+            {!isProgressLoading && progressError && <p className="text-sm text-danger">{progressError}</p>}
+            {!isProgressLoading && !progressError && progress && (
+              <GroupProgressMatrix progress={progress} onOpenStep={(studentTaskId) => navigate(`/review/steps/${studentTaskId}`)} />
             )}
           </Card>
 

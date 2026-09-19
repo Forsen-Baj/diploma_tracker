@@ -21,6 +21,8 @@ public class AppDbContext : DbContext
     public DbSet<PlatformSettings> PlatformSettings => Set<PlatformSettings>();
     public DbSet<Topic> Topics => Set<Topic>();
     public DbSet<TopicReservation> TopicReservations => Set<TopicReservation>();
+    public DbSet<Submission> Submissions => Set<Submission>();
+    public DbSet<SubmissionFile> SubmissionFiles => Set<SubmissionFile>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -158,7 +160,8 @@ public class AppDbContext : DbContext
         studentTask.ToTable("StudentTasks");
         studentTask.HasKey(x => x.Id);
         studentTask.Property(x => x.Status).HasConversion<string>().HasMaxLength(50).IsRequired();
-        studentTask.Property(x => x.CurrentMark).HasColumnType("decimal(5,2)");
+        studentTask.Property(x => x.Mark);
+        studentTask.Property(x => x.RowVersion).IsRowVersion();
         studentTask.Property(x => x.CreatedAt).IsRequired();
         studentTask.Property(x => x.UpdatedAt);
         studentTask.HasIndex(x => new { x.StudentProfileId, x.GroupTaskId }).IsUnique();
@@ -236,6 +239,37 @@ public class AppDbContext : DbContext
         reservation.HasOne(x => x.StudentProfile)
             .WithMany(x => x.TopicReservations)
             .HasForeignKey(x => x.StudentProfileId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        var submission = modelBuilder.Entity<Submission>();
+        submission.ToTable("Submissions");
+        submission.HasKey(x => x.Id);
+        submission.Property(x => x.Message).HasMaxLength(2000);
+        submission.Property(x => x.Decision).HasConversion<string>().HasMaxLength(50);
+        submission.Property(x => x.ReviewerComment).HasMaxLength(2000);
+        submission.Property(x => x.SubmittedAt).IsRequired();
+        submission.HasIndex(x => new { x.StudentTaskId, x.Version }).IsUnique();
+        submission.HasIndex(x => new { x.Decision, x.SubmittedAt });
+        submission.HasOne(x => x.StudentTask)
+            .WithMany(x => x.Submissions)
+            .HasForeignKey(x => x.StudentTaskId)
+            .OnDelete(DeleteBehavior.Cascade);
+        submission.HasOne(x => x.Reviewer)
+            .WithMany(x => x.ReviewedSubmissions)
+            .HasForeignKey(x => x.ReviewerId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        var submissionFile = modelBuilder.Entity<SubmissionFile>();
+        submissionFile.ToTable("SubmissionFiles");
+        submissionFile.HasKey(x => x.Id);
+        submissionFile.Property(x => x.Kind).HasConversion<string>().HasMaxLength(50).IsRequired();
+        submissionFile.Property(x => x.OriginalName).HasMaxLength(255).IsRequired();
+        submissionFile.Property(x => x.StorageKey).HasMaxLength(300).IsRequired();
+        submissionFile.Property(x => x.ContentType).HasMaxLength(200).IsRequired();
+        submissionFile.HasOne(x => x.Submission)
+            .WithMany(x => x.Files)
+            .HasForeignKey(x => x.SubmissionId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

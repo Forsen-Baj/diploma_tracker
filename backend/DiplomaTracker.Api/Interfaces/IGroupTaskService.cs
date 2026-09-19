@@ -1,5 +1,4 @@
 using DiplomaTracker.Api.DTOs.GroupTasks;
-using DiplomaTracker.Api.DTOs.Students;
 
 namespace DiplomaTracker.Api.Interfaces;
 
@@ -12,6 +11,4 @@ public interface IGroupTaskService
     Task<(AssignAllTaskTemplatesResponse? response, string? error)> AssignAllTaskTemplatesAsync(Guid groupId, AssignAllTaskTemplatesRequest request, string role, Guid userId);
     Task<(GroupTaskResponse? task, string? error)> UpdateGroupTaskAsync(Guid id, UpdateGroupTaskRequest request, string role, Guid userId);
     Task<(bool success, string? error)> DeleteGroupTaskAsync(Guid id);
-    Task<(IReadOnlyList<MyStudentTaskResponse>? tasks, string? error)> GetMyTasksAsync(Guid currentUserId, string role);
-    Task<(MyStudentTaskDetailsResponse? task, string? error)> GetMyTaskByIdAsync(Guid id, Guid currentUserId, string role);
 }

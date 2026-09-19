@@ -35,4 +35,31 @@ public static class StartupValidation
                 "Cors:AllowedOrigins must list at least one origin. Set Cors__AllowedOrigins__0 when hosted.");
         }
     }
+
+    public static string ValidateStorageSettings(StorageSettings settings, string contentRootPath)
+    {
+        if (string.IsNullOrWhiteSpace(settings.RootPath))
+        {
+            throw new InvalidOperationException(
+                "Storage:RootPath must be configured. Set Storage__RootPath when hosted.");
+        }
+
+        var root = Path.GetFullPath(Path.IsPathRooted(settings.RootPath)
+            ? settings.RootPath
+            : Path.Combine(contentRootPath, settings.RootPath));
+
+        try
+        {
+            Directory.CreateDirectory(root);
+            var probe = Path.Combine(root, $".write-probe-{Guid.NewGuid():N}");
+            File.WriteAllText(probe, string.Empty);
+            File.Delete(probe);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidOperationException($"Storage:RootPath '{root}' is not writable.", exception);
+        }
+
+        return root;
+    }
 }

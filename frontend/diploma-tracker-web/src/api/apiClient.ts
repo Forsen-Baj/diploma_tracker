@@ -92,3 +92,33 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   return response.json() as Promise<T>
 }
 
+function parseFileName(contentDisposition: string | null): string | null {
+  if (!contentDisposition) {
+    return null
+  }
+
+  // RFC 5987 extended notation takes precedence: filename*=UTF-8''%D0%9F%D1%80...
+  const extendedMatch = /filename\*\s*=\s*[^']*''([^;]+)/i.exec(contentDisposition)
+  if (extendedMatch) {
+    try {
+      return decodeURIComponent(extendedMatch[1].trim())
+    } catch {
+      // fall through to the plain filename, if any
+    }
+  }
+
+  const plainMatch = /filename\s*=\s*"?([^";]+)"?/i.exec(contentDisposition)
+  if (plainMatch) {
+    return plainMatch[1].trim()
+  }
+
+  return null
+}
+
+export async function apiDownload(path: string): Promise<{ blob: Blob; fileName: string | null }> {
+  const response = await send(path)
+  const blob = await response.blob()
+  const fileName = parseFileName(response.headers.get('Content-Disposition'))
+  return { blob, fileName }
+}
+

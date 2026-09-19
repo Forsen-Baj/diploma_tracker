@@ -4,8 +4,6 @@ import type {
   AssignAllTaskTemplatesResponse,
   CreateGroupTaskRequest,
   GroupTask,
-  MyStudentTask,
-  MyStudentTaskDetails,
   UpdateGroupTaskRequest
 } from './types'
 
@@ -38,12 +36,4 @@ export async function assignAllTaskTemplates(groupId: string, request: AssignAll
     method: 'POST',
     body: JSON.stringify(request)
   })
-}
-
-export async function getMyStudentTasks(): Promise<MyStudentTask[]> {
-  return apiRequest<MyStudentTask[]>('/api/student/my-tasks')
-}
-
-export async function getMyStudentTaskDetails(id: string): Promise<MyStudentTaskDetails> {
-  return apiRequest<MyStudentTaskDetails>(`/api/student/my-tasks/${id}`)
 }

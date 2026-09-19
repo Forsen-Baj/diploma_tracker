@@ -34,12 +34,13 @@
     "topics": "Topics",
     "myTopics": "My topics",
     "taskTemplates": "Steps",
-    "myTasks": "My steps",
+    "myTasks": "My work",
     "admins": "Administrators",
     "settings": "Settings",
     "account": "Account",
     "signOut": "Sign out",
-    "language": "Language"
+    "language": "Language",
+    "review": "Review"
   },
   "roles": {
     "Admin": "Administrator",
@@ -144,7 +145,31 @@
       "hasProgress": "Cannot delete the step because students have already started it."
     },
     "studentTask": {
-      "notFound": "Step not found."
+      "notFound": "Step not found.",
+      "notYours": "This step belongs to another student."
+    },
+    "step": {
+      "previousNotApproved": "The previous step must be approved first.",
+      "awaitingReview": "The latest submission is still under review.",
+      "alreadyApproved": "This step is already approved."
+    },
+    "submission": {
+      "notFound": "Submission not found.",
+      "alreadyDecided": "This submission has already been decided.",
+      "notReviewer": "You are not a reviewer of this student."
+    },
+    "file": {
+      "mainMissing": "Attach the main document.",
+      "typeNotAllowed": "This file type is not allowed.",
+      "tooLarge": "A file is larger than 20 MB.",
+      "tooMany": "Attach at most three supporting files.",
+      "contentMismatch": "The main document's content does not match its extension.",
+      "notFound": "File not found."
+    },
+    "review": {
+      "markRequired": "Enter a mark to approve.",
+      "markOutOfRange": "The mark must be a whole number from 0 to 100.",
+      "commentRequired": "Write a comment to return the work."
     },
     "admin": {
       "notFound": "Administrator not found.",
@@ -235,7 +260,11 @@
     "adminTitle": "Administrator dashboard",
     "teacherTitle": "Teacher dashboard",
     "studentTitle": "Student dashboard",
-    "goToMyTasks": "Go to my steps"
+    "goToMyTasks": "Go to my steps",
+    "waitingReviews": "Submissions to review",
+    "myGroups": "My groups",
+    "openReview": "Open queue",
+    "openGroups": "View groups"
   },
   "health": {
     "title": "Server health",
@@ -387,38 +416,85 @@
     "faculty": "Faculty",
     "selectFaculty": "Select a faculty to see its steps."
   },
-  "myTasks": {
-    "title": "My steps",
+  "steps": {
+    "myTitle": "My work",
+    "backToMine": "Back to my work",
     "order": "#",
     "step": "Step",
-    "period": "Period",
-    "status": {
-      "label": "Status",
-      "all": "All",
-      "Pending": "Pending",
-      "Submitted": "Submitted",
-      "Approved": "Approved",
-      "Returned": "Returned",
-      "MissedDeadline": "Deadline missed"
-    },
+    "deadline": "Deadline",
     "mark": "Mark",
-    "open": "Open",
-    "noTasks": "No steps yet.",
-    "back": "Back to my steps",
-    "currentMark": "Current mark",
+    "markValue": "Mark: {{mark}}",
     "completedAt": "Completed",
-    "notCompleted": "Not completed",
-    "submissions": "Submissions",
-    "file": "File",
-    "submittedAt": "Submitted",
+    "student": "Student",
     "late": "Late",
-    "comment": "Comment",
-    "reviews": "Reviews",
-    "reviewer": "Reviewer",
-    "decision": "Decision",
-    "date": "Date",
+    "status": {
+      "Pending": "Not started",
+      "Submitted": "Under review",
+      "Returned": "Returned",
+      "Approved": "Approved"
+    },
+    "blocked": {
+      "step_previousNotApproved": "The previous step must be approved first.",
+      "step_awaitingReview": "Your work is under review.",
+      "step_alreadyApproved": "This step is approved."
+    },
+    "open": "Open",
+    "noSteps": "No steps yet.",
+    "submitTitle": "Submit work",
+    "mainFile": "Main document",
+    "mainHint": ".docx, .pdf or .pptx, up to 20 MB",
+    "supportingFiles": "Supporting files",
+    "supportingHint": "Up to three files, 20 MB each",
+    "fileSize": {
+      "b": "B",
+      "kb": "KB",
+      "mb": "MB"
+    },
+    "message": "Message for the reviewer",
+    "submit": "Submit",
+    "submitted": "Work submitted",
+    "timeline": "History",
+    "version": "Version {{version}}",
     "noSubmissions": "No submissions yet.",
-    "noReviews": "No reviews yet."
+    "decision": {
+      "Approved": "Approved",
+      "Returned": "Returned for revision"
+    },
+    "reviewTitle": "Decision",
+    "comment": "Comment",
+    "approve": "Approve",
+    "approveConfirm": "Approve this step with mark {{mark}}?",
+    "approved": "Step approved",
+    "return": "Return",
+    "returnConfirm": "Return the work for revision?",
+    "returned": "Work returned"
+  },
+  "review": {
+    "title": "Review",
+    "subtitle": "Submissions awaiting a decision, oldest first",
+    "allGroups": "All groups",
+    "filterAll": "All",
+    "filterLate": "Late",
+    "filterOnTime": "On time",
+    "lateFilterLabel": "Filter by lateness",
+    "group": "Group",
+    "version": "Version",
+    "submittedAt": "Submitted",
+    "empty": "No submissions are waiting for a decision.",
+    "backToQueue": "Back to review queue",
+    "approvedOf": "{{approved}}/{{total}}"
+  },
+  "progress": {
+    "title": "Group progress",
+    "groupsTitle": "My groups",
+    "noGroups": "You do not review any groups.",
+    "noStudents": "No students in this group.",
+    "noSteps": "No steps assigned to this group yet.",
+    "backToGroups": "Back to my groups",
+    "approved": "Steps approved",
+    "averageMark": "Average mark",
+    "late": "Late submissions",
+    "nextDeadline": "Next deadline"
   },
   "admins": {
     "title": "Administrators",

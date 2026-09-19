@@ -75,7 +75,13 @@ check('07 invalid academic year format -> code', badAcademicYear.data.code, 'val
 // Task templates per faculty
 // ---------------------------------------------------------------------------
 
-const templateA = await call('POST', '/api/task-templates', { token: admin, json: { facultyId: facultyA.id, title: `RF Step ${stamp}`, order: 990 } })
+// Faculty A is the seeded faculty, shared with every other run, so a fixed order collides with
+// whatever an earlier run left behind. Take the next free order instead; faculty B is created
+// fresh each run, so its orders need no such care.
+const existingA = (await call('GET', `/api/task-templates?facultyId=${facultyA.id}`, { token: admin })).data
+const orderA = Math.max(0, ...existingA.map((t) => t.order)) + 1
+
+const templateA = await call('POST', '/api/task-templates', { token: admin, json: { facultyId: facultyA.id, title: `RF Step ${stamp}`, order: orderA } })
 check('08 create task template', templateA.status, 201)
 
 const listByFacultyA = (await call('GET', `/api/task-templates?facultyId=${facultyA.id}`, { token: admin })).data
@@ -84,7 +90,7 @@ const listByFacultyB = (await call('GET', `/api/task-templates?facultyId=${facul
 check('10 faculty filter excludes other faculty template', listByFacultyB.some((t) => t.id === templateA.data.id), false)
 
 // B9: step template order is unique per faculty
-const duplicateOrder = await call('POST', '/api/task-templates', { token: admin, json: { facultyId: facultyA.id, title: `RF Duplicate Order ${stamp}`, order: 990 } })
+const duplicateOrder = await call('POST', '/api/task-templates', { token: admin, json: { facultyId: facultyA.id, title: `RF Duplicate Order ${stamp}`, order: orderA } })
 check('11 duplicate order in same faculty -> 409', duplicateOrder.status, 409)
 check('12 duplicate order in same faculty -> code', duplicateOrder.data.code, 'taskTemplate.orderTaken')
 
@@ -94,7 +100,7 @@ check('B1 same active title allowed in a different faculty', templateBSameTitle.
 
 // B7: task-template writes are Admin-only; a teacher gets 403
 const teacherToken = (await login('teacher@diploma.local', 'Teacher123!')).data.token
-const teacherCreateAttempt = await call('POST', '/api/task-templates', { token: teacherToken, json: { facultyId: facultyA.id, title: `RF Teacher Attempt ${stamp}`, order: 991 } })
+const teacherCreateAttempt = await call('POST', '/api/task-templates', { token: teacherToken, json: { facultyId: facultyA.id, title: `RF Teacher Attempt ${stamp}`, order: orderA + 1 } })
 check('B7 teacher cannot create task template', teacherCreateAttempt.status, 403)
 
 const future1 = new Date(Date.now() + 30 * 86400000).toISOString()
@@ -122,7 +128,8 @@ check('18 create late joiner', lateJoiner.status, 201)
 createdStudentIds.push(lateJoiner.data.id)
 
 const lateJoinerToken = (await login(lateJoinerEmail, lateJoinerPassword)).data.token
-const myTasks = (await call('GET', '/api/student/my-tasks', { token: lateJoinerToken })).data
+// Phase 5 removed /api/student/my-tasks; /api/student-tasks/mine replaces it.
+const myTasks = (await call('GET', '/api/student-tasks/mine', { token: lateJoinerToken })).data
 check('19 late joiner receives existing group step', myTasks.some((t) => t.groupTaskId === groupTask.data.id), true)
 
 // ---------------------------------------------------------------------------
@@ -226,7 +233,7 @@ const hStudent1 = (await call('POST', '/api/students', { token: admin, json: { f
 const hStudent2 = (await call('POST', '/api/students', { token: admin, json: { firstName: 'H', lastName: 'Two', email: hStudent2Email, studentNumber: `RFH2${stamp}`, groupId: groupH.data.id, password: 'Password1!' } })).data
 createdStudentIds.push(hStudent1.id, hStudent2.id)
 
-const templateH = (await call('POST', '/api/task-templates', { token: admin, json: { facultyId: facultyA.id, title: `RF Count Step ${stamp}`, order: 992 } })).data
+const templateH = (await call('POST', '/api/task-templates', { token: admin, json: { facultyId: facultyA.id, title: `RF Count Step ${stamp}`, order: orderA + 2 } })).data
 const groupTaskH = (await call('POST', '/api/group-tasks', { token: admin, json: { groupId: groupH.data.id, taskTemplateId: templateH.id, deadline: future1 } })).data
 
 check('48 archive one student in the count group', (await call('POST', '/api/students/archive', { token: admin, json: { studentIds: [hStudent1.id] } })).status, 200)
