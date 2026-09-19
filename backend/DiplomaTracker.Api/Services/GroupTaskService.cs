@@ -90,7 +90,9 @@ public class GroupTaskService : IGroupTaskService
                 // group that does not exist at all (spec §6) - Forbidden would let a teacher
                 // distinguish the two on this write path exactly as the read paths already refuse
                 // to. The authorisation rule itself is unchanged: writes stay reviewer-only.
-                return (null, GroupErrors.NotFound);
+                // GroupId comes from the request body, so this must match the same
+                // GroupTaskGroupNotFound (400) code used above for an unknown GroupId.
+                return (null, TaskErrors.GroupTaskGroupNotFound);
             }
         }
 
@@ -316,7 +318,9 @@ public class GroupTaskService : IGroupTaskService
             if (!allowed)
             {
                 // See CreateGroupTaskAsync: not-found, not forbidden, so existence isn't leaked.
-                return (null, GroupErrors.NotFound);
+                // Id comes from the URL here, so this must match the same GroupTaskNotFound (404)
+                // code used above for an unknown group task id.
+                return (null, TaskErrors.GroupTaskNotFound);
             }
         }
 

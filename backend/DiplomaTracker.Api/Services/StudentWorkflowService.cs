@@ -106,10 +106,22 @@ public class StudentWorkflowService : IStudentWorkflowService
             {
                 submission.Files.Add(await StoreAsync(file, SubmissionFileKind.Supporting, storedKeys, cancellationToken));
             }
+        }
+        catch (Exception)
+        {
+            // Nothing has touched the database yet at this point, so any failure while storing
+            // files - a full disk, the ResolvePath traversal guard, etc. - unconditionally orphans
+            // whatever was already stored. Clean it all up before rethrowing.
+            await DeleteStoredKeysAsync(storedKeys, task.Id);
+            throw;
+        }
 
-            task.Status = StudentTaskStatus.Submitted;
-            task.UpdatedAt = now;
-            _dbContext.Submissions.Add(submission);
+        task.Status = StudentTaskStatus.Submitted;
+        task.UpdatedAt = now;
+        _dbContext.Submissions.Add(submission);
+
+        try
+        {
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (Exception exception)
@@ -122,22 +134,7 @@ public class StudentWorkflowService : IStudentWorkflowService
             if (exception is DbUpdateConcurrencyException
                 || (exception is DbUpdateException update && update.IsUniqueConstraintViolation()))
             {
-                foreach (var key in storedKeys)
-                {
-                    try
-                    {
-                        await _fileStorage.DeleteAsync(key, CancellationToken.None);
-                    }
-                    catch (IOException ioException)
-                    {
-                        // A locked file must not mask the original exception or stop the
-                        // remaining keys from being cleaned up.
-                        _logger.LogWarning(ioException,
-                            "Could not delete orphaned storage key {StorageKey} while rolling back a submission save for student task {StudentTaskId}.",
-                            key, task.Id);
-                    }
-                }
-
+                await DeleteStoredKeysAsync(storedKeys, task.Id);
                 _dbContext.ChangeTracker.Clear();
                 return (null, WorkflowErrors.AwaitingReview);
             }
@@ -151,6 +148,25 @@ public class StudentWorkflowService : IStudentWorkflowService
 
         _dbContext.ChangeTracker.Clear();
         return await GetStepAsync(user, task.Id);
+    }
+
+    private async Task DeleteStoredKeysAsync(IReadOnlyList<string> storedKeys, Guid studentTaskId)
+    {
+        foreach (var key in storedKeys)
+        {
+            try
+            {
+                await _fileStorage.DeleteAsync(key, CancellationToken.None);
+            }
+            catch (IOException ioException)
+            {
+                // A locked file must not mask the original exception or stop the
+                // remaining keys from being cleaned up.
+                _logger.LogWarning(ioException,
+                    "Could not delete orphaned storage key {StorageKey} while rolling back a submission save for student task {StudentTaskId}.",
+                    key, studentTaskId);
+            }
+        }
     }
 
     public async Task<(StepDetailsResponse? step, string? error)> ApproveAsync(UserContext user, Guid submissionId, ApproveSubmissionRequest request)
