@@ -661,8 +661,8 @@
     "download": "Завантажити",
     "downloadTitle": "Завантажити «{{name}}»",
     "downloadAudienceLabel": "Кому призначено документ",
-    "myTopicDefault": "Моя тема (за замовчуванням)",
     "topic": "Тема",
+    "topicContext": "Тема: {{title}}",
     "blank": "Порожній бланк",
     "forStudent": "Для студента",
     "student": "Студент",
@@ -671,6 +671,7 @@
     "empty": "Доступних документів немає.",
     "saved": "Шаблон збережено",
     "fileNotReplaced": "Дані збережено; файл не замінено.",
+    "fileChanged": "Файл змінився на диску. Оберіть його ще раз.",
     "listLoadError": "Не вдалося завантажити список.",
     "unknownMarkersList": "Невідомі маркери:",
     "markerDescriptions": {

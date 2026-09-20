@@ -676,11 +676,13 @@ public class DocumentTemplateService : IDocumentTemplateService
 
             if (request.TopicId is not null)
             {
+                // A student may only name their own topic: one they hold a pending or approved
+                // reservation on. Any other id — even a catalogue topic that is otherwise fully
+                // visible — is treated as not found, same as an unknown id.
                 topic = await _dbContext.Topics.AsNoTracking()
                     .Include(t => t.Supervisor)
                     .FirstOrDefaultAsync(t => t.Id == request.TopicId
-                        && ((t.DepartmentId == student.Group.DepartmentId && t.Origin == TopicOrigin.Catalogue && t.Status == TopicStatus.Available && t.Supervisor.IsActive)
-                            || t.Reservations.Any(r => r.StudentProfileId == student.Id && (r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Approved))),
+                        && t.Reservations.Any(r => r.StudentProfileId == student.Id && (r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Approved)),
                         cancellationToken);
 
                 if (topic is null)

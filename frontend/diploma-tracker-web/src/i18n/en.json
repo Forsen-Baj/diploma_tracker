@@ -658,8 +658,8 @@
     "download": "Download",
     "downloadTitle": "Download \"{{name}}\"",
     "downloadAudienceLabel": "Who the document is for",
-    "myTopicDefault": "My topic (default)",
     "topic": "Topic",
+    "topicContext": "Topic: {{title}}",
     "blank": "Blank form",
     "forStudent": "For a student",
     "student": "Student",
@@ -668,6 +668,7 @@
     "empty": "No documents are available.",
     "saved": "Template saved",
     "fileNotReplaced": "Details saved; the file was not replaced.",
+    "fileChanged": "The file changed on disk. Choose it again.",
     "listLoadError": "Could not load the list.",
     "unknownMarkersList": "Unknown markers:",
     "markerDescriptions": {

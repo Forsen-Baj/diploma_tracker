@@ -119,9 +119,14 @@ response is the `.docx` stream named `<template name> — <student last name>.do
   contains only the date markers, giving a blank form.
 
 **Which topic**
-- A student may name any topic visible to them in the catalogue (phase 4) or their own; the
-  supervisor markers come from that topic. Without `topicId`, the student's approved topic is
-  used, otherwise their pending reservation's topic, otherwise none.
+- A document is filled from the reader's own data: a student's document carries a topic the
+  student holds, never one merely browsed in the catalogue. `topicId` names one of the
+  student's own reservations — approved or still pending — and anything else is refused like
+  an unknown topic. Without `topicId` the approved topic is used, otherwise the pending
+  reservation's topic, otherwise none.
+- The interface follows the same rule: a student who holds one topic is not asked to choose,
+  and only a student with both an approved topic and a pending change request is offered the
+  two.
 - Staff generating for a student always use that student's approved or pending topic;
   `topicId` is ignored.
 
@@ -154,8 +159,9 @@ unknown markers listed in the standard `errors` field), `template.tooLarge` (400
 ## 7. Interface
 
 - **Documents** tab (every role) — list of visible templates with name and description.
-  - Student: *Download* opens a small dialog with a topic selector pre-set to their own topic,
-    then downloads the filled document.
+  - Student: *Download* fills the document from their own record. The dialog names the topic
+    it will use and asks nothing when the student holds one topic or none; it offers a choice
+    only when an approved topic and a pending change request both exist.
   - Teacher and administrator: *Download* offers *Blank* or *For a student* (student
     selector limited to visible students).
 - **Template editor** (Teacher, Admin) — name, description, file upload, audience (groups

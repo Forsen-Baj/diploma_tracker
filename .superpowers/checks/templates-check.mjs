@@ -222,6 +222,16 @@ const outsiderToken = await login(outsiderEmail, 'Password1!')
 const topicA = (await call('POST', '/api/topics', { token: teacher, json: { title: `Тема A ${stamp}`, departmentId: seedGroup.departmentId } })).body
 const topicB = (await call('POST', '/api/topics', { token: teacher, json: { title: `Тема B ${stamp}`, departmentId: seedGroup.departmentId } })).body
 
+// Fix wave I2 / M17: topicA's description carries a manual line break (\v), a C0 control
+// character and a tab, set here while topicA is still Available - a teacher may only edit a
+// catalogue topic in that state - so it carries through into the reservation below and proves,
+// once generated, that a control character in a topic description generates fine (500 would
+// mean I2 regressed) and that a multi-line value produces `<w:br/>` elements rather than a
+// literal newline that Word would render as one glyph. topicA (not topicB) is used because a
+// student may now only name their own topic - see check 22d below.
+const multilineDescription = 'Перший рядок\nДругий рядоктретій\tТаб'
+await call('PUT', `/api/topics/${topicA.id}`, { token: teacher, json: { title: topicA.title, description: multilineDescription, departmentId: seedGroup.departmentId } })
+
 // The deadline is read before it is changed so cleanup can restore the exact original value.
 const originalDeadline = (await call('GET', '/api/settings/topic-selection', { token: admin })).body.deadline
 await call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: null } })
@@ -315,21 +325,21 @@ check('19b footnote marker filled', textOf(ownParts.get('word/footnotes.xml')).i
 check('20 no markers left', /\{\{/.test(ownText), false)
 check('21 file name with last name', decodeURIComponent((own.headers.get('content-disposition') ?? '').split("''")[1] ?? '').endsWith('Документенко.docx'), true)
 
-// Fix wave I2 / M17: topicB's description carries a manual line break (\v), a C0 control
-// character and a tab before generation, so picking it also proves a control character in a
-// topic description generates fine (500 would mean I2 regressed) and that a multi-line value
-// produces `<w:br/>` elements rather than a literal newline that Word would render as one glyph.
-const multilineDescription = 'Перший рядок\nДругий рядоктретій\tТаб'
-await call('PUT', `/api/topics/${topicB.id}`, { token: teacher, json: { title: topicB.title, description: multilineDescription, departmentId: seedGroup.departmentId } })
-const chosenResponse = await call('POST', `/api/templates/${templateId}/generate`, { token: studentToken, json: { topicId: topicB.id } })
-check('22 student picks another topic (control-char description generates fine, I2)', chosenResponse.status, 200)
+const chosenResponse = await call('POST', `/api/templates/${templateId}/generate`, { token: studentToken, json: { topicId: topicA.id } })
+check('22 student names own pending-reservation topic explicitly (control-char description generates fine, I2)', chosenResponse.status, 200)
 const chosenXml = chosenResponse.status === 200 ? unzip(chosenResponse.bytes).get('word/document.xml') : ''
 const chosenText = textOf(chosenXml)
-check('22a topic title from picked topic', chosenText.includes(`Topic: Тема B ${stamp}`), true)
+check('22a topic title from picked topic', chosenText.includes(`Topic: Тема A ${stamp}`), true)
 // The SDK's writer serialises a self-closing empty element with a space before the slash
 // (<w:br />), not <w:br/>, so the count must tolerate either.
 check('22b multi-line description produces exactly two <w:br/>', (chosenXml.match(/<w:br\s*\/>/g) ?? []).length, 2)
 check('22c multi-line description text kept, control char dropped, tab kept', chosenText.includes('Перший рядок') && chosenText.includes('Другий рядок') && chosenText.includes('третій') && chosenText.includes('Таб'), true)
+
+// A student naming topicB - a catalogue topic they have never reserved, and which is otherwise
+// fully visible in the catalogue - must be refused exactly like an unknown id, not honoured just
+// because the catalogue makes it visible.
+const unreservedTopic = await call('POST', `/api/templates/${templateId}/generate`, { token: studentToken, json: { topicId: topicB.id } })
+check('22d student naming an unreserved catalogue topic refused', unreservedTopic.body.code, 'topic.notFound')
 
 const forStudent = unzip((await call('POST', `/api/templates/${templateId}/generate`, { token: teacher, json: { studentId: student.id } })).bytes)
 check('23 reviewer generates for student', textOf(forStudent.get('word/document.xml')).includes('Документенко Іван Петрович'), true)

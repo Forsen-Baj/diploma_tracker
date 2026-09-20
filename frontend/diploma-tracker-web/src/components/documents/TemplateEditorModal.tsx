@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../auth/useAuth'
 import { ApiError } from '../../api/apiClient'
 import { getGroups } from '../../api/groupsApi'
-import { createTemplate, replaceTemplateFile, updateTemplate } from '../../api/templatesApi'
+import { createTemplate, replaceTemplateFile, snapshotFile, updateTemplate } from '../../api/templatesApi'
 import { getTopicSupervisors } from '../../api/topicsApi'
 import { useErrorMessage } from '../../api/useErrorMessage'
 import { Button } from '../ui/Button'
@@ -214,6 +214,25 @@ export function TemplateEditorModal({ open, template, onClose, onSaved, onPartia
     setUnknownMarkers([])
     setFileNotReplaced(false)
     setIsSaving(true)
+
+    // Read the picked file's bytes now and upload that in-memory snapshot instead of the original
+    // `File` handle, so a retry always sends what is on disk NOW rather than what the operator
+    // picked earlier. A `File` handle whose bytes changed on disk (e.g. the operator fixed it in
+    // Word under the same name) makes Chrome abort the upload with `net::ERR_UPLOAD_FILE_CHANGED`,
+    // which `fetch` surfaces as a plain `TypeError` that reads as a generic network error.
+    let freshFile: File | null = null
+    if (file) {
+      try {
+        freshFile = await snapshotFile(file)
+      } catch {
+        setError(t('templates.fileChanged'))
+        setFile(null)
+        setFileResetKey((key) => key + 1)
+        setIsSaving(false)
+        return
+      }
+    }
+
     let metadataSaved = false
     try {
       if (isEdit && template) {
@@ -221,11 +240,11 @@ export function TemplateEditorModal({ open, template, onClose, onSaved, onPartia
         metadataSaved = true
         // The metadata save above can succeed even when this step fails (e.g. unknown markers);
         // the modal stays open showing the file error so the operator can retry just the file.
-        if (file) {
-          await replaceTemplateFile(template.id, file)
+        if (freshFile) {
+          await replaceTemplateFile(template.id, freshFile)
         }
-      } else if (file) {
-        await createTemplate(input, file)
+      } else if (freshFile) {
+        await createTemplate(input, freshFile)
       }
       onSaved()
     } catch (err) {
