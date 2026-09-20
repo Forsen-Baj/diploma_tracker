@@ -11,7 +11,7 @@ Newest status first; keep entries short.
 | System design (binding authority) | `docs/superpowers/specs/2026-09-15-diploma-tracker-system-design.md` |
 | Increment designs | `docs/superpowers/specs/<date>-<topic>-design.md` |
 | Implementation plans | `docs/superpowers/plans/` |
-| Session handoffs (latest: `2026-09-19-phase-5-resume.md`) | `docs/superpowers/handoffs/` |
+| Session handoffs (latest: `2026-09-20-phase-6-complete.md`) | `docs/superpowers/handoffs/` |
 | Tests to write at the end of the project | `docs/superpowers/test-backlog.md` |
 | Per-plan execution ledger, briefs, reports, review packages (git-ignored, local only — does **not** travel between machines, so a handoff must be self-contained) | `.superpowers/sdd/<plan-name>/` |
 | End-to-end check scripts (committed since 2026-09-18) | `.superpowers/checks/` |
@@ -179,6 +179,12 @@ Parked for later (not blocking):
 - **Visibility** for teachers goes through `IAccessScope` (groups they review, or where they
   supervise a student); new group- or student-scoped queries must use it. A hidden resource
   answers exactly like a missing one — same status, code and message.
+- **Never upload a picked `File` handle directly.** Chrome aborts with
+  `net::ERR_UPLOAD_FILE_CHANGED` when the file's bytes changed on disk after it was picked (the
+  natural "fix it in Word and press Save again" loop), and `fetch` rejects with a plain
+  `TypeError` that looks like "no connection to the server" while the server never sees the
+  request. Snapshot the bytes at submit (`await file.arrayBuffer()`, upload a fresh `File`) and
+  map a read failure to "the file changed on disk, choose it again".
 - **Template markers** are matched per paragraph after joining its runs, in body, tables,
   headers, footers, footnotes, endnotes and comments; anything between `{{` and `}}` counts, so
   an unknown key is refused at upload. A new key needs an entry in `MarkerVocabulary` **and** in
@@ -231,6 +237,7 @@ Parked for later (not blocking):
 - 2026-09-18 — Design system and structure refinements implemented: `{ code, message }` error contract, Tailwind 4 + Headless UI component library, uk/en interface, group codes, steps per faculty with start dates, administrators page, student archiving, steps for late joiners.
 - 2026-09-18 — Owner notes from the phase 3 browser test applied: academic year restricted to digits and `/ \ - .` (max 20, `validation.failed` with `format`), `Group.Name` removed entirely so the code is the only group identity, step template `Order` unique per faculty (`taskTemplate.orderTaken` on create; an update moves the step and shifts its neighbours), check scripts use realistic academic years and delete every group they create.
 - 2026-09-20 — Phase 6 implemented: Word templates with a 20-marker vocabulary, per-template audiences (groups, named teachers, all teachers, all students), upload validation (package safety, marker scanning, size and depth limits), generation filling body, tables, headers, footnotes and endnotes, the Documents page for every role, and `templates-check.mjs` (60 checks). Whole-plan review (0 Critical, 3 Important) and security audit (1 High, 2 Medium) fixed in one wave; the scoped re-review's two Important defects in the field-code check fixed; walkthrough passed with the owner opening generated documents in Word. Owner decisions: no concurrency cap (accepted risk), `{{supervisor.email}}` stays visible to students, generation clears author document properties.
+- 2026-09-20 — Owner's manual test of phase 6 produced two fixes (commit `Fix template upload retry and fill a student's own topic`): a retried upload now snapshots the file's bytes at Save, so fixing a refused template in Word and pressing Save again works instead of failing with a misleading "no connection" message; and a student's document is filled from their own topic (approved or reserved) — naming a catalogue topic is refused, and the dialog offers a choice only when an approved topic and a pending change request both exist.
 - 2026-09-19 — Parked items triaged by the owner: twenty go to phase 8 (prompt in `handoffs/2026-09-19-phase-8-design-prompt.md`); rate limiting stays off, registration identity proof and structure readability stay as they are, the walkthrough notes are dropped, the accessibility pass stays parked.
 - 2026-09-19 — Phase 5 implemented: step submissions with a main document and up to three supporting files, versioned resubmission, reviewer approve (mark 0–100) / return (comment), strict step order, late flag, secured downloads, review queue, group progress matrix, student and teacher dashboards. Whole-plan review (0 Critical, 7 Important) and security audit (1 High, 3 Medium) fixed in one wave; the scoped re-review's two new Minors fixed; seven-step browser walkthrough passed. All API dates now serialise as UTC. Phase 8 "Hardening and polish" opened.
 - 2026-09-19 — Phase 4 implemented: topic catalogue, reservations, student proposals, change requests for an approved topic, administrator assignment from the student form (`PUT /api/students/{id}/topic`), administrator amendment of a topic at any stage, and the global selection deadline on a new Settings page. Reviewed in two halves (backend 1 Critical / 8 Important, frontend 2 Critical / 9 Important); one fix wave and a scoped re-review returned 39 of 40 findings fixed with no new defects.
