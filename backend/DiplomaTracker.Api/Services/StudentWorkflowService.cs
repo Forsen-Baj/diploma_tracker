@@ -158,11 +158,12 @@ public class StudentWorkflowService : IStudentWorkflowService
             {
                 await _fileStorage.DeleteAsync(key, CancellationToken.None);
             }
-            catch (IOException ioException)
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                // A locked file must not mask the original exception or stop the
-                // remaining keys from being cleaned up.
-                _logger.LogWarning(ioException,
+                // A locked or read-only file must not mask the original exception or stop the
+                // remaining keys from being cleaned up. On Windows a locked/read-only file often
+                // throws UnauthorizedAccessException rather than IOException (fix wave M6).
+                _logger.LogWarning(exception,
                     "Could not delete orphaned storage key {StorageKey} while rolling back a submission save for student task {StudentTaskId}.",
                     key, studentTaskId);
             }

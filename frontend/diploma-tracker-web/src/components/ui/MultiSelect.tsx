@@ -4,18 +4,13 @@ import { useId, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from './cn'
 import { FieldShell } from './FieldShell'
+import type { SelectOption } from './Select'
 import { controlClasses } from './styles'
-import { TruncatedText } from './TruncatedText'
 
-export type SelectOption = {
-  value: string
-  label: string
-}
-
-type SelectProps = {
+type MultiSelectProps = {
   label: ReactNode
-  value: string
-  onChange: (value: string) => void
+  values: string[]
+  onChange: (values: string[]) => void
   options: SelectOption[]
   placeholder?: string
   hint?: ReactNode
@@ -23,21 +18,23 @@ type SelectProps = {
   disabled?: boolean
 }
 
-export function Select({ label, value, onChange, options, placeholder, hint, error, disabled }: SelectProps) {
+export function MultiSelect({ label, values, onChange, options, placeholder, hint, error, disabled }: MultiSelectProps) {
   const { t } = useTranslation()
   const id = useId()
-  const selected = options.find((option) => option.value === value)
+  const selectedLabels = options.filter((option) => values.includes(option.value)).map((option) => option.label)
 
   return (
     <FieldShell label={label} htmlFor={id} hint={hint} error={error}>
-      <Listbox value={value} onChange={onChange} disabled={disabled}>
+      <Listbox value={values} onChange={onChange} multiple disabled={disabled}>
         <ListboxButton
           id={id}
           aria-invalid={error ? true : undefined}
           aria-describedby={error || hint ? `${id}-description` : undefined}
-          className={cn(controlClasses, 'flex items-center justify-between text-left', Boolean(error) && 'border-danger')}
+          className={cn(controlClasses, 'flex h-auto min-h-10 items-center justify-between py-2 text-left', Boolean(error) && 'border-danger')}
         >
-          <TruncatedText text={selected?.label ?? placeholder ?? ''} className={cn(!selected && 'text-text-muted')} />
+          <span className={cn('line-clamp-2', selectedLabels.length === 0 && 'text-text-muted')}>
+            {selectedLabels.length > 0 ? selectedLabels.join(', ') : placeholder ?? ''}
+          </span>
           <ChevronDown className="size-4 shrink-0 text-text-muted" aria-hidden />
         </ListboxButton>
         <ListboxOptions

@@ -23,6 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<TopicReservation> TopicReservations => Set<TopicReservation>();
     public DbSet<Submission> Submissions => Set<Submission>();
     public DbSet<SubmissionFile> SubmissionFiles => Set<SubmissionFile>();
+    public DbSet<DocumentTemplate> DocumentTemplates => Set<DocumentTemplate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -271,5 +272,43 @@ public class AppDbContext : DbContext
             .WithMany(x => x.Files)
             .HasForeignKey(x => x.SubmissionId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        var template = modelBuilder.Entity<DocumentTemplate>();
+        template.ToTable("DocumentTemplates");
+        template.HasKey(x => x.Id);
+        template.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        template.Property(x => x.Description).HasMaxLength(1000);
+        template.Property(x => x.StorageKey).HasMaxLength(300).IsRequired();
+        template.Property(x => x.OriginalFileName).HasMaxLength(255).IsRequired();
+        template.Property(x => x.CreatedAt).IsRequired();
+        template.Property(x => x.UpdatedAt).IsRequired();
+        template.HasOne(x => x.Owner)
+            .WithMany()
+            .HasForeignKey(x => x.OwnerId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        var templateGroup = modelBuilder.Entity<DocumentTemplateGroup>();
+        templateGroup.ToTable("DocumentTemplateGroups");
+        templateGroup.HasKey(x => new { x.TemplateId, x.GroupId });
+        templateGroup.HasOne(x => x.Template)
+            .WithMany(x => x.Groups)
+            .HasForeignKey(x => x.TemplateId)
+            .OnDelete(DeleteBehavior.Cascade);
+        templateGroup.HasOne(x => x.Group)
+            .WithMany()
+            .HasForeignKey(x => x.GroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        var templateTeacher = modelBuilder.Entity<DocumentTemplateTeacher>();
+        templateTeacher.ToTable("DocumentTemplateTeachers");
+        templateTeacher.HasKey(x => new { x.TemplateId, x.TeacherId });
+        templateTeacher.HasOne(x => x.Template)
+            .WithMany(x => x.Teachers)
+            .HasForeignKey(x => x.TemplateId)
+            .OnDelete(DeleteBehavior.Cascade);
+        templateTeacher.HasOne(x => x.Teacher)
+            .WithMany()
+            .HasForeignKey(x => x.TeacherId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

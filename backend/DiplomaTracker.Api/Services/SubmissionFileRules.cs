@@ -91,11 +91,14 @@ public static class SubmissionFileRules
     /// disk) before the name ever reaches the filesystem, so "tool.exe." and "tool.exe " are the
     /// same file as "tool.exe" as far as the OS is concerned. Path.GetExtension does not know
     /// this: it returns "" for a name ending in a dot and ".exe " (with the space) for one ending
-    /// in a space, so neither matches the blocklist. Trimming once, here, closes that gap for
-    /// both the main-file allowlist and the supporting-file blocklist.
+    /// in a space, so neither matches the blocklist. Sanitizing once, here (fix wave L3: control
+    /// characters and the Windows-reserved characters replaced, trailing dot/space trimmed),
+    /// closes that gap for both the main-file allowlist and the supporting-file blocklist, and
+    /// protects every later use of the name (Content-Disposition, on-disk storage key, generated
+    /// document names).
     private static (string Name, string Extension) Normalize(string fileName)
     {
-        var trimmed = Path.GetFileName(fileName).TrimEnd('.', ' ');
+        var trimmed = FileNameSanitizer.Sanitize(Path.GetFileName(fileName));
         return (trimmed, Path.GetExtension(trimmed));
     }
 

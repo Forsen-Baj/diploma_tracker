@@ -115,10 +115,24 @@ function parseFileName(contentDisposition: string | null): string | null {
   return null
 }
 
-export async function apiDownload(path: string): Promise<{ blob: Blob; fileName: string | null }> {
-  const response = await send(path)
+export async function apiDownload(path: string, init?: RequestInit): Promise<{ blob: Blob; fileName: string | null }> {
+  const response = await send(path, init)
   const blob = await response.blob()
   const fileName = parseFileName(response.headers.get('Content-Disposition'))
   return { blob, fileName }
+}
+
+// Shared by every download (submissions, templates): revoking the object URL in the same tick can
+// abort the download in Firefox and Safari, so a short delay lets the browser start reading the
+// blob first.
+export function saveBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 

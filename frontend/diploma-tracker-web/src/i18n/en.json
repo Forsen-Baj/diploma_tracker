@@ -23,7 +23,8 @@
     "optional": "optional",
     "select": "Select…",
     "savedToast": "Changes saved",
-    "deletedToast": "Deleted"
+    "deletedToast": "Deleted",
+    "noOptions": "No options"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -40,7 +41,8 @@
     "account": "Account",
     "signOut": "Sign out",
     "language": "Language",
-    "review": "Review"
+    "review": "Review",
+    "documents": "Documents"
   },
   "roles": {
     "Admin": "Administrator",
@@ -223,6 +225,17 @@
     },
     "selection": {
       "closed": "The topic selection deadline has passed."
+    },
+    "template": {
+      "notFound": "Template not found.",
+      "notOwner": "You can change only your own templates.",
+      "fileMissing": "Attach a .docx template.",
+      "invalidFile": "The file is not a valid Word document.",
+      "unknownMarkers": "The template contains unknown markers.",
+      "tooLarge": "The template is larger than 10 MB.",
+      "audienceNotAllowed": "You cannot share the template with this audience.",
+      "groupInvalid": "A selected group does not exist.",
+      "teacherInvalid": "A selected teacher does not exist or is inactive."
     }
   },
   "auth": {
@@ -616,5 +629,68 @@
     "clearDeadline": "Clear deadline",
     "deadlineSaved": "Deadline saved",
     "deadlineCleared": "Deadline cleared"
+  },
+  "templates": {
+    "title": "Documents",
+    "subtitle": "Application and form templates; downloaded documents are filled with your data.",
+    "add": "Add template",
+    "edit": "Edit template",
+    "name": "Name",
+    "description": "Description",
+    "owner": "Author",
+    "updatedAt": "Updated",
+    "file": "Template file (.docx)",
+    "replaceFile": "Replace file",
+    "fileHint": "A Word document up to 10 MB with markers such as:",
+    "removeCommentsHint": "Remove comments and tracked changes before uploading.",
+    "audienceTitle": "Who can see the template",
+    "groups": "Groups",
+    "teachers": "Teachers",
+    "allTeachers": "All teachers",
+    "allStudents": "All students",
+    "audienceSummary": "Groups: {{groups}}, teachers: {{teachers}}",
+    "allStudentsBadge": "All students",
+    "allTeachersBadge": "All teachers",
+    "markersTitle": "Available markers",
+    "copied": "Marker copied",
+    "copyMarkerAria": "Copy marker {{marker}}",
+    "clipboardUnavailable": "The clipboard is unavailable here; the marker text is selected so you can copy it yourself.",
+    "download": "Download",
+    "downloadTitle": "Download \"{{name}}\"",
+    "downloadAudienceLabel": "Who the document is for",
+    "myTopicDefault": "My topic (default)",
+    "topic": "Topic",
+    "blank": "Blank form",
+    "forStudent": "For a student",
+    "student": "Student",
+    "sourceDownload": "Download original",
+    "deleteConfirm": "Delete template \"{{name}}\"?",
+    "empty": "No documents are available.",
+    "saved": "Template saved",
+    "fileNotReplaced": "Details saved; the file was not replaced.",
+    "listLoadError": "Could not load the list.",
+    "unknownMarkersList": "Unknown markers:",
+    "markerDescriptions": {
+      "student_lastName": "Student's last name",
+      "student_firstName": "Student's first name",
+      "student_patronymic": "Student's patronymic",
+      "student_fullName": "Student's full name",
+      "student_shortName": "Student's last name and initials",
+      "student_email": "Student's email",
+      "student_number": "Student ID number",
+      "group_code": "Group code",
+      "group_academicYear": "Group academic year",
+      "department_name": "Department name",
+      "department_shortName": "Department short name",
+      "faculty_name": "Faculty name",
+      "faculty_shortName": "Faculty short name",
+      "topic_title": "Topic title",
+      "topic_description": "Topic description",
+      "supervisor_fullName": "Supervisor's full name",
+      "supervisor_shortName": "Supervisor's last name and initials",
+      "supervisor_email": "Supervisor's email",
+      "date_today": "Today's date (dd.mm.yyyy)",
+      "date_year": "Current year"
+    }
   }
 }

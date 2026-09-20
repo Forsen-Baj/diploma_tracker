@@ -1,4 +1,4 @@
-import { apiDownload, apiRequest } from './apiClient'
+import { apiDownload, apiRequest, saveBlob } from './apiClient'
 import type { GroupProgress, ReviewQueueItem, StepDetails, StudentProgress, StudentStep } from './types'
 
 export function getMySteps(): Promise<StudentStep[]> {
@@ -27,16 +27,7 @@ export function returnSubmission(id: string, comment: string): Promise<StepDetai
 
 export async function downloadSubmissionFile(fileId: string, fallbackName: string): Promise<void> {
   const { blob, fileName } = await apiDownload(`/api/submission-files/${fileId}`)
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName ?? fallbackName
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  // Revoking in the same tick can abort the download in Firefox and Safari; a short delay lets
-  // the browser start reading the blob first.
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  saveBlob(blob, fileName ?? fallbackName)
 }
 
 export function getReviewQueue(groupId?: string, late?: boolean): Promise<ReviewQueueItem[]> {

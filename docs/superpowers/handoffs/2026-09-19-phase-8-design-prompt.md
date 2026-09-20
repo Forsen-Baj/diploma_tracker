@@ -87,10 +87,20 @@ is built **after phase 6**; this prompt produces its design document and then it
 > 18. A group whose students are all archived cannot be deleted, because archived students
 >     still point at it. Decide where they go (ties into item 7).
 >
+> **Template storage (added after phase 6, 2026-09-20)**
+> 21. Two concurrent replacements of a template's file orphan the losing file —
+>     `DocumentTemplate` has no concurrency token; this belongs with item 7's archive. An upload
+>     larger than the 12 MB request limit is refused by the global 413 mapping, whose message
+>     talks about a student import rather than a template; map it per route or use a neutral
+>     code. The owner accepted the absence of a concurrency cap on generation and upload
+>     (2026-09-19); revisit only if the hosting question returns.
+>
 > **Repository**
-> 19. **Check-script cleanup.** The check scripts leave about 15 unarchived test students per
->     full run (and `RF Step …` step templates) in the seeded group `SEED-A`, crowding the
->     progress matrix. Every script must leave the seeded data as it found it.
+> 19. **Check-script cleanup.** The check scripts leave about 15 unarchived test students, about
+>     15 topics and `RF Step …` step templates per full run in the seeded group `SEED-A`,
+>     crowding the progress matrix, the topic catalogue and the student selector. Every script
+>     must leave the seeded data as it found it — `templates-check.mjs` (phase 6) is the model:
+>     it cleans up after itself, including on failure.
 > 20. **`.gitattributes`.** Pin line endings so editing tools stop flipping files between CRLF
 >     and LF. Four files are genuinely CRLF in history (`Services/GroupService.cs`,
 >     `Services/GroupTaskService.cs`, `DiplomaTracker.Api.Tests/Services/GroupServiceTests.cs`,

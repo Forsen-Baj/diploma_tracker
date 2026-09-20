@@ -26,6 +26,7 @@ import { ReviewQueuePage } from './pages/ReviewQueuePage'
 import { ReviewStepPage } from './pages/ReviewStepPage'
 import { TeacherGroupsPage } from './pages/TeacherGroupsPage'
 import { GroupProgressPage } from './pages/GroupProgressPage'
+import { DocumentsPage } from './pages/DocumentsPage'
 
 function App() {
   return (
@@ -38,6 +39,7 @@ function App() {
           <Route index element={<RoleRedirect />} />
           <Route path="health" element={<HealthPage />} />
           <Route path="account" element={<AccountPage />} />
+          <Route path="documents" element={<DocumentsPage />} />
           <Route element={<ProtectedRoute allowedRoles={['Admin', 'Teacher']} />}>
             <Route path="task-templates" element={<TaskTemplatesPage />} />
             <Route path="review" element={<ReviewQueuePage />} />
