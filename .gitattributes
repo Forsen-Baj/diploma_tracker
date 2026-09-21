@@ -1,0 +1,21 @@
+# Phase 8 §9. Text is stored with LF and checked out with CRLF on Windows, which is what Visual
+# Studio and the editors on both machines expect - so files stop flipping between the two and
+# the history stops churning.
+* text=auto eol=crlf
+
+# Binary types are never converted.
+*.docx binary
+*.dotx binary
+*.pptx binary
+*.xlsx binary
+*.pdf  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.otf  binary
+*.zip  binary
