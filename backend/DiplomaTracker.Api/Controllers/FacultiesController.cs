@@ -47,7 +47,12 @@ public class FacultiesController : ApiControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateFacultyRequest request)
     {
-        var (faculty, error) = await _facultyService.CreateFacultyAsync(request);
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (faculty, error) = await _facultyService.CreateFacultyAsync(request, administratorId);
         return faculty is null
             ? ErrorResult(error)
             : CreatedAtAction(nameof(GetById), new { id = faculty.Id }, faculty);
@@ -57,7 +62,12 @@ public class FacultiesController : ApiControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateFacultyRequest request)
     {
-        var (faculty, error) = await _facultyService.UpdateFacultyAsync(id, request);
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (faculty, error) = await _facultyService.UpdateFacultyAsync(id, request, administratorId);
         return faculty is null ? ErrorResult(error) : Ok(faculty);
     }
 
@@ -65,7 +75,12 @@ public class FacultiesController : ApiControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var (success, error) = await _facultyService.DeleteFacultyAsync(id);
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (success, error) = await _facultyService.DeleteFacultyAsync(id, administratorId);
         return success ? NoContent() : ErrorResult(error);
     }
 }

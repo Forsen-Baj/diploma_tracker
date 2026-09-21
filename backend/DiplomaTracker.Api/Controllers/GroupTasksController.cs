@@ -96,7 +96,12 @@ public class GroupTasksController : ApiControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var (success, error) = await _groupTaskService.DeleteGroupTaskAsync(id);
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (success, error) = await _groupTaskService.DeleteGroupTaskAsync(id, administratorId);
         return success ? NoContent() : ErrorResult(error);
     }
 }

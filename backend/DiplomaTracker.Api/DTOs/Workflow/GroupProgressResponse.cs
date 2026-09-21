@@ -16,6 +16,11 @@ public class GroupProgressCell
     public string Status { get; set; } = string.Empty;
     public int? Mark { get; set; }
     public bool IsLate { get; set; }
+
+    /// Phase 8 §7.1: past its deadline with nothing awaiting a decision. `IsLate` is fixed on a
+    /// submission when it is made, so a step that was NEVER submitted cannot carry it - which is
+    /// why a month-overdue step used to look exactly like one that is not due yet.
+    public bool IsOverdue { get; set; }
 }
 
 public class GroupProgressStudent

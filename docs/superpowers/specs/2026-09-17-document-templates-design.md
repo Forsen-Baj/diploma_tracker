@@ -40,6 +40,7 @@ topic application picks the topic, and the document arrives already completed.
 | `StorageKey`, `OriginalFileName`, `SizeBytes` | the stored `.docx`, through the `IFileStorage` from phase 5 |
 | `VisibleToAllStudents`, `VisibleToAllTeachers` | bool |
 | `CreatedAt`, `UpdatedAt` | UTC |
+| `RowVersion` | `rowversion`; the concurrency token that makes replacing the file safe (below) |
 
 **`DocumentTemplateGroup`** (`TemplateId`, `GroupId`) and **`DocumentTemplateTeacher`**
 (`TemplateId`, `TeacherId`) hold the selected audience; both cascade with the template.
@@ -149,7 +150,7 @@ unknown markers listed in the standard `errors` field), `template.tooLarge` (400
 | GET | `/api/templates/{id}` | any role (visible) | Detail with audience (audience shown to owner and administrators only) |
 | POST | `/api/templates` | Teacher, Admin | Multipart: `file`, `name`, `description`, audience fields |
 | PUT | `/api/templates/{id}` | owner, Admin | Name, description, audience |
-| PUT | `/api/templates/{id}/file` | owner, Admin | Replace the Word file |
+| PUT | `/api/templates/{id}/file` | owner, Admin | Replace the Word file. The new file is written to storage, the row is saved against its `RowVersion`, and **only once that save commits** is the old file deleted — so a failed save never destroys the file the template still points at. Two people replacing the same template at once: the first wins, the second is answered `template.conflict` rather than silently overwriting, and nothing of theirs is left in storage. Deleting a template that someone has just replaced answers the same conflict instead of a server error |
 | DELETE | `/api/templates/{id}` | owner, Admin | Delete template and stored file |
 | GET | `/api/templates/{id}/source` | owner, Admin | Download the original file with markers |
 | POST | `/api/templates/{id}/generate` | any role (visible) | Generate (§5) |

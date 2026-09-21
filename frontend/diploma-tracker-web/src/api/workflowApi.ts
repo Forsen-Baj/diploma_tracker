@@ -1,5 +1,5 @@
 import { apiDownload, apiRequest, saveBlob } from './apiClient'
-import type { GroupProgress, ReviewQueueItem, StepDetails, StudentProgress, StudentStep } from './types'
+import type { GroupProgress, Paged, ReviewQueueItem, StepDetails, StudentProgress, StudentStep } from './types'
 
 export function getMySteps(): Promise<StudentStep[]> {
   return apiRequest<StudentStep[]>('/api/student-tasks/mine')
@@ -30,12 +30,18 @@ export async function downloadSubmissionFile(fileId: string, fallbackName: strin
   saveBlob(blob, fileName ?? fallbackName)
 }
 
-export function getReviewQueue(groupId?: string, late?: boolean): Promise<ReviewQueueItem[]> {
+export function getReviewQueue(
+  groupId?: string,
+  late?: boolean,
+  page = 1,
+  pageSize = 25
+): Promise<Paged<ReviewQueueItem>> {
   const params = new URLSearchParams()
   if (groupId) params.set('groupId', groupId)
   if (late !== undefined) params.set('late', String(late))
-  const query = params.toString()
-  return apiRequest<ReviewQueueItem[]>(`/api/review/queue${query ? `?${query}` : ''}`)
+  params.set('page', String(page))
+  params.set('pageSize', String(pageSize))
+  return apiRequest<Paged<ReviewQueueItem>>(`/api/review/queue?${params.toString()}`)
 }
 
 export function getGroupProgress(groupId: string): Promise<GroupProgress> {

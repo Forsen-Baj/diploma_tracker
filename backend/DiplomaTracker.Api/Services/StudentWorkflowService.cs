@@ -3,6 +3,7 @@ using DiplomaTracker.Api.DTOs.Workflow;
 using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
+using DiplomaTracker.Api.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -24,6 +25,14 @@ public class StudentWorkflowService : IStudentWorkflowService
         _fileStorage = fileStorage;
         _logger = logger;
     }
+
+    /// Phase 8 §7.1. Approved is done; Submitted is with a reviewer and not the student's
+    /// problem. Pending and Returned past the deadline are overdue. Evaluated against the
+    /// server's clock so it never depends on the client's.
+    public static bool IsOverdue(StudentTaskStatus status, DateTime deadline, DateTime now) =>
+        status != StudentTaskStatus.Approved
+        && status != StudentTaskStatus.Submitted
+        && deadline < now;
 
     public async Task<(IReadOnlyList<StudentStepResponse>? steps, string? error)> GetMyStepsAsync(UserContext user)
     {
@@ -65,6 +74,7 @@ public class StudentWorkflowService : IStudentWorkflowService
 
         if (task.StudentProfile.UserId != user.UserId)
         {
+            SecurityLog.AccessRefused(_logger, user.UserId, user.Role, "StudentTask", task.Id);
             return (null, WorkflowErrors.StudentTaskNotYours);
         }
 
@@ -80,7 +90,7 @@ public class StudentWorkflowService : IStudentWorkflowService
             return (null, CommonErrors.ValidationFailed);
         }
 
-        var fileError = await SubmissionFileRules.ValidateMainAsync(mainFile) ?? SubmissionFileRules.ValidateSupporting(supportingFiles);
+        var fileError = await SubmissionFileRules.ValidateMainAsync(mainFile) ?? await SubmissionFileRules.ValidateSupportingAsync(supportingFiles);
         if (fileError is not null)
         {
             return (null, fileError);
@@ -237,6 +247,7 @@ public class StudentWorkflowService : IStudentWorkflowService
         var allowed = file.StudentUserId == user.UserId || await _accessScope.CanReviewStudentAsync(user, file.StudentProfileId);
         if (!allowed)
         {
+            SecurityLog.AccessRefused(_logger, user.UserId, user.Role, "SubmissionFile", fileId);
             return (null, WorkflowErrors.FileNotFound);
         }
 
@@ -248,15 +259,29 @@ public class StudentWorkflowService : IStudentWorkflowService
 
         var contentType = file.Kind == SubmissionFileKind.Main ? file.ContentType : "application/octet-stream";
 
-        _logger.LogInformation(
-            "User {ActorUserId} downloaded file {FileId} owned by student profile {StudentProfileId}.",
-            user.UserId, fileId, file.StudentProfileId);
+        SecurityLog.FileDownloaded(_logger, user.UserId, fileId, file.StudentProfileId);
 
         return (new StoredFileDownload(stream, contentType, file.OriginalName), null);
     }
 
-    public async Task<IReadOnlyList<ReviewQueueItem>> GetReviewQueueAsync(UserContext user, Guid? groupId, bool? late)
+    public const int ReviewQueueDefaultPageSize = 25;
+    public const int ReviewQueueMaxPageSize = 100;
+
+    public async Task<PagedResponse<ReviewQueueItem>> GetReviewQueueAsync(
+        UserContext user,
+        Guid? groupId,
+        bool? late,
+        int page,
+        int pageSize)
     {
+        // Phase 8 §8: an administrator used to receive every undecided submission in one array.
+        // The page is clamped rather than refused - a bad page number is a client mistake, not
+        // something a reviewer should see an error for.
+        page = page < 1 ? 1 : page;
+        pageSize = pageSize < 1 ? ReviewQueueDefaultPageSize
+            : pageSize > ReviewQueueMaxPageSize ? ReviewQueueMaxPageSize
+            : pageSize;
+
         var reviewable = _accessScope.ReviewableStudents(user).Select(s => s.Id);
 
         var query = _dbContext.Submissions.AsNoTracking()
@@ -274,40 +299,40 @@ public class StudentWorkflowService : IStudentWorkflowService
             query = query.Where(s => s.IsLate == late);
         }
 
+        var total = await query.CountAsync();
+
         var rows = await query
             .OrderBy(s => s.SubmittedAt)
-            .Select(s => new
+            .ThenBy(s => s.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(s => new ReviewQueueItem
             {
-                s.Id,
-                s.StudentTaskId,
-                s.StudentTask.StudentProfileId,
-                s.StudentTask.StudentProfile.User.LastName,
-                s.StudentTask.StudentProfile.User.FirstName,
-                s.StudentTask.StudentProfile.User.Patronymic,
-                s.StudentTask.StudentProfile.GroupId,
+                SubmissionId = s.Id,
+                StudentTaskId = s.StudentTaskId,
+                StudentProfileId = s.StudentTask.StudentProfileId,
+                StudentName = s.StudentTask.StudentProfile.User.LastName + " "
+                    + s.StudentTask.StudentProfile.User.FirstName
+                    + (s.StudentTask.StudentProfile.User.Patronymic == null
+                        ? ""
+                        : " " + s.StudentTask.StudentProfile.User.Patronymic),
+                GroupId = s.StudentTask.StudentProfile.GroupId,
                 GroupCode = s.StudentTask.StudentProfile.Group.Code,
                 StepTitle = s.StudentTask.GroupTask.DiplomaTaskTemplate.Title,
                 StepOrder = s.StudentTask.GroupTask.DiplomaTaskTemplate.Order,
-                s.Version,
-                s.SubmittedAt,
-                s.IsLate
+                Version = s.Version,
+                SubmittedAt = s.SubmittedAt,
+                IsLate = s.IsLate
             })
             .ToListAsync();
 
-        return rows.Select(row => new ReviewQueueItem
+        return new PagedResponse<ReviewQueueItem>
         {
-            SubmissionId = row.Id,
-            StudentTaskId = row.StudentTaskId,
-            StudentProfileId = row.StudentProfileId,
-            StudentName = JoinName(row.LastName, row.FirstName, row.Patronymic),
-            GroupId = row.GroupId,
-            GroupCode = row.GroupCode,
-            StepTitle = row.StepTitle,
-            StepOrder = row.StepOrder,
-            Version = row.Version,
-            SubmittedAt = row.SubmittedAt,
-            IsLate = row.IsLate
-        }).ToList();
+            Items = rows,
+            Page = page,
+            PageSize = pageSize,
+            Total = total
+        };
     }
 
     public async Task<(GroupProgressResponse? progress, string? error)> GetGroupProgressAsync(UserContext user, Guid groupId)
@@ -315,6 +340,7 @@ public class StudentWorkflowService : IStudentWorkflowService
         var group = await _accessScope.VisibleGroups(user).AsNoTracking().FirstOrDefaultAsync(g => g.Id == groupId);
         if (group is null)
         {
+            SecurityLog.AccessRefused(_logger, user.UserId, user.Role, "Group", groupId);
             return (null, GroupErrors.NotFound);
         }
 
@@ -332,6 +358,8 @@ public class StudentWorkflowService : IStudentWorkflowService
             .ThenBy(gt => gt.DiplomaTaskTemplate.Title)
             .ToListAsync();
 
+        var now = DateTime.UtcNow;
+
         var studentIds = students.Select(s => s.Id).ToList();
         var tasks = await _dbContext.StudentTasks.AsNoTracking()
             .Where(t => studentIds.Contains(t.StudentProfileId) && t.GroupTask.GroupId == groupId)
@@ -342,6 +370,7 @@ public class StudentWorkflowService : IStudentWorkflowService
                 t.GroupTaskId,
                 t.Status,
                 t.Mark,
+                Deadline = t.GroupTask.Deadline,
                 LatestLate = t.Submissions.OrderByDescending(s => s.Version).Select(s => (bool?)s.IsLate).FirstOrDefault()
             })
             .ToListAsync();
@@ -373,7 +402,8 @@ public class StudentWorkflowService : IStudentWorkflowService
                         StudentTaskId = t.Id,
                         Status = t.Status.ToString(),
                         Mark = t.Mark,
-                        IsLate = t.LatestLate ?? false
+                        IsLate = t.LatestLate ?? false,
+                        IsOverdue = IsOverdue(t.Status, t.Deadline, now)
                     }).ToList()
             }).ToList()
         }, null);
@@ -395,17 +425,21 @@ public class StudentWorkflowService : IStudentWorkflowService
             profile = await _accessScope.ReviewableStudents(user).AsNoTracking().FirstOrDefaultAsync(p => p.Id == studentProfileId);
             if (profile is null)
             {
+                SecurityLog.AccessRefused(_logger, user.UserId, user.Role, "StudentProfile", studentProfileId.Value);
                 return (null, OnboardingErrors.StudentNotFound);
             }
         }
 
         var tasks = await _dbContext.StudentTasks.AsNoTracking()
             .Where(t => t.StudentProfileId == profile.Id && t.GroupTask.GroupId == profile.GroupId)
-            .Select(t => new { t.Status, t.Mark, t.GroupTask.Deadline })
+            .Select(t => new
+            {
+                t.Status,
+                t.Mark,
+                t.GroupTask.Deadline,
+                LatestLate = t.Submissions.OrderByDescending(s => s.Version).Select(s => (bool?)s.IsLate).FirstOrDefault()
+            })
             .ToListAsync();
-
-        var lateSubmissions = await _dbContext.Submissions.AsNoTracking()
-            .CountAsync(s => s.StudentTask.StudentProfileId == profile.Id && s.StudentTask.GroupTask.GroupId == profile.GroupId && s.IsLate);
 
         var marks = tasks.Where(t => t.Mark is not null).Select(t => (double)t.Mark!.Value).ToList();
 
@@ -414,7 +448,7 @@ public class StudentWorkflowService : IStudentWorkflowService
             StudentProfileId = profile.Id,
             Approved = tasks.Count(t => t.Status == StudentTaskStatus.Approved),
             Total = tasks.Count,
-            LateSubmissions = lateSubmissions,
+            LateSteps = tasks.Count(t => t.LatestLate == true),
             AverageMark = marks.Count == 0 ? null : Math.Round(marks.Average(), 1),
             // Includes overdue unapproved steps (no `Deadline >= now` filter) and takes the
             // earliest, so a student with a missed step sees that deadline instead of a later,
@@ -443,6 +477,7 @@ public class StudentWorkflowService : IStudentWorkflowService
 
         if (!await _accessScope.CanReviewStudentAsync(user, submission.StudentTask.StudentProfileId))
         {
+            SecurityLog.AccessRefused(_logger, user.UserId, user.Role, "Submission", submission.Id);
             return (null, WorkflowErrors.NotReviewer);
         }
 
@@ -473,9 +508,12 @@ public class StudentWorkflowService : IStudentWorkflowService
             return (null, WorkflowErrors.SubmissionAlreadyDecided);
         }
 
-        _logger.LogInformation(
-            "User {ActorUserId} decided submission {SubmissionId} for student profile {StudentProfileId}: {Decision} (mark: {Mark}).",
-            user.UserId, submission.Id, submission.StudentTask.StudentProfileId, submission.Decision, submission.Mark);
+        SecurityLog.SubmissionDecided(
+            _logger,
+            user.UserId,
+            submission.Id,
+            submission.Decision!.Value.ToString(),
+            submission.Mark);
 
         _dbContext.ChangeTracker.Clear();
         return await GetStepAsync(user, submission.StudentTaskId);
@@ -496,7 +534,13 @@ public class StudentWorkflowService : IStudentWorkflowService
 
         if (user.IsStudent)
         {
-            return task.StudentProfile.UserId == user.UserId ? (task, null) : (null, WorkflowErrors.StudentTaskNotYours);
+            if (task.StudentProfile.UserId == user.UserId)
+            {
+                return (task, null);
+            }
+
+            SecurityLog.AccessRefused(_logger, user.UserId, user.Role, "StudentTask", task.Id);
+            return (null, WorkflowErrors.StudentTaskNotYours);
         }
 
         return await _accessScope.CanReviewStudentAsync(user, task.StudentProfileId)

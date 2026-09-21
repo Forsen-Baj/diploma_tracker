@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { HTMLAttributes, ReactNode } from 'react'
 import { cn } from './cn'
 import { Spinner } from './Spinner'
 
@@ -16,9 +16,12 @@ type DataTableProps<T> = {
   loading?: boolean
   emptyState?: ReactNode
   onRowClick?: (row: T) => void
+  // Task 16, step 5: lets a page (e.g. drag-to-reorder steps) attach native attributes such as
+  // `draggable`/`onDragStart` to a row without every other DataTable caller having to know about it.
+  rowProps?: (row: T) => HTMLAttributes<HTMLTableRowElement>
 }
 
-export function DataTable<T>({ columns, rows, getRowKey, loading = false, emptyState, onRowClick }: DataTableProps<T>) {
+export function DataTable<T>({ columns, rows, getRowKey, loading = false, emptyState, onRowClick, rowProps }: DataTableProps<T>) {
   if (loading) {
     return (
       <div className="flex justify-center py-10">
@@ -47,6 +50,7 @@ export function DataTable<T>({ columns, rows, getRowKey, loading = false, emptyS
           {rows.map((row) => (
             <tr
               key={getRowKey(row)}
+              {...rowProps?.(row)}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
               className={cn('border-b border-border-subtle/60 last:border-0', onRowClick && 'cursor-pointer hover:bg-surface')}
             >

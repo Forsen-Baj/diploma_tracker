@@ -24,6 +24,9 @@ public class AppDbContext : DbContext
     public DbSet<Submission> Submissions => Set<Submission>();
     public DbSet<SubmissionFile> SubmissionFiles => Set<SubmissionFile>();
     public DbSet<DocumentTemplate> DocumentTemplates => Set<DocumentTemplate>();
+    public DbSet<ArchivedGroup> ArchivedGroups => Set<ArchivedGroup>();
+    public DbSet<ArchivedGroupReviewer> ArchivedGroupReviewers => Set<ArchivedGroupReviewer>();
+    public DbSet<ArchivedFile> ArchivedFiles => Set<ArchivedFile>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -69,7 +72,8 @@ public class AppDbContext : DbContext
         studentProfile.ToTable("StudentProfiles");
         studentProfile.HasKey(x => x.Id);
         studentProfile.Property(x => x.StudentNumber).HasMaxLength(32).IsRequired();
-        studentProfile.HasIndex(x => x.StudentNumber).IsUnique();
+        studentProfile.Property(x => x.StudentNumberCanonical).IsRequired().HasMaxLength(64);
+        studentProfile.HasIndex(x => x.StudentNumberCanonical).IsUnique();
         studentProfile.Property(x => x.GroupId).IsRequired();
         studentProfile.Property(x => x.ArchivedAt);
         studentProfile.Property(x => x.CreatedAt).IsRequired();
@@ -90,7 +94,7 @@ public class AppDbContext : DbContext
             .OnDelete(DeleteBehavior.Restrict);
         studentProfile.HasIndex(x => x.TopicId).IsUnique().HasFilter("[TopicId] IS NOT NULL");
         studentProfile.HasOne(x => x.Topic)
-            .WithMany()
+            .WithMany(x => x.Holders)
             .HasForeignKey(x => x.TopicId)
             .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
@@ -282,6 +286,7 @@ public class AppDbContext : DbContext
         template.Property(x => x.OriginalFileName).HasMaxLength(255).IsRequired();
         template.Property(x => x.CreatedAt).IsRequired();
         template.Property(x => x.UpdatedAt).IsRequired();
+        template.Property(x => x.RowVersion).IsRowVersion();
         template.HasOne(x => x.Owner)
             .WithMany()
             .HasForeignKey(x => x.OwnerId)
@@ -310,5 +315,52 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(x => x.TeacherId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        var archivedGroup = modelBuilder.Entity<ArchivedGroup>();
+        archivedGroup.ToTable("ArchivedGroups");
+        archivedGroup.HasKey(x => x.Id);
+        archivedGroup.Property(x => x.GroupCode).HasMaxLength(32).IsRequired();
+        archivedGroup.Property(x => x.AcademicYear).HasMaxLength(20).IsRequired();
+        archivedGroup.Property(x => x.DepartmentName).HasMaxLength(200).IsRequired();
+        archivedGroup.Property(x => x.FacultyName).HasMaxLength(200).IsRequired();
+        archivedGroup.Property(x => x.CreatedAt).IsRequired();
+        archivedGroup.Property(x => x.UpdatedAt).IsRequired();
+        archivedGroup.HasIndex(x => x.SourceGroupId).IsUnique();
+        archivedGroup.HasIndex(x => new { x.AcademicYear, x.GroupCode });
+
+        var archivedReviewer = modelBuilder.Entity<ArchivedGroupReviewer>();
+        archivedReviewer.ToTable("ArchivedGroupReviewers");
+        archivedReviewer.HasKey(x => x.Id);
+        archivedReviewer.Property(x => x.ReviewerName).HasMaxLength(300).IsRequired();
+        archivedReviewer.HasIndex(x => new { x.ArchivedGroupId, x.ReviewerId }).IsUnique();
+        archivedReviewer.HasIndex(x => x.ReviewerId);
+        archivedReviewer.HasOne(x => x.ArchivedGroup)
+            .WithMany(x => x.Reviewers)
+            .HasForeignKey(x => x.ArchivedGroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        var archivedFile = modelBuilder.Entity<ArchivedFile>();
+        archivedFile.ToTable("ArchivedFiles");
+        archivedFile.HasKey(x => x.Id);
+        archivedFile.Property(x => x.StudentName).HasMaxLength(300).IsRequired();
+        archivedFile.Property(x => x.StudentNumber).HasMaxLength(32).IsRequired();
+        archivedFile.Property(x => x.StepTitle).HasMaxLength(300).IsRequired();
+        archivedFile.Property(x => x.Decision).HasMaxLength(50);
+        archivedFile.Property(x => x.ReviewerName).HasMaxLength(300);
+        archivedFile.Property(x => x.ReviewerComment).HasMaxLength(2000);
+        archivedFile.Property(x => x.Kind).HasMaxLength(50).IsRequired();
+        archivedFile.Property(x => x.OriginalName).HasMaxLength(255).IsRequired();
+        archivedFile.Property(x => x.ContentType).HasMaxLength(200).IsRequired();
+        archivedFile.Property(x => x.StorageKey).HasMaxLength(200).IsRequired();
+        archivedFile.Property(x => x.ArchivedAt).IsRequired();
+        // Archiving a student and later deleting their group would otherwise write the same file
+        // twice. The service skips keys that are already present; this index is what makes that
+        // guarantee hold under a race.
+        archivedFile.HasIndex(x => new { x.ArchivedGroupId, x.StorageKey }).IsUnique();
+        archivedFile.HasIndex(x => new { x.ArchivedGroupId, x.StudentName, x.StepOrder, x.Version });
+        archivedFile.HasOne(x => x.ArchivedGroup)
+            .WithMany(x => x.Files)
+            .HasForeignKey(x => x.ArchivedGroupId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

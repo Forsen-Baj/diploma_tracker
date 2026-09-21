@@ -1,8 +1,11 @@
 // Extra regression check for the fix-wave-backend fixes not covered by onboarding-check.mjs:
 // 1. A stray/unterminated quote in a CSV import is rejected with a single 400 file-level error.
 // 2. PUT /api/registration with an empty body ({}) is rejected with 400.
+import { createCleanup } from './checkCleanup.mjs'
+
 const API = 'http://localhost:5000'
 const results = []
+const cleanup = createCleanup()
 
 function check(name, actual, expected) {
   const ok = JSON.stringify(actual) === JSON.stringify(expected)
@@ -41,6 +44,7 @@ async function loginAdmin() {
   return res.data.token
 }
 
+async function runChecks() {
 const admin = await loginAdmin()
 const groups = (await call('GET', '/api/groups', { token: admin })).data
 const groupId = groups.find((g) => g.code === 'SEED-A').id
@@ -87,9 +91,26 @@ const stillWorksResult = await call('POST', `/api/groups/${groupId}/students/imp
 check('quoted line break + doubled quote still import: status', stillWorksResult.status, 200)
 check('quoted line break + doubled quote still import: created', stillWorksResult.data?.created, 2)
 
+// These two students land straight in the seeded group, so cleanup only has to archive them - no
+// restore or move is needed since they were never archived and never left SEED-A.
+const importedStudents = (await call('GET', '/api/students', { token: admin })).data
+const quotedIds = importedStudents
+  .filter((s) => s.email === `olena.quoted.${stamp}@x.local` || s.email === `ivan.quoted.${stamp}@x.local`)
+  .map((s) => s.id)
+if (quotedIds.length > 0) {
+  cleanup.add('imported students -> archive', () => call('POST', '/api/students/archive', { token: admin, json: { studentIds: quotedIds } }))
+}
+
 // 2. PUT /api/registration with {} -> 400.
 const emptyPut = await call('PUT', '/api/registration', { token: admin, json: {} })
 check('PUT /api/registration with {} -> 400', emptyPut.status, 400)
+}
+
+try {
+  await runChecks()
+} finally {
+  await cleanup.run()
+}
 
 const failed = results.filter((r) => !r.ok)
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`)

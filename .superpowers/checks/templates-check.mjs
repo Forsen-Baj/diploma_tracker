@@ -1,9 +1,11 @@
 import { inflateRawSync } from 'node:zlib'
+import { createCleanup } from './checkCleanup.mjs'
 
 const API = 'http://localhost:5000'
 const stamp = Date.now().toString().slice(-6)
 const results = []
 const authCalls = []
+const cleanup = createCleanup()
 
 function check(name, actual, expected) {
   const ok = actual === expected
@@ -205,22 +207,42 @@ const reviewersBefore = (await call('GET', `/api/groups/${seedGroup.id}/reviewer
 const teacherWasReviewer = reviewersBefore.some((r) => r.reviewerId === teacherId)
 if (!teacherWasReviewer) {
   await call('POST', `/api/groups/${seedGroup.id}/reviewers`, { token: admin, json: { reviewerId: teacherId } })
+  cleanup.add("reviewer assignment added by this run", () => call('DELETE', `/api/groups/${seedGroup.id}/reviewers/${teacherId}`, { token: admin }))
 }
 
 const otherGroup = (await call('POST', '/api/groups', { token: admin, json: { departmentId: seedGroup.departmentId, code: `DOC${stamp}`, academicYear: '2026/2027', description: '' } })).body
+cleanup.add(`group ${otherGroup.code}`, () => call('DELETE', `/api/groups/${otherGroup.id}`, { token: admin }))
 const otherTeacherEmail = `doc.teacher.${stamp}@diploma.local`
 const otherTeacherId = (await call('POST', '/api/teachers', { token: admin, json: { firstName: 'Олег', lastName: 'Іншенко', email: otherTeacherEmail, password: 'Teacher456!' } })).body.id
+// Fix wave M17: the teacher account this run creates was previously never deactivated, so it kept
+// piling up in the teacher multi-select, in /api/topics/supervisors and in every "all teachers"
+// audience across repeated runs.
+cleanup.add(`teacher ${otherTeacherEmail} -> deactivate`, () => call('PATCH', `/api/teachers/${otherTeacherId}/deactivate`, { token: admin }))
 const otherTeacher = await login(otherTeacherEmail, 'Teacher456!')
 
 const studentEmail = `doc.${stamp}@student.local`
 const student = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Іван', lastName: 'Документенко', patronymic: 'Петрович', email: studentEmail, studentNumber: `D${stamp}`, password: 'Password1!', groupId: seedGroup.id } })).body
+// Students need the three-step dance: a student can never be deleted, and a group cannot be
+// deleted while any student points at it. Registered as one undo step at the moment of creation.
+cleanup.add('student -> seeded group', async () => {
+  await call('POST', '/api/students/restore', { token: admin, json: { studentIds: [student.id] } })
+  await call('PUT', `/api/students/${student.id}/group`, { token: admin, json: { groupId: seedGroup.id } })
+  await call('POST', '/api/students/archive', { token: admin, json: { studentIds: [student.id] } })
+})
 const studentToken = await login(studentEmail, 'Password1!')
 const outsiderEmail = `outsider.${stamp}@student.local`
 const outsider = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Out', lastName: 'Sider', email: outsiderEmail, studentNumber: `O${stamp}`, password: 'Password1!', groupId: otherGroup.id } })).body
+cleanup.add('outsider -> seeded group', async () => {
+  await call('POST', '/api/students/restore', { token: admin, json: { studentIds: [outsider.id] } })
+  await call('PUT', `/api/students/${outsider.id}/group`, { token: admin, json: { groupId: seedGroup.id } })
+  await call('POST', '/api/students/archive', { token: admin, json: { studentIds: [outsider.id] } })
+})
 const outsiderToken = await login(outsiderEmail, 'Password1!')
 
 const topicA = (await call('POST', '/api/topics', { token: teacher, json: { title: `Тема A ${stamp}`, departmentId: seedGroup.departmentId } })).body
+cleanup.add(`topic ${topicA.title}`, () => call('DELETE', `/api/topics/${topicA.id}`, { token: teacher }))
 const topicB = (await call('POST', '/api/topics', { token: teacher, json: { title: `Тема B ${stamp}`, departmentId: seedGroup.departmentId } })).body
+cleanup.add(`topic ${topicB.title}`, () => call('DELETE', `/api/topics/${topicB.id}`, { token: teacher }))
 
 // Fix wave I2 / M17: topicA's description carries a manual line break (\v), a C0 control
 // character and a tab, set here while topicA is still Available - a teacher may only edit a
@@ -234,8 +256,13 @@ await call('PUT', `/api/topics/${topicA.id}`, { token: teacher, json: { title: t
 
 // The deadline is read before it is changed so cleanup can restore the exact original value.
 const originalDeadline = (await call('GET', '/api/settings/topic-selection', { token: admin })).body.deadline
+cleanup.add('topic-selection deadline', () => call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: originalDeadline } }))
 await call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: null } })
 const reservation = await call('POST', `/api/topics/${topicA.id}/reserve`, { token: studentToken })
+// Topics can only be deleted while Available, so the reservation is cancelled first (returning
+// topicA to Available); this undo is registered after the deadline's, so it runs first (LIFO) -
+// required, since a cancel is refused once the selection window is closed.
+cleanup.add('topicA reservation -> cancel', () => call('POST', `/api/reservations/${reservation.body.id}/cancel`, { token: studentToken }))
 
 // The remaining checks are wrapped in one function so a genuinely unexpected response (a 500, or
 // a shape the script did not plan for) is caught, reported as its own failing check with the
@@ -288,6 +315,14 @@ check('06e split INCLUDEPICTURE field refused', (await call('POST', '/api/templa
 const created = await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: `Заява ${stamp}`, bytes: docx(validBody), groupIds: [seedGroup.id], allTeachers: true }) })
 check('07 teacher uploads template', created.status, 201)
 templateId = created.body.id
+// The template is deleted by the run itself at check 31 - this undo is a safety net for a run that
+// fails before reaching that check, so it checks the template still exists before deleting it.
+cleanup.add(`template ${templateId}`, async () => {
+  const stillThere = await call('GET', `/api/templates/${templateId}`, { token: admin })
+  if (stillThere.body?.code !== 'template.notFound') {
+    await call('DELETE', `/api/templates/${templateId}`, { token: teacher })
+  }
+})
 
 // ---------- visibility ----------
 check('08 student in group sees template', (await call('GET', '/api/templates', { token: studentToken })).body.some((t) => t.id === templateId), true)
@@ -380,94 +415,13 @@ check('31 owner deletes', (await call('DELETE', `/api/templates/${templateId}`, 
 check('32 deleted template gone', (await call('GET', `/api/templates/${templateId}`, { token: admin })).body.code, 'template.notFound')
 }
 
-let unexpectedError = null
 try {
   await runChecks()
 } catch (error) {
-  unexpectedError = error
   console.log(`\nUnexpected script error (not a plain check failure): ${error.message}`)
   results.push(false)
-}
-
-// ---------------------------------------------------------------------------
-// Cleanup: leave no group, topic, template or reservation behind, and restore the deadline.
-//
-// Same shape as workflow-check's cleanup: a student cannot be deleted, and a group cannot be
-// deleted while any student points at it, so every student this script created is restored (no-op
-// unless already archived), moved into the seeded group and re-archived there before the created
-// group is deleted. Topics can only be deleted while Available, so the reservation on topicA is
-// cancelled first (which returns the topic to Available); this must happen before the deadline is
-// restored, since a cancel is refused once the selection window is closed. Run only if every check
-// above passed; otherwise leave everything in place for diagnosis.
-// ---------------------------------------------------------------------------
-
-async function cleanup() {
-  const cancel = await call('POST', `/api/reservations/${reservation.body.id}/cancel`, { token: studentToken })
-  check('33 cleanup: cancel reservation', cancel.status, 200)
-
-  const restoreDeadline = await call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: originalDeadline } })
-  check('34 cleanup: restore topic-selection deadline', restoreDeadline.status, 204)
-
-  const deleteTopicA = await call('DELETE', `/api/topics/${topicA.id}`, { token: teacher })
-  check('35 cleanup: delete topic A', deleteTopicA.status, 204)
-
-  const deleteTopicB = await call('DELETE', `/api/topics/${topicB.id}`, { token: teacher })
-  check('36 cleanup: delete topic B', deleteTopicB.status, 204)
-
-  const templateStillThere = await call('GET', `/api/templates/${templateId}`, { token: admin })
-  if (templateStillThere.body?.code !== 'template.notFound') {
-    await call('DELETE', `/api/templates/${templateId}`, { token: teacher })
-  }
-  const templateGone = await call('GET', `/api/templates/${templateId}`, { token: admin })
-  check('37 cleanup: template removed', templateGone.body.code, 'template.notFound')
-
-  const seedGroupId = seedGroup.id
-  const createdStudentIds = [student.id, outsider.id]
-
-  const restore = await call('POST', '/api/students/restore', { token: admin, json: { studentIds: createdStudentIds } })
-  check('38 cleanup: restore archived students', restore.status, 200)
-
-  const moveStudent = await call('PUT', `/api/students/${student.id}/group`, { token: admin, json: { groupId: seedGroupId } })
-  const moveOutsider = await call('PUT', `/api/students/${outsider.id}/group`, { token: admin, json: { groupId: seedGroupId } })
-  check('39 cleanup: move students to seeded group', moveStudent.status === 200 && moveOutsider.status === 200, true)
-
-  const archive = await call('POST', '/api/students/archive', { token: admin, json: { studentIds: createdStudentIds } })
-  check('40 cleanup: archive moved students', archive.status, 200)
-
-  if (!teacherWasReviewer) {
-    const removeReviewer = await call('DELETE', `/api/groups/${seedGroup.id}/reviewers/${teacherId}`, { token: admin })
-    check('41 cleanup: remove reviewer assignment added by this run', removeReviewer.status, 204)
-  }
-
-  const removeGroup = await call('DELETE', `/api/groups/${otherGroup.id}`, { token: admin })
-  check('42 cleanup: delete group', removeGroup.status, 204)
-
-  // Fix wave M17: the teacher account this run creates (:190) was previously never deactivated,
-  // so it kept piling up in the teacher multi-select, in /api/topics/supervisors and in every
-  // "all teachers" audience across repeated runs.
-  const deactivateTeacher = await call('PATCH', `/api/teachers/${otherTeacherId}/deactivate`, { token: admin })
-  check('43 cleanup: deactivate created teacher', deactivateTeacher.status, 204)
-}
-
-const failedBeforeCleanup = results.some((ok) => !ok)
-if (!failedBeforeCleanup) {
-  await cleanup()
-} else {
-  // Fix wave M17: cleanup's own restore-then-delete order cancels topicA's reservation (33)
-  // *before* restoring the deadline (34), because a cancel is refused once the selection window
-  // is closed - so those two steps cannot simply move into a try/finally around runChecks without
-  // reordering them ahead of that cancel. What must never be skipped, even when a check already
-  // failed and every other row is deliberately left in place for diagnosis, is the shared global
-  // state this run touched: the selection deadline and SEED-A's reviewer list. Restored here on
-  // the failure path only; the success path already restores both, in the required order, inside
-  // cleanup() above.
-  console.log(`\nSkipping row cleanup: some check(s) already failed; leaving created rows in place for diagnosis. Still restoring the shared selection deadline and SEED-A's reviewer list.`)
-  const restoreDeadline = await call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: originalDeadline } })
-  check('34 cleanup: restore topic-selection deadline (after failure)', restoreDeadline.status, 204)
-  if (!teacherWasReviewer) {
-    const removeReviewer = await call('DELETE', `/api/groups/${seedGroup.id}/reviewers/${teacherId}`, { token: admin })
-    check('41 cleanup: remove reviewer assignment added by this run (after failure)', removeReviewer.status, 204)
-  }
+} finally {
+  await cleanup.run()
 }
 
 const passed = results.filter(Boolean).length

@@ -1,13 +1,15 @@
-import { Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { GripVertical, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type HTMLAttributes } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getFaculties } from '../api/facultiesApi'
-import { activateTaskTemplate, createTaskTemplate, deactivateTaskTemplate, getTaskTemplates, updateTaskTemplate } from '../api/taskTemplatesApi'
+import { activateTaskTemplate, createTaskTemplate, deactivateTaskTemplate, getTaskTemplates, reorderTaskTemplates, updateTaskTemplate } from '../api/taskTemplatesApi'
 import { useErrorMessage } from '../api/useErrorMessage'
+import { useAuth } from '../auth/useAuth'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Checkbox } from '../components/ui/Checkbox'
+import { cn } from '../components/ui/cn'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { DataTable, type DataTableColumn } from '../components/ui/DataTable'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -32,6 +34,8 @@ export function TaskTemplatesPage() {
   const { t } = useTranslation()
   const errorMessage = useErrorMessage()
   const toast = useToast()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'Admin'
 
   const [faculties, setFaculties] = useState<Faculty[]>([])
   const [isLoadingFaculties, setIsLoadingFaculties] = useState(true)
@@ -103,6 +107,65 @@ export function TaskTemplatesPage() {
   useEffect(() => {
     void loadTemplates(selectedFacultyId)
   }, [loadTemplates, selectedFacultyId])
+
+  // The order is unique per faculty, so reordering only makes sense once a single faculty is
+  // selected; it is also an administrator-only action.
+  const canReorder = isAdmin && Boolean(selectedFacultyId)
+  const [isReordering, setIsReordering] = useState(false)
+  const dragIndexRef = useRef<number | null>(null)
+
+  const applyReorder = async (reordered: TaskTemplate[]) => {
+    const previous = templates
+    const renumbered = reordered.map((template, index) => ({ ...template, order: index + 1 }))
+    setTemplates(renumbered)
+    setIsReordering(true)
+    try {
+      const response = await reorderTaskTemplates(selectedFacultyId, renumbered.map((template) => template.id))
+      setTemplates(response)
+      toast.success(t('taskTemplates.reordered'))
+    } catch (err) {
+      setTemplates(previous)
+      toast.error(errorMessage(err))
+    } finally {
+      setIsReordering(false)
+    }
+  }
+
+  const moveTemplate = (fromIndex: number, toIndex: number) => {
+    if (!canReorder || isReordering) return
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || toIndex >= sortedTemplates.length) return
+
+    const reordered = [...sortedTemplates]
+    const [moved] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, moved)
+    void applyReorder(reordered)
+  }
+
+  const handleDragStart = (event: DragEvent<HTMLTableRowElement>, index: number) => {
+    dragIndexRef.current = index
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', sortedTemplates[index].id)
+  }
+
+  const handleDrop = (event: DragEvent<HTMLTableRowElement>, index: number) => {
+    event.preventDefault()
+    const fromIndex = dragIndexRef.current
+    dragIndexRef.current = null
+    if (fromIndex === null) return
+    moveTemplate(fromIndex, index)
+  }
+
+  const templateRowProps = (template: TaskTemplate): HTMLAttributes<HTMLTableRowElement> => {
+    if (!canReorder || isReordering) return {}
+
+    const index = sortedTemplates.findIndex((item) => item.id === template.id)
+    return {
+      draggable: true,
+      onDragStart: (event) => handleDragStart(event, index),
+      onDragOver: (event) => event.preventDefault(),
+      onDrop: (event) => handleDrop(event, index)
+    }
+  }
 
   const openCreateTemplate = () => {
     setEditingTemplate(null)
@@ -201,7 +264,44 @@ export function TaskTemplatesPage() {
     }
   }
 
+  const reorderColumn: DataTableColumn<TaskTemplate> = {
+    key: 'reorder',
+    header: <span className="sr-only">{t('taskTemplates.dragHandle')}</span>,
+    render: (template) => {
+      const index = sortedTemplates.findIndex((item) => item.id === template.id)
+      return (
+        <div className="flex items-center gap-1">
+          <span
+            className={cn('inline-flex items-center text-text-muted', canReorder ? 'cursor-grab' : 'cursor-not-allowed opacity-50')}
+            aria-label={t('taskTemplates.dragHandle')}
+          >
+            <GripVertical className="size-4" aria-hidden />
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={t('taskTemplates.moveUp')}
+            disabled={!canReorder || isReordering || index <= 0}
+            onClick={() => moveTemplate(index, index - 1)}
+          >
+            ↑
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={t('taskTemplates.moveDown')}
+            disabled={!canReorder || isReordering || index >= sortedTemplates.length - 1}
+            onClick={() => moveTemplate(index, index + 1)}
+          >
+            ↓
+          </Button>
+        </div>
+      )
+    }
+  }
+
   const templateColumns: DataTableColumn<TaskTemplate>[] = [
+    ...(isAdmin ? [reorderColumn] : []),
     { key: 'order', header: t('taskTemplates.order'), render: (template) => template.order },
     {
       key: 'title',
@@ -270,13 +370,17 @@ export function TaskTemplatesPage() {
           <EmptyState message={t('taskTemplates.selectFaculty')} />
         )}
         {!loadError && selectedFacultyId && (
-          <DataTable
-            columns={templateColumns}
-            rows={sortedTemplates}
-            getRowKey={(template) => template.id}
-            loading={isLoading}
-            emptyState={<EmptyState message={t('taskTemplates.noTemplates')} />}
-          />
+          <>
+            {canReorder && <p className="mb-3 text-xs text-text-muted">{t('taskTemplates.reorderHint')}</p>}
+            <DataTable
+              columns={templateColumns}
+              rows={sortedTemplates}
+              getRowKey={(template) => template.id}
+              loading={isLoading}
+              emptyState={<EmptyState message={t('taskTemplates.noTemplates')} />}
+              rowProps={isAdmin ? templateRowProps : undefined}
+            />
+          </>
         )}
       </Card>
 

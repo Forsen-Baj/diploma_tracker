@@ -5,6 +5,7 @@ using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Interfaces;
 using DiplomaTracker.Api.Services.Import;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DiplomaTracker.Api.Services;
 
@@ -22,13 +23,15 @@ public class StudentImportService : IStudentImportService
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     private readonly AppDbContext _dbContext;
+    private readonly ILogger<StudentImportService> _logger;
 
-    public StudentImportService(AppDbContext dbContext)
+    public StudentImportService(AppDbContext dbContext, ILogger<StudentImportService> logger)
     {
         _dbContext = dbContext;
+        _logger = logger;
     }
 
-    public async Task<StudentImportOutcome> ImportAsync(Guid groupId, IFormFile? file)
+    public async Task<StudentImportOutcome> ImportAsync(Guid groupId, IFormFile? file, Guid administratorId)
     {
         if (!await _dbContext.Groups.AnyAsync(g => g.Id == groupId))
         {
@@ -84,7 +87,7 @@ public class StudentImportService : IStudentImportService
         var rows = ValidateRows(dataRecords, columns, errors);
 
         var emails = rows.Select(r => r.Email).ToList();
-        var numbers = rows.Select(r => r.StudentNumber).ToList();
+        var canonicalNumbers = rows.Select(r => r.StudentNumberCanonical).ToList();
 
         var usersByEmail = await _dbContext.Users.AsNoTracking()
             .Include(u => u.StudentProfile)
@@ -92,10 +95,10 @@ public class StudentImportService : IStudentImportService
             .ToDictionaryAsync(u => u.Email);
 
         var numbersInUse = await _dbContext.StudentProfiles.AsNoTracking()
-            .Where(p => numbers.Contains(p.StudentNumber))
-            .Select(p => p.StudentNumber)
+            .Where(p => canonicalNumbers.Contains(p.StudentNumberCanonical))
+            .Select(p => new { p.StudentNumberCanonical, p.StudentNumber })
             .ToListAsync();
-        var numbersInUseSet = numbersInUse.ToHashSet();
+        var numbersInUseSet = numbersInUse.ToDictionary(x => x.StudentNumberCanonical, x => x.StudentNumber);
 
         var skipped = new List<SkippedImportRow>();
         var toCreate = new List<ImportRow>();
@@ -108,7 +111,7 @@ public class StudentImportService : IStudentImportService
                 {
                     errors.Add(ImportRowError.Create(row.Line, OnboardingErrors.RowStaffEmail));
                 }
-                else if (existingUser.StudentProfile.StudentNumber != row.StudentNumber)
+                else if (existingUser.StudentProfile.StudentNumberCanonical != row.StudentNumberCanonical)
                 {
                     errors.Add(ImportRowError.Create(row.Line, OnboardingErrors.RowEmailNumberMismatch));
                 }
@@ -117,9 +120,12 @@ public class StudentImportService : IStudentImportService
                     skipped.Add(new SkippedImportRow(row.Line, row.Email));
                 }
             }
-            else if (numbersInUseSet.Contains(row.StudentNumber))
+            else if (numbersInUseSet.TryGetValue(row.StudentNumberCanonical, out var existingNumber))
             {
-                errors.Add(ImportRowError.Create(row.Line, OnboardingErrors.RowNumberEmailMismatch));
+                // A lookalike duplicate within the same file is caught earlier, at parse time
+                // (ValidateRows), so a hit here is always a genuine conflict with a student
+                // already in the database - naming the number as it is already stored there.
+                errors.Add(ImportRowError.Create(row.Line, OnboardingErrors.RowNumberEmailMismatch, new Dictionary<string, string> { ["number"] = existingNumber }));
             }
             else
             {
@@ -155,6 +161,7 @@ public class StudentImportService : IStudentImportService
                 Id = Guid.NewGuid(),
                 UserId = user.Id,
                 StudentNumber = row.StudentNumber,
+                StudentNumberCanonical = row.StudentNumberCanonical,
                 GroupId = groupId,
                 CreatedAt = now,
                 UpdatedAt = now
@@ -183,6 +190,8 @@ public class StudentImportService : IStudentImportService
             _dbContext.ChangeTracker.Clear();
             return StudentImportOutcome.Failed(OnboardingErrors.ImportGroupNotFound);
         }
+
+        SecurityLog.StudentsImported(_logger, administratorId, toCreate.Count, skipped.Count, errors.Count);
 
         return StudentImportOutcome.Succeeded(new StudentImportResult
         {
@@ -243,10 +252,12 @@ public class StudentImportService : IStudentImportService
             var firstName = Value(FirstNameColumn);
             var patronymic = Value(PatronymicColumn);
             var email = IdentityNormalizer.Email(Value(EmailColumn));
-            var studentNumber = IdentityNormalizer.StudentNumber(Value(StudentNumberColumn));
+            var studentNumberRaw = Value(StudentNumberColumn);
+            var studentNumber = IdentityNormalizer.StudentNumber(studentNumberRaw);
+            var studentNumberCanonical = IdentityNormalizer.StudentNumberCanonical(studentNumberRaw);
             var errorsBefore = errors.Count;
 
-            if (lastName.Length == 0 || firstName.Length == 0 || email.Length == 0 || studentNumber.Length == 0)
+            if (lastName.Length == 0 || firstName.Length == 0 || email.Length == 0 || studentNumber.Length == 0 || studentNumberCanonical.Length == 0)
             {
                 errors.Add(ImportRowError.Create(record.LineNumber, OnboardingErrors.RowRequired));
                 continue;
@@ -276,13 +287,13 @@ public class StudentImportService : IStudentImportService
                 emailLines[email] = record.LineNumber;
             }
 
-            if (numberLines.TryGetValue(studentNumber, out var firstNumberLine))
+            if (numberLines.TryGetValue(studentNumberCanonical, out var firstNumberLine))
             {
                 errors.Add(ImportRowError.Create(record.LineNumber, OnboardingErrors.RowDuplicateNumber, new Dictionary<string, string> { ["number"] = studentNumber, ["line"] = firstNumberLine.ToString() }));
             }
             else
             {
-                numberLines[studentNumber] = record.LineNumber;
+                numberLines[studentNumberCanonical] = record.LineNumber;
             }
 
             if (errors.Count == errorsBefore)
@@ -293,7 +304,8 @@ public class StudentImportService : IStudentImportService
                     firstName,
                     patronymic.Length == 0 ? null : patronymic,
                     email,
-                    studentNumber));
+                    studentNumber,
+                    studentNumberCanonical));
             }
         }
 
@@ -306,5 +318,6 @@ public class StudentImportService : IStudentImportService
         string FirstName,
         string? Patronymic,
         string Email,
-        string StudentNumber);
+        string StudentNumber,
+        string StudentNumberCanonical);
 }

@@ -14,6 +14,7 @@ public class DocumentTemplate
     public bool VisibleToAllTeachers { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public byte[] RowVersion { get; set; } = [];
     public ICollection<DocumentTemplateGroup> Groups { get; set; } = new List<DocumentTemplateGroup>();
     public ICollection<DocumentTemplateTeacher> Teachers { get; set; } = new List<DocumentTemplateTeacher>();
 }

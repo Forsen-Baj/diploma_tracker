@@ -1,3 +1,4 @@
+using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -20,7 +21,12 @@ public class StudentImportController : ApiControllerBase
     [RequestSizeLimit(2 * 1024 * 1024)]
     public async Task<IActionResult> Import(Guid groupId, IFormFile? file)
     {
-        var outcome = await _importService.ImportAsync(groupId, file);
+        if (!TryGetCurrentUser(out var user))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var outcome = await _importService.ImportAsync(groupId, file, user.UserId);
         if (outcome.Result is not null)
         {
             return Ok(outcome.Result);

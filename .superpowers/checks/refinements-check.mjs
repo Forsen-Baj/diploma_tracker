@@ -1,6 +1,9 @@
+import { createCleanup } from './checkCleanup.mjs'
+
 const API = 'http://localhost:5000'
 const stamp = Date.now().toString().slice(-6)
 const results = []
+const cleanup = createCleanup()
 
 function check(name, actual, expected) {
   const ok = actual === expected
@@ -25,11 +28,21 @@ async function call(method, path, { token, json } = {}) {
 
 const login = (email, password) => call('POST', '/api/auth/login', { json: { email, password } })
 
-const admin = (await login('admin@diploma.local', 'Admin123!')).data.token
+// Students need the three-step dance: a student can never be deleted, and a group cannot be
+// deleted while any student points at it. Registered as one undo step at the moment each batch of
+// students is created.
+function archiveStudentsUndo(label, studentIds, seededGroupId, admin) {
+  cleanup.add(label, async () => {
+    await call('POST', '/api/students/restore', { token: admin, json: { studentIds } })
+    for (const studentId of studentIds) {
+      await call('PUT', `/api/students/${studentId}/group`, { token: admin, json: { groupId: seededGroupId } })
+    }
+    await call('POST', '/api/students/archive', { token: admin, json: { studentIds } })
+  })
+}
 
-// Track everything this run creates that must not survive it (see cleanup() at the end).
-const createdGroupIds = []
-const createdStudentIds = []
+async function runChecks() {
+const admin = (await login('admin@diploma.local', 'Admin123!')).data.token
 
 const seededGroups = (await call('GET', '/api/groups', { token: admin })).data
 const seededGroupId = seededGroups.find((g) => g.code === 'SEED-A').id
@@ -52,19 +65,19 @@ const yearB = '2027/2028'
 
 const group1 = await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentB.id, code: groupCode, academicYear: yearA } })
 check('01 create group', group1.status, 201)
-createdGroupIds.push(group1.data.id)
+cleanup.add(`group ${group1.data.code}`, () => call('DELETE', `/api/groups/${group1.data.id}`, { token: admin }))
 check('02 group code duplicate same year', (await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentB.id, code: groupCode, academicYear: yearA } })).status, 409)
 check('03 group code duplicate same year -> code', (await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentB.id, code: groupCode, academicYear: yearA } })).data.code, 'group.codeTaken')
 
 const groupYearB = await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentB.id, code: groupCode, academicYear: yearB } })
 check('04 same code, different year allowed', groupYearB.status, 201)
-createdGroupIds.push(groupYearB.data.id)
+cleanup.add(`group ${groupYearB.data.code} (${yearB})`, () => call('DELETE', `/api/groups/${groupYearB.data.id}`, { token: admin }))
 
 const groupMismatch = group1.data
 
 const groupMatch = await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentA.id, code: `RFMATCH${stamp}`, academicYear: yearA } })
 check('05 create matching-faculty group', groupMatch.status, 201)
-createdGroupIds.push(groupMatch.data.id)
+cleanup.add(`group ${groupMatch.data.code}`, () => call('DELETE', `/api/groups/${groupMatch.data.id}`, { token: admin }))
 
 // B9: academic year is restricted to digits, '/', '\', '-', '.' and whitespace
 const badAcademicYear = await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentB.id, code: `RFBADYEAR${stamp}`, academicYear: 'RF-123-A' } })
@@ -125,7 +138,7 @@ const lateJoinerEmail = `latejoiner.${stamp}@student.local`
 const lateJoinerPassword = 'Password1!'
 const lateJoiner = await call('POST', '/api/students', { token: admin, json: { firstName: 'Late', lastName: 'Joiner', email: lateJoinerEmail, studentNumber: `LJ${stamp}`, groupId: groupMatch.data.id, password: lateJoinerPassword } })
 check('18 create late joiner', lateJoiner.status, 201)
-createdStudentIds.push(lateJoiner.data.id)
+archiveStudentsUndo('late joiner -> seeded group', [lateJoiner.data.id], seededGroupId, admin)
 
 const lateJoinerToken = (await login(lateJoinerEmail, lateJoinerPassword)).data.token
 // Phase 5 removed /api/student/my-tasks; /api/student-tasks/mine replaces it.
@@ -174,7 +187,7 @@ const arch2Email = `rfarchive2.${stamp}@student.local`
 const archPassword = 'Password1!'
 const arch1 = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Arch', lastName: 'One', email: arch1Email, studentNumber: `RFA1${stamp}`, groupId: groupMatch.data.id, password: archPassword } })).data
 const arch2 = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Arch', lastName: 'Two', email: arch2Email, studentNumber: `RFA2${stamp}`, groupId: groupMatch.data.id, password: archPassword } })).data
-createdStudentIds.push(arch1.id, arch2.id)
+archiveStudentsUndo('archive students -> seeded group', [arch1.id, arch2.id], seededGroupId, admin)
 
 const archiveResult = await call('POST', '/api/students/archive', { token: admin, json: { studentIds: [arch1.id, arch2.id] } })
 check('32 archive two students', archiveResult.status, 200)
@@ -207,12 +220,12 @@ check('43 restored student signs in', (await login(arch1Email, archPassword)).st
 // ---------------------------------------------------------------------------
 
 const groupG = await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentA.id, code: `RFGROUP${stamp}`, academicYear: yearA } })
-createdGroupIds.push(groupG.data.id)
+cleanup.add(`group ${groupG.data.code}`, () => call('DELETE', `/api/groups/${groupG.data.id}`, { token: admin }))
 const gStudent1Email = `rfgroup1.${stamp}@student.local`
 const gStudent2Email = `rfgroup2.${stamp}@student.local`
 const gStudent1 = (await call('POST', '/api/students', { token: admin, json: { firstName: 'G', lastName: 'One', email: gStudent1Email, studentNumber: `RFG1${stamp}`, groupId: groupG.data.id, password: 'Password1!' } })).data
 const gStudent2 = (await call('POST', '/api/students', { token: admin, json: { firstName: 'G', lastName: 'Two', email: gStudent2Email, studentNumber: `RFG2${stamp}`, groupId: groupG.data.id, password: 'Password1!' } })).data
-createdStudentIds.push(gStudent1.id, gStudent2.id)
+archiveStudentsUndo('group-archive students -> seeded group', [gStudent1.id, gStudent2.id], seededGroupId, admin)
 
 const groupArchive = await call('POST', `/api/groups/${groupG.data.id}/students/archive`, { token: admin })
 check('44 group archive', groupArchive.status, 200)
@@ -226,12 +239,12 @@ check('47 group archive unknown group', (await call('POST', '/api/groups/0000000
 // ---------------------------------------------------------------------------
 
 const groupH = await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentA.id, code: `RFCOUNT${stamp}`, academicYear: yearA } })
-createdGroupIds.push(groupH.data.id)
+cleanup.add(`group ${groupH.data.code}`, () => call('DELETE', `/api/groups/${groupH.data.id}`, { token: admin }))
 const hStudent1Email = `rfcount1.${stamp}@student.local`
 const hStudent2Email = `rfcount2.${stamp}@student.local`
 const hStudent1 = (await call('POST', '/api/students', { token: admin, json: { firstName: 'H', lastName: 'One', email: hStudent1Email, studentNumber: `RFH1${stamp}`, groupId: groupH.data.id, password: 'Password1!' } })).data
 const hStudent2 = (await call('POST', '/api/students', { token: admin, json: { firstName: 'H', lastName: 'Two', email: hStudent2Email, studentNumber: `RFH2${stamp}`, groupId: groupH.data.id, password: 'Password1!' } })).data
-createdStudentIds.push(hStudent1.id, hStudent2.id)
+archiveStudentsUndo('deadline-count students -> seeded group', [hStudent1.id, hStudent2.id], seededGroupId, admin)
 
 const templateH = (await call('POST', '/api/task-templates', { token: admin, json: { facultyId: facultyA.id, title: `RF Count Step ${stamp}`, order: orderA + 2 } })).data
 const groupTaskH = (await call('POST', '/api/group-tasks', { token: admin, json: { groupId: groupH.data.id, taskTemplateId: templateH.id, deadline: future1 } })).data
@@ -245,40 +258,12 @@ check('49 deadline edit succeeds', deadlineEdit.status, 200)
 const groupTaskHAfterGet = (await call('GET', `/api/group-tasks/${groupTaskH.id}`, { token: admin })).data
 check('50 deadline edit count matches following GET', deadlineEdit.data.studentTaskCount, groupTaskHAfterGet.studentTaskCount)
 check('51 deadline edit count excludes archived student', deadlineEdit.data.studentTaskCount, 1)
-
-// ---------------------------------------------------------------------------
-// Cleanup: leave no group behind.
-//
-// DELETE /api/groups/{id} refuses with 409 group.hasStudents while any student profile still
-// points at the group (archived or not), and there is no endpoint that deletes a student. So
-// every student this script created is restored (if archived), moved into the seeded group, and
-// re-archived there, before the five groups this script created are deleted. Run only if every
-// check above passed; otherwise leave everything in place for diagnosis.
-// ---------------------------------------------------------------------------
-
-async function cleanup() {
-  const restore = await call('POST', '/api/students/restore', { token: admin, json: { studentIds: createdStudentIds } })
-  check('52 cleanup: restore archived students', restore.status, 200)
-
-  for (const [index, studentId] of createdStudentIds.entries()) {
-    const move = await call('PUT', `/api/students/${studentId}/group`, { token: admin, json: { groupId: seededGroupId } })
-    check(`53.${index + 1} cleanup: move student ${index + 1}/${createdStudentIds.length} to seeded group`, move.status, 200)
-  }
-
-  const archive = await call('POST', '/api/students/archive', { token: admin, json: { studentIds: createdStudentIds } })
-  check('54 cleanup: archive moved students', archive.status, 200)
-
-  for (const [index, groupId] of createdGroupIds.entries()) {
-    const remove = await call('DELETE', `/api/groups/${groupId}`, { token: admin })
-    check(`55.${index + 1} cleanup: delete group ${index + 1}/${createdGroupIds.length}`, remove.status, 204)
-  }
 }
 
-const failedBeforeCleanup = results.filter((r) => !r.ok)
-if (failedBeforeCleanup.length === 0) {
-  await cleanup()
-} else {
-  console.log(`\nSkipping cleanup: ${failedBeforeCleanup.length} check(s) already failed; leaving created rows in place for diagnosis.`)
+try {
+  await runChecks()
+} finally {
+  await cleanup.run()
 }
 
 const failed = results.filter((r) => !r.ok)

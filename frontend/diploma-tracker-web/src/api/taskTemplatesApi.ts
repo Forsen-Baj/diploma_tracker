@@ -31,3 +31,10 @@ export async function deactivateTaskTemplate(id: string): Promise<TaskTemplate> 
     method: 'PATCH'
   })
 }
+
+export function reorderTaskTemplates(facultyId: string, templateIds: string[]): Promise<TaskTemplate[]> {
+  return apiRequest<TaskTemplate[]>('/api/task-templates/order', {
+    method: 'PUT',
+    body: JSON.stringify({ facultyId, templateIds })
+  })
+}

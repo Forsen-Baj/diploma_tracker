@@ -21,7 +21,7 @@ group come from the same data and appear on the dashboards.
 |---|---|
 | Who reviews | Teachers assigned as reviewers of the student's group, and the student's own supervisor; administrators may act on any submission |
 | Step order | Strict: a step accepts submissions only after the previous step is approved |
-| Files per submission | One main document (`.docx`, `.pdf` or `.pptx`) plus up to three supporting files of other types |
+| Files per submission | One main document (`.docx`, `.pdf` or `.pptx`) plus up to three supporting files from an allowlist (`.pdf`, `.docx`, `.pptx`, `.png`, `.jpg`/`.jpeg`) |
 | Messages | The student may add a message to a submission; the reviewer comments on the decision |
 | Marks | Required when approving: a whole number from 0 to 100 |
 | Deadlines | Submitting after the deadline is allowed and flagged as late |
@@ -97,11 +97,13 @@ outside the web root; files are served only by the download endpoint. Startup va
 refuses to start when the path is missing or not writable.
 
 **Upload rules**
-- Main file: extension `.docx`, `.pdf` or `.pptx`, and content matching it (`.docx` and
-  `.pptx` are ZIP containers, `.pdf` starts with `%PDF`). At most 20 MB.
-- Supporting files: at most three, at most 20 MB each, any extension except executable and
-  script types (`.exe`, `.dll`, `.msi`, `.bat`, `.cmd`, `.ps1`, `.sh`, `.js`, `.vbs`,
-  `.jar`, `.com`, `.scr`).
+- Main file: extension `.docx`, `.pdf` or `.pptx`, at most 20 MB. The file is opened and must
+  carry the parts its extension claims — an Office package is inspected for the parts that make
+  it that format, a `.pdf` for its header — so a renamed file is refused rather than stored.
+- Supporting files: at most three, at most 20 MB each, and an **allowlist** of `.pdf`, `.docx`,
+  `.pptx`, `.png` and `.jpg`/`.jpeg`. Every one is inspected the same way as the main file. An
+  extension outside the list is refused whatever the bytes are; an extension inside it whose
+  bytes say otherwise is refused too.
 - Whole request at most 90 MB; the server's request size limit is set to match.
 - Files are written to storage before the database save; if the save fails, the written
   files are deleted.
@@ -129,9 +131,9 @@ administrators see everything.
 | POST | `/api/submissions/{id}/approve` | reviewers, supervisor, Admin | Body `{ mark, comment? }` |
 | POST | `/api/submissions/{id}/return` | reviewers, supervisor, Admin | Body `{ comment }` |
 | GET | `/api/submission-files/{id}` | as §5 | Download |
-| GET | `/api/review/queue` | Teacher, Admin | Submissions awaiting a decision for visible students, oldest first; query `groupId`, `late` |
-| GET | `/api/groups/{id}/progress` | Teacher (visible), Admin | Matrix: students × steps with status, mark and late flag, plus per-step completion counts |
-| GET | `/api/students/{id}/progress` | Student (own), Teacher (visible), Admin | Steps approved of total, late submissions, average mark |
+| GET | `/api/review/queue` | Teacher, Admin | Submissions awaiting a decision for visible students, oldest first; query `groupId`, `late`, `page`, `pageSize`. Returns one page — `{ items, page, pageSize, total }` — 25 by default, 100 at most; a page number outside the range is clamped, not refused |
+| GET | `/api/groups/{id}/progress` | Teacher (visible), Admin | Matrix: students × steps with status, mark, late flag and overdue flag, plus per-step completion counts. A step is overdue when it is past its deadline and neither approved nor awaiting a decision; every cell in one response is judged against the same instant. Lateness counts steps, not submitted versions |
+| GET | `/api/students/{id}/progress` | Student (own), Teacher (visible), Admin | Steps approved of total, late steps, average mark |
 
 **Error codes:** `studentTask.notFound` (404), `studentTask.notYours` (403),
 `step.previousNotApproved` (409), `step.awaitingReview` (409), `step.alreadyApproved` (409),

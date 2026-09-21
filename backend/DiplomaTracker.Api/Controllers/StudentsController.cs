@@ -39,7 +39,12 @@ public class StudentsController : ApiControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateStudentRequest request)
     {
-        var (student, error) = await _studentService.CreateStudentAsync(request);
+        if (!TryGetUserId(out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (student, error) = await _studentService.CreateStudentAsync(request, administratorId);
         return student is null
             ? ErrorResult(error)
             : CreatedAtAction(nameof(GetById), new { id = student.Id }, student);
@@ -48,7 +53,12 @@ public class StudentsController : ApiControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateStudentRequest request)
     {
-        var (student, error) = await _studentService.UpdateStudentAsync(id, request);
+        if (!TryGetUserId(out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (student, error) = await _studentService.UpdateStudentAsync(id, request, administratorId);
         return student is null ? ErrorResult(error) : Ok(student);
     }
 

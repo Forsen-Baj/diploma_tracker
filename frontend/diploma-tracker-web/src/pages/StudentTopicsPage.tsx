@@ -116,11 +116,32 @@ export function StudentTopicsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, supervisorId])
 
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (deadline === null) return
+
+    const remaining = new Date(deadline).getTime() - Date.now()
+    if (remaining <= 0) return
+
+    // setTimeout is capped at ~24.8 days (2^31-1 ms); a deadline further away is re-checked
+    // when the window regains focus, which is enough - nobody leaves this page open for a month.
+    const delay = Math.min(remaining + 1000, 2_147_483_647)
+    const timer = window.setTimeout(() => setNow(Date.now()), delay)
+    return () => window.clearTimeout(timer)
+  }, [deadline])
+
+  useEffect(() => {
+    const onFocus = () => setNow(Date.now())
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [])
+
   const approvedReservation = reservations.find((reservation) => reservation.status === 'Approved') ?? null
   const pendingReservation = reservations.find((reservation) => reservation.status === 'Pending') ?? null
   const hasTopic = Boolean(approvedReservation)
   const hasPending = Boolean(pendingReservation)
-  const selectionClosedRaw = deadline !== null && new Date(deadline).getTime() <= Date.now()
+  const selectionClosedRaw = deadline !== null && new Date(deadline).getTime() <= now
   const noTopicAndClosed = !hasTopic && selectionClosedRaw
 
   const refreshAfterChange = () => {

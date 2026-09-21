@@ -42,7 +42,8 @@
     "signOut": "Sign out",
     "language": "Language",
     "review": "Review",
-    "documents": "Documents"
+    "documents": "Documents",
+    "archive": "Archive"
   },
   "roles": {
     "Admin": "Administrator",
@@ -66,7 +67,8 @@
       "tooMany": "Too many attempts. Wait a minute and try again.",
       "notFound": "The requested resource was not found.",
       "methodNotAllowed": "This action is not allowed here.",
-      "unsupportedMediaType": "This file type is not supported."
+      "unsupportedMediaType": "This file type is not supported.",
+      "tooLarge": "The upload is larger than this form allows."
     },
     "server": {
       "unexpected": "An unexpected error occurred."
@@ -82,7 +84,8 @@
       "closed": "Registration is closed."
     },
     "password": {
-      "policy": "Password must be between 8 and 128 characters."
+      "policy": "Password must be between 8 and 128 characters.",
+      "policyElevated": "An administrator password must be between 12 and 128 characters."
     },
     "user": {
       "emailTaken": "A user with this email already exists."
@@ -132,7 +135,8 @@
       "titleTaken": "An active step with this title already exists.",
       "orderTaken": "Another step in this faculty already uses this order.",
       "facultyNotFound": "The selected faculty does not exist.",
-      "inUse": "Cannot change the faculty of a step that is assigned to a group."
+      "inUse": "Cannot change the faculty of a step that is assigned to a group.",
+      "orderMismatch": "The new order must list every step of this faculty exactly once."
     },
     "groupTask": {
       "notFound": "Group step not found.",
@@ -235,8 +239,55 @@
       "tooLarge": "The template is larger than 10 MB.",
       "audienceNotAllowed": "You cannot share the template with this audience.",
       "groupInvalid": "A selected group does not exist.",
-      "teacherInvalid": "A selected teacher does not exist or is inactive."
+      "teacherInvalid": "A selected teacher does not exist or is inactive.",
+      "conflict": "This template was changed by someone else. Reload and try again."
+    },
+    "archive": {
+      "notFound": "Archived item not found."
     }
+  },
+  "pagination": {
+    "showing": "Showing {{from}}–{{to}} of {{total}}",
+    "page": "Page {{page}} of {{lastPage}}",
+    "first": "First page",
+    "previous": "Previous page",
+    "next": "Next page",
+    "last": "Last page"
+  },
+  "archive": {
+    "title": "Archive",
+    "subtitle": "Work kept from groups that are no longer in the system",
+    "empty": "Nothing has been archived yet.",
+    "searchPlaceholder": "Group code or student",
+    "academicYear": "Academic year",
+    "allYears": "All years",
+    "groupCode": "Group",
+    "department": "Department",
+    "faculty": "Faculty",
+    "students": "Students",
+    "files": "Files",
+    "size": "Size",
+    "archivedAt": "Archived",
+    "groupDeleted": "Group deleted",
+    "groupKept": "Group still exists",
+    "reviewers": "Reviewers",
+    "usage": "{{files}} files, {{size}} in total",
+    "backToArchive": "Back to the archive",
+    "step": "Step",
+    "version": "Version",
+    "submittedAt": "Submitted",
+    "decision": "Decision",
+    "mark": "Mark",
+    "reviewer": "Reviewer",
+    "comment": "Comment",
+    "file": "File",
+    "download": "Download",
+    "noFiles": "This archive holds no files.",
+    "purge": "Delete permanently",
+    "purgeConfirm": "Permanently delete the archive of {{code}} and its {{count}} files? This cannot be undone.",
+    "purged": "Archive deleted",
+    "mainFile": "Main document",
+    "supportingFile": "Supporting file"
   },
   "auth": {
     "signInTitle": "Sign in",
@@ -277,7 +328,55 @@
     "waitingReviews": "Submissions to review",
     "myGroups": "My groups",
     "openReview": "Open queue",
-    "openGroups": "View groups"
+    "openGroups": "View groups",
+    "latestForReview": "Latest submissions to review",
+    "openSubmission": "Open",
+    "noWaiting": "Nothing is waiting for a decision.",
+    "overdueSteps": "Overdue steps",
+    "overdueEmpty": "No step is overdue.",
+    "daysOverdue_one": "{{count}} day overdue",
+    "daysOverdue_other": "{{count}} days overdue",
+    "supervisedStudents": "Students I supervise",
+    "supervisedEmpty": "You do not supervise any students.",
+    "currentStep": "Current step",
+    "nextDeadline": "Next deadline",
+    "noTopic": "No topic",
+    "groupsBreakdown": "Groups",
+    "groupsEmpty": "No groups to show.",
+    "studentsColumn": "Students",
+    "approvedTopics": "Topics",
+    "stepsApproved": "Steps approved",
+    "waiting": "Waiting",
+    "late": "Late",
+    "overdue": "Overdue",
+    "groupProgress": "Group progress",
+    "selectGroup": "Group",
+    "noGroupSelected": "Choose a group to see its progress.",
+    "topicSelection": "Topic selection",
+    "withTopic": "With a topic",
+    "withRequest": "Request pending",
+    "withoutTopic": "No topic",
+    "selectionOpen": "Selection is open",
+    "selectionClosed": "Selection is closed",
+    "noDeadline": "No deadline set",
+    "deadlineOn": "Deadline {{date}}",
+    "reviewBacklog": "Review backlog",
+    "waitingLate": "of which late",
+    "structure": "Structure",
+    "faculties": "Faculties",
+    "departments": "Departments",
+    "groupsCount": "Groups",
+    "activeStudents": "Active students",
+    "unclaimedAccounts": "Unclaimed accounts",
+    "teachers": "Teachers",
+    "topicsAvailable": "Available topics",
+    "topicsReserved": "Reserved topics",
+    "topicsApproved": "Approved topics",
+    "latestDecision": "Most recent decision",
+    "decisionApproved": "Approved",
+    "decisionReturned": "Returned",
+    "noDecisionYet": "No work of yours has been decided yet.",
+    "openStep": "Open the step"
   },
   "health": {
     "title": "Server health",
@@ -427,7 +526,12 @@
     "deactivateConfirm": "Deactivate step \"{{title}}\"?",
     "noTemplates": "No steps yet.",
     "faculty": "Faculty",
-    "selectFaculty": "Select a faculty to see its steps."
+    "selectFaculty": "Select a faculty to see its steps.",
+    "reorderHint": "Drag a step, or use the arrows, to change the order.",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "reordered": "Order saved",
+    "dragHandle": "Reorder"
   },
   "steps": {
     "myTitle": "My work",
@@ -440,6 +544,13 @@
     "completedAt": "Completed",
     "student": "Student",
     "late": "Late",
+    "overdue": "Overdue",
+    "legend": "Legend",
+    "legendPending": "not submitted, deadline ahead",
+    "legendOverdue": "past the deadline, nothing submitted",
+    "legendSubmitted": "awaiting a decision",
+    "legendReturned": "returned for revision",
+    "legendApproved": "approved, with its mark",
     "status": {
       "Pending": "Not started",
       "Submitted": "Under review",
@@ -506,7 +617,7 @@
     "backToGroups": "Back to my groups",
     "approved": "Steps approved",
     "averageMark": "Average mark",
-    "late": "Late submissions",
+    "lateSteps": "Late steps",
     "nextDeadline": "Next deadline"
   },
   "admins": {
@@ -571,6 +682,7 @@
     "cancelConfirm": "Cancel your reservation of \"{{title}}\"?",
     "cancelled": "Reservation cancelled",
     "lastRejected": "Your last request was rejected",
+    "rejectedNoComment": "The topic was rejected without a comment.",
     "dismissRejection": "Dismiss this notice",
     "deadlineInfo": "You can choose a topic until {{date}}.",
     "deadlinePassedInfo": "The topic selection deadline was {{date}}.",

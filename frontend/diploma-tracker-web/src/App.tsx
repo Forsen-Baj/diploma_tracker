@@ -27,6 +27,8 @@ import { ReviewStepPage } from './pages/ReviewStepPage'
 import { TeacherGroupsPage } from './pages/TeacherGroupsPage'
 import { GroupProgressPage } from './pages/GroupProgressPage'
 import { DocumentsPage } from './pages/DocumentsPage'
+import { ArchivePage } from './pages/ArchivePage'
+import { ArchivedGroupPage } from './pages/ArchivedGroupPage'
 
 function App() {
   return (
@@ -44,6 +46,9 @@ function App() {
             <Route path="task-templates" element={<TaskTemplatesPage />} />
             <Route path="review" element={<ReviewQueuePage />} />
             <Route path="review/steps/:id" element={<ReviewStepPage />} />
+            <Route path="groups/:groupId/progress" element={<GroupProgressPage />} />
+            <Route path="archive" element={<ArchivePage />} />
+            <Route path="archive/:id" element={<ArchivedGroupPage />} />
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['Admin']} />}>
             <Route path="admin/dashboard" element={<AdminDashboardPage />} />

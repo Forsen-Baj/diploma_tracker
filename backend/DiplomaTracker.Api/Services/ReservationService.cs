@@ -354,10 +354,7 @@ public class ReservationService : IReservationService
             }
 
             await transaction.CommitAsync();
-            _logger.LogInformation(
-                "Student topic cleared by administrator: StudentProfileId={StudentProfileId}, AdministratorId={AdministratorId}",
-                student.Id,
-                administratorId);
+            SecurityLog.TopicAssigned(_logger, student.Id, administratorId, null);
             return (null, null);
         }
 
@@ -386,11 +383,7 @@ public class ReservationService : IReservationService
         }
 
         await transaction.CommitAsync();
-        _logger.LogInformation(
-            "Student topic assigned by administrator: StudentProfileId={StudentProfileId}, TopicId={TopicId}, AdministratorId={AdministratorId}",
-            student.Id,
-            topic.Id,
-            administratorId);
+        SecurityLog.TopicAssigned(_logger, student.Id, administratorId, topic.Id);
         return (await LoadResponseAsync(reservation.Id, new UserContext(administratorId, "Admin")), null);
     }
 

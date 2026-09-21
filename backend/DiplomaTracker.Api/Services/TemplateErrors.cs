@@ -13,6 +13,7 @@ public static class TemplateErrors
     public const string AudienceNotAllowed = "template.audienceNotAllowed";
     public const string GroupInvalid = "template.groupInvalid";
     public const string TeacherInvalid = "template.teacherInvalid";
+    public const string Conflict = "template.conflict";
 
     public static readonly ErrorDefinition[] All =
     [
@@ -24,6 +25,7 @@ public static class TemplateErrors
         new(TooLarge, StatusCodes.Status400BadRequest, "The template is larger than 10 MB."),
         new(AudienceNotAllowed, StatusCodes.Status403Forbidden, "You cannot share the template with this audience."),
         new(GroupInvalid, StatusCodes.Status400BadRequest, "A selected group does not exist."),
-        new(TeacherInvalid, StatusCodes.Status400BadRequest, "A selected teacher does not exist or is inactive.")
+        new(TeacherInvalid, StatusCodes.Status400BadRequest, "A selected teacher does not exist or is inactive."),
+        new(Conflict, StatusCodes.Status409Conflict, "This template was changed by someone else. Reload and try again.")
     ];
 }

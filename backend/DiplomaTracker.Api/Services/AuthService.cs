@@ -42,24 +42,45 @@ public class AuthService : IAuthService
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
     {
         var email = IdentityNormalizer.Email(request.Email);
-        var user = await _dbContext.Users.AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Email == email && u.IsActive);
 
-        if (user?.PasswordHash is null)
+        // The IsActive filter has moved out of the query so the refusal can be logged with a
+        // reason. The RESPONSE is identical in every branch - null - and every branch that does
+        // not verify a real hash still verifies the dummy one, so neither the answer nor the
+        // time it takes reveals which branch ran.
+        var user = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Email == email);
+
+        if (user is null)
         {
             _passwordHasher.VerifyPassword(request.Password, DummyPasswordHash);
+            SecurityLog.SignInFailed(_logger, email, "UnknownAccount");
+            return null;
+        }
+
+        if (!user.IsActive)
+        {
+            _passwordHasher.VerifyPassword(request.Password, DummyPasswordHash);
+            SecurityLog.SignInFailed(_logger, email, "Inactive");
+            return null;
+        }
+
+        if (user.PasswordHash is null)
+        {
+            _passwordHasher.VerifyPassword(request.Password, DummyPasswordHash);
+            SecurityLog.SignInFailed(_logger, email, "Unclaimed");
             return null;
         }
 
         if (!_passwordHasher.VerifyPassword(request.Password, user.PasswordHash))
         {
+            SecurityLog.SignInFailed(_logger, email, "WrongPassword");
             return null;
         }
 
-        var token = CreateToken(user);
+        SecurityLog.SignInSucceeded(_logger, user.Id, user.Role);
+
         return new LoginResponse
         {
-            Token = token,
+            Token = CreateToken(user),
             User = MapCurrentUser(user)
         };
     }
@@ -80,11 +101,11 @@ public class AuthService : IAuthService
         var registrationOpen = await _registrationService.IsOpenAsync();
 
         var email = IdentityNormalizer.Email(request.Email);
-        var studentNumber = IdentityNormalizer.StudentNumber(request.StudentNumber);
+        var studentNumber = IdentityNormalizer.StudentNumberCanonical(request.StudentNumber);
 
         var profile = await _dbContext.StudentProfiles
             .Include(p => p.User)
-            .FirstOrDefaultAsync(p => p.StudentNumber == studentNumber
+            .FirstOrDefaultAsync(p => p.StudentNumberCanonical == studentNumber
                 && p.User.Email == email
                 && p.User.Role == "Student"
                 && p.User.IsActive
@@ -118,10 +139,7 @@ public class AuthService : IAuthService
         profile.User.ClaimReopened = false;
         profile.User.UpdatedAt = now;
 
-        _logger.LogInformation(
-            "Account claimed: UserId={UserId}, Reopened={Reopened}",
-            profile.UserId,
-            wasReopened);
+        SecurityLog.ClaimSucceeded(_logger, profile.UserId, wasReopened);
 
         return (new LoginResponse
         {
@@ -134,17 +152,11 @@ public class AuthService : IAuthService
     {
         if (registrationOpen)
         {
-            _logger.LogWarning(
-                "Claim refused: Reason={Reason}, Email={Email}",
-                "DetailsMismatch",
-                email);
+            SecurityLog.ClaimRefused(_logger, email, "DetailsMismatch");
             return OnboardingErrors.ClaimDetailsMismatch;
         }
 
-        _logger.LogWarning(
-            "Claim refused: Reason={Reason}, Email={Email}",
-            "RegistrationClosed",
-            email);
+        SecurityLog.ClaimRefused(_logger, email, "RegistrationClosed");
         return OnboardingErrors.RegistrationClosed;
     }
 
@@ -161,9 +173,12 @@ public class AuthService : IAuthService
             return (false, OnboardingErrors.CurrentPasswordIncorrect);
         }
 
-        if (!PasswordPolicy.IsSatisfiedBy(request.NewPassword))
+        var satisfied = user.Role == "Admin"
+            ? PasswordPolicy.IsSatisfiedByElevated(request.NewPassword)
+            : PasswordPolicy.IsSatisfiedBy(request.NewPassword);
+        if (!satisfied)
         {
-            return (false, PasswordPolicy.Violation);
+            return (false, user.Role == "Admin" ? PasswordPolicy.ElevatedViolation : PasswordPolicy.Violation);
         }
 
         var verifiedHash = user.PasswordHash;
@@ -178,7 +193,7 @@ public class AuthService : IAuthService
             return (false, OnboardingErrors.CurrentPasswordIncorrect);
         }
 
-        _logger.LogInformation("Password changed: UserId={UserId}", userId);
+        SecurityLog.PasswordChanged(_logger, userId);
 
         return (true, null);
     }

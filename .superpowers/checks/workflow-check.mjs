@@ -1,7 +1,10 @@
+import { createCleanup } from './checkCleanup.mjs'
+
 const API = 'http://localhost:5000'
 const stamp = Date.now().toString().slice(-6)
 const results = []
 const authCalls = []
+const cleanup = createCleanup()
 
 function check(name, actual, expected) {
   const ok = actual === expected
@@ -50,17 +53,20 @@ function form({ main, mainName = 'work.docx', supporting = [], message } = {}) {
   return data
 }
 
+async function runChecks() {
 const admin = await login('admin@diploma.local', 'Admin123!')
 const teacher = await login('teacher@diploma.local', 'Teacher123!')
 
 // Arrange: group with two steps, a student, the seed teacher as reviewer, a second teacher unrelated
 const department = (await call('GET', '/api/departments', { token: admin })).body[0]
 const group = (await call('POST', '/api/groups', { token: admin, json: { departmentId: department.id, code: `WF${stamp}`, academicYear: '2026/2027', description: '' } })).body
+cleanup.add(`group ${group.code}`, () => call('DELETE', `/api/groups/${group.id}`, { token: admin }))
 const teachers = (await call('GET', '/api/teachers', { token: admin })).body
 const teacherId = teachers.find((t) => t.email === 'teacher@diploma.local').id
 await call('POST', `/api/groups/${group.id}/reviewers`, { token: admin, json: { reviewerId: teacherId } })
 const otherTeacherEmail = `other.${stamp}@diploma.local`
-await call('POST', '/api/teachers', { token: admin, json: { firstName: 'Other', lastName: 'Teacher', email: otherTeacherEmail, password: 'Teacher456!' } })
+const otherTeacherId = (await call('POST', '/api/teachers', { token: admin, json: { firstName: 'Other', lastName: 'Teacher', email: otherTeacherEmail, password: 'Teacher456!' } })).body.id
+cleanup.add(`teacher ${otherTeacherEmail} -> deactivate`, () => call('PATCH', `/api/teachers/${otherTeacherId}/deactivate`, { token: admin }))
 const otherTeacher = await login(otherTeacherEmail, 'Teacher456!')
 
 // Step templates are per faculty (Order is unique per faculty); a template from a different
@@ -75,6 +81,17 @@ await call('POST', `/api/groups/${group.id}/assign-all-task-templates`, { token:
 const studentEmail = `flow.${stamp}@student.local`
 const student = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Flow', lastName: 'Student', email: studentEmail, studentNumber: `F${stamp}`, password: 'Password1!', groupId: group.id } })).body
 const studentToken = await login(studentEmail, 'Password1!')
+
+// Students need the three-step dance: a student can never be deleted, and a group cannot be
+// deleted while any student points at it. Registered as one undo step at the moment the student
+// is created; SEEDED_GROUP_ID is resolved at run time by looking up the group whose code is SEED-A.
+cleanup.add('student -> seeded group', async () => {
+  const seedGroups = (await call('GET', '/api/groups', { token: admin })).body
+  const seededGroupId = seedGroups.find((g) => g.code === 'SEED-A').id
+  await call('POST', '/api/students/restore', { token: admin, json: { studentIds: [student.id] } })
+  await call('PUT', `/api/students/${student.id}/group`, { token: admin, json: { groupId: seededGroupId } })
+  await call('POST', '/api/students/archive', { token: admin, json: { studentIds: [student.id] } })
+})
 
 // The student is added to the group after its steps are assigned, so LateJoinerTaskAssigner
 // creates the StudentTask rows at membership time (Services/LateJoinerTaskAssigner.cs) - nothing
@@ -104,10 +121,10 @@ check('11 submit', first.status, 200)
 check('12 late flag', first.body.timeline[0].isLate, true)
 check('13 awaiting review blocks resubmit', (await call('POST', `/api/student-tasks/${steps[0].id}/submissions`, { token: studentToken, form: form({ main: docx }) })).body.code, 'step.awaitingReview')
 
-const queue = (await call('GET', '/api/review/queue', { token: teacher })).body
+const queue = (await call('GET', '/api/review/queue', { token: teacher })).body.items
 const queued = queue.find((item) => item.studentTaskId === steps[0].id)
 check('14 queue contains submission', Boolean(queued), true)
-check('15 unrelated teacher queue empty for it', (await call('GET', '/api/review/queue', { token: otherTeacher })).body.some((item) => item.studentTaskId === steps[0].id), false)
+check('15 unrelated teacher queue empty for it', (await call('GET', '/api/review/queue', { token: otherTeacher })).body.items.some((item) => item.studentTaskId === steps[0].id), false)
 check('16 unrelated teacher cannot decide', (await call('POST', `/api/submissions/${queued.submissionId}/return`, { token: otherTeacher, json: { comment: 'x' } })).body.code, 'submission.notReviewer')
 check('17 return requires comment', (await call('POST', `/api/submissions/${queued.submissionId}/return`, { token: teacher, json: {} })).body.code, 'review.commentRequired')
 const returned = await call('POST', `/api/submissions/${queued.submissionId}/return`, { token: teacher, json: { comment: 'Add references' } })
@@ -153,42 +170,21 @@ check('34 progress cell status', progress.students[0].cells[0].status, 'Approved
 check('35 unrelated teacher progress', (await call('GET', `/api/groups/${group.id}/progress`, { token: otherTeacher })).body.code, 'group.notFound')
 const mine = (await call('GET', '/api/students/me/progress', { token: studentToken })).body
 check('36 student progress approved', `${mine.approved}/${mine.total}`, '1/2')
-check('37 student progress late count', mine.lateSubmissions, 2)
+// Both submissions on this step (v1 and its resubmit v2) land against the same past-deadline
+// group task (templates[0]'s deadline is `past`), so both are late - but Task 10 redefined this
+// count to be per-step, not per-submission-version: one step submitted late twice is late on ONE
+// step, not two (DTOs/Workflow/StudentProgressResponse.cs's own doc comment says as much). Only
+// steps[0] is ever submitted in this script - steps[1] is unlocked at check 24 but never submitted -
+// so the correct count under the new semantics is 1.
+check('37 student progress late count', mine.lateSteps, 1)
 check('38 student progress for reviewer', (await call('GET', `/api/students/${student.id}/progress`, { token: teacher })).body.averageMark, 88)
 check('39 other student cannot open step', (await call('GET', `/api/student-tasks/${steps[0].id}`, { token: await login('student@diploma.local', 'Student123!') })).body.code, 'studentTask.notYours')
-
-// ---------------------------------------------------------------------------
-// Cleanup: leave no group behind.
-//
-// DELETE /api/groups/{id} refuses with 409 group.hasStudents while any student profile still
-// points at the group (archived or not), and there is no endpoint that deletes a student. So the
-// student this script created is restored (no-op, it was never archived), moved into the seeded
-// group, and re-archived there, before the group this script created is deleted. Run only if
-// every check above passed; otherwise leave everything in place for diagnosis.
-// ---------------------------------------------------------------------------
-
-async function cleanup() {
-  const seedGroups = (await call('GET', '/api/groups', { token: admin })).body
-  const seedGroupId = seedGroups.find((g) => g.code === 'SEED-A').id
-
-  const restore = await call('POST', '/api/students/restore', { token: admin, json: { studentIds: [student.id] } })
-  check('40 cleanup: restore archived student', restore.status, 200)
-
-  const move = await call('PUT', `/api/students/${student.id}/group`, { token: admin, json: { groupId: seedGroupId } })
-  check('41 cleanup: move student to seeded group', move.status, 200)
-
-  const archive = await call('POST', '/api/students/archive', { token: admin, json: { studentIds: [student.id] } })
-  check('42 cleanup: archive moved student', archive.status, 200)
-
-  const remove = await call('DELETE', `/api/groups/${group.id}`, { token: admin })
-  check('43 cleanup: delete group', remove.status, 204)
 }
 
-const failedBeforeCleanup = results.some((ok) => !ok)
-if (!failedBeforeCleanup) {
-  await cleanup()
-} else {
-  console.log(`\nSkipping cleanup: some check(s) already failed; leaving created rows in place for diagnosis.`)
+try {
+  await runChecks()
+} finally {
+  await cleanup.run()
 }
 
 const passed = results.filter(Boolean).length

@@ -37,7 +37,7 @@ public class TeacherService : ITeacherService
         return user is null ? null : MapTeacher(user);
     }
 
-    public async Task<(TeacherResponse? teacher, string? error)> CreateTeacherAsync(CreateTeacherRequest request)
+    public async Task<(TeacherResponse? teacher, string? error)> CreateTeacherAsync(CreateTeacherRequest request, Guid administratorId)
     {
         var email = IdentityNormalizer.Email(request.Email);
         if (await _dbContext.Users.AnyAsync(u => u.Email == email))
@@ -75,10 +75,11 @@ public class TeacherService : ITeacherService
             return (null, OnboardingErrors.EmailTaken);
         }
 
+        SecurityLog.AdministratorAction(_logger, administratorId, "Created", "Teacher", user.Id);
         return (MapTeacher(user), null);
     }
 
-    public async Task<(TeacherResponse? teacher, string? error)> UpdateTeacherAsync(Guid id, UpdateTeacherRequest request)
+    public async Task<(TeacherResponse? teacher, string? error)> UpdateTeacherAsync(Guid id, UpdateTeacherRequest request, Guid administratorId)
     {
         var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Role == "Teacher" && u.Id == id);
         if (user is null)
@@ -107,10 +108,11 @@ public class TeacherService : ITeacherService
             return (null, OnboardingErrors.EmailTaken);
         }
 
+        SecurityLog.AdministratorAction(_logger, administratorId, "Updated", "Teacher", user.Id);
         return (MapTeacher(user), null);
     }
 
-    public async Task<(bool success, string? error)> DeactivateTeacherAsync(Guid id)
+    public async Task<(bool success, string? error)> DeactivateTeacherAsync(Guid id, Guid administratorId)
     {
         var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Role == "Teacher" && u.Id == id);
         if (user is null)
@@ -121,6 +123,7 @@ public class TeacherService : ITeacherService
         user.IsActive = false;
         user.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync();
+        SecurityLog.AdministratorAction(_logger, administratorId, "Deactivated", "Teacher", user.Id);
         return (true, null);
     }
 
@@ -141,10 +144,7 @@ public class TeacherService : ITeacherService
         user.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync();
 
-        _logger.LogInformation(
-            "Teacher password set by administrator: TeacherUserId={TeacherUserId}, AdministratorId={AdministratorId}",
-            user.Id,
-            administratorId);
+        SecurityLog.AdministratorAction(_logger, administratorId, "Updated", "Teacher", user.Id);
 
         return (true, null);
     }

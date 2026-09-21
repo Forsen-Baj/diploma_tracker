@@ -3,16 +3,19 @@ using DiplomaTracker.Api.DTOs.TaskTemplates;
 using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DiplomaTracker.Api.Services;
 
 public class TaskTemplateService : ITaskTemplateService
 {
     private readonly AppDbContext _dbContext;
+    private readonly ILogger<TaskTemplateService> _logger;
 
-    public TaskTemplateService(AppDbContext dbContext)
+    public TaskTemplateService(AppDbContext dbContext, ILogger<TaskTemplateService> logger)
     {
         _dbContext = dbContext;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<TaskTemplateResponse>> GetTaskTemplatesAsync(Guid? facultyId)
@@ -41,7 +44,7 @@ public class TaskTemplateService : ITaskTemplateService
         return template is null ? null : Map(template);
     }
 
-    public async Task<(TaskTemplateResponse? template, string? error)> CreateTaskTemplateAsync(CreateTaskTemplateRequest request)
+    public async Task<(TaskTemplateResponse? template, string? error)> CreateTaskTemplateAsync(CreateTaskTemplateRequest request, Guid administratorId)
     {
         if (request.Order <= 0)
         {
@@ -92,10 +95,11 @@ public class TaskTemplateService : ITaskTemplateService
         await _dbContext.SaveChangesAsync();
 
         template.Faculty = faculty;
+        SecurityLog.AdministratorAction(_logger, administratorId, "Created", "TaskTemplate", template.Id);
         return (Map(template), null);
     }
 
-    public async Task<(TaskTemplateResponse? template, string? error)> UpdateTaskTemplateAsync(Guid id, UpdateTaskTemplateRequest request)
+    public async Task<(TaskTemplateResponse? template, string? error)> UpdateTaskTemplateAsync(Guid id, UpdateTaskTemplateRequest request, Guid administratorId)
     {
         if (request.Order <= 0)
         {
@@ -171,6 +175,7 @@ public class TaskTemplateService : ITaskTemplateService
             await _dbContext.SaveChangesAsync();
 
             template.Faculty = faculty;
+            SecurityLog.AdministratorAction(_logger, administratorId, "Updated", "TaskTemplate", template.Id);
             return (Map(template), null);
         }
 
@@ -227,10 +232,11 @@ public class TaskTemplateService : ITaskTemplateService
         await transaction.CommitAsync();
 
         template.Faculty = faculty;
+        SecurityLog.AdministratorAction(_logger, administratorId, "Updated", "TaskTemplate", template.Id);
         return (Map(template), null);
     }
 
-    public async Task<(TaskTemplateResponse? template, string? error)> ActivateTaskTemplateAsync(Guid id)
+    public async Task<(TaskTemplateResponse? template, string? error)> ActivateTaskTemplateAsync(Guid id, Guid administratorId)
     {
         var template = await _dbContext.DiplomaTaskTemplates
             .Include(t => t.Faculty)
@@ -251,10 +257,11 @@ public class TaskTemplateService : ITaskTemplateService
         template.IsActive = true;
         template.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync();
+        SecurityLog.AdministratorAction(_logger, administratorId, "Activated", "TaskTemplate", template.Id);
         return (Map(template), null);
     }
 
-    public async Task<(TaskTemplateResponse? template, string? error)> DeactivateTaskTemplateAsync(Guid id)
+    public async Task<(TaskTemplateResponse? template, string? error)> DeactivateTaskTemplateAsync(Guid id, Guid administratorId)
     {
         var template = await _dbContext.DiplomaTaskTemplates
             .Include(t => t.Faculty)
@@ -267,7 +274,65 @@ public class TaskTemplateService : ITaskTemplateService
         template.IsActive = false;
         template.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync();
+        SecurityLog.AdministratorAction(_logger, administratorId, "Deactivated", "TaskTemplate", template.Id);
         return (Map(template), null);
+    }
+
+    /// Phase 8 §6. One request carries the whole new order, so the result does not depend on the
+    /// order the client happened to send individual moves in.
+    ///
+    /// The two-phase negate-then-assign inside a transaction is the same technique the
+    /// single-step move already uses: a straight sequence of updates would transiently violate
+    /// the unique (FacultyId, Order) index, and EF chooses its own statement order.
+    ///
+    /// Orders are rewritten as 1..n, which also closes any gaps left by deleted steps.
+    public async Task<(IReadOnlyList<TaskTemplateResponse>? templates, string? error)> ReorderAsync(
+        ReorderTaskTemplatesRequest request,
+        Guid administratorId)
+    {
+        var facultyExists = await _dbContext.Faculties.AnyAsync(f => f.Id == request.FacultyId);
+        if (!facultyExists)
+        {
+            return (null, TaskErrors.TemplateFacultyNotFound);
+        }
+
+        var templates = await _dbContext.DiplomaTaskTemplates
+            .Include(t => t.Faculty)
+            .Where(t => t.FacultyId == request.FacultyId)
+            .ToListAsync();
+
+        var requested = request.TemplateIds;
+        if (requested.Count != templates.Count
+            || requested.Distinct().Count() != requested.Count
+            || requested.Any(id => templates.All(t => t.Id != id)))
+        {
+            return (null, TaskErrors.TemplateOrderMismatch);
+        }
+
+        var byId = templates.ToDictionary(t => t.Id);
+        var now = DateTime.UtcNow;
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+
+        foreach (var template in templates)
+        {
+            template.Order = -template.Order;
+        }
+        await _dbContext.SaveChangesAsync();
+
+        for (var index = 0; index < requested.Count; index++)
+        {
+            var template = byId[requested[index]];
+            template.Order = index + 1;
+            template.UpdatedAt = now;
+        }
+        await _dbContext.SaveChangesAsync();
+
+        await transaction.CommitAsync();
+
+        SecurityLog.AdministratorAction(_logger, administratorId, "Reordered", "TaskTemplate", request.FacultyId);
+
+        return (templates.OrderBy(t => t.Order).Select(Map).ToList(), null);
     }
 
     private static TaskTemplateResponse Map(DiplomaTaskTemplate template)

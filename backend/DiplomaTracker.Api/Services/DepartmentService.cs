@@ -1,19 +1,36 @@
+using System.Linq.Expressions;
 using DiplomaTracker.Api.Data;
 using DiplomaTracker.Api.DTOs.Departments;
 using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DiplomaTracker.Api.Services;
 
 public class DepartmentService : IDepartmentService
 {
     private readonly AppDbContext _dbContext;
+    private readonly ILogger<DepartmentService> _logger;
 
-    public DepartmentService(AppDbContext dbContext)
+    public DepartmentService(AppDbContext dbContext, ILogger<DepartmentService> logger)
     {
         _dbContext = dbContext;
+        _logger = logger;
     }
+
+    /// Phase 8 §8: the API returns exactly the columns it sends. This used to materialise a
+    /// Department with its Faculty and map afterwards.
+    private static readonly Expression<Func<Department, DepartmentResponse>> DepartmentProjection = d => new DepartmentResponse
+    {
+        Id = d.Id,
+        FacultyId = d.FacultyId,
+        FacultyName = d.Faculty.Name,
+        Name = d.Name,
+        ShortName = d.ShortName,
+        CreatedAt = d.CreatedAt,
+        UpdatedAt = d.UpdatedAt
+    };
 
     public async Task<IReadOnlyList<DepartmentResponse>?> GetDepartmentsAsync(Guid? facultyId)
     {
@@ -22,31 +39,29 @@ public class DepartmentService : IDepartmentService
             return null;
         }
 
-        var query = _dbContext.Departments.AsNoTracking().Include(d => d.Faculty).AsQueryable();
+        var query = _dbContext.Departments.AsNoTracking().AsQueryable();
         if (facultyId.HasValue)
         {
             query = query.Where(d => d.FacultyId == facultyId.Value);
         }
 
-        var departments = await query
+        return await query
             .OrderBy(d => d.Faculty.Name)
             .ThenBy(d => d.Name)
+            .Select(DepartmentProjection)
             .ToListAsync();
-
-        return departments.Select(MapDepartment).ToList();
     }
 
     public async Task<DepartmentResponse?> GetDepartmentByIdAsync(Guid id)
     {
-        var department = await _dbContext.Departments
+        return await _dbContext.Departments
             .AsNoTracking()
-            .Include(d => d.Faculty)
-            .FirstOrDefaultAsync(d => d.Id == id);
-
-        return department is null ? null : MapDepartment(department);
+            .Where(d => d.Id == id)
+            .Select(DepartmentProjection)
+            .FirstOrDefaultAsync();
     }
 
-    public async Task<(DepartmentResponse? department, string? error)> CreateDepartmentAsync(CreateDepartmentRequest request)
+    public async Task<(DepartmentResponse? department, string? error)> CreateDepartmentAsync(CreateDepartmentRequest request, Guid administratorId)
     {
         var faculty = await _dbContext.Faculties.FirstOrDefaultAsync(f => f.Id == request.FacultyId);
         if (faculty is null)
@@ -92,10 +107,11 @@ public class DepartmentService : IDepartmentService
             return (null, AcademicStructureErrors.DepartmentFacultyNotFound);
         }
 
+        SecurityLog.AdministratorAction(_logger, administratorId, "Created", "Department", department.Id);
         return (MapDepartment(department), null);
     }
 
-    public async Task<(DepartmentResponse? department, string? error)> UpdateDepartmentAsync(Guid id, UpdateDepartmentRequest request)
+    public async Task<(DepartmentResponse? department, string? error)> UpdateDepartmentAsync(Guid id, UpdateDepartmentRequest request, Guid administratorId)
     {
         var department = await _dbContext.Departments.FirstOrDefaultAsync(d => d.Id == id);
         if (department is null)
@@ -139,10 +155,11 @@ public class DepartmentService : IDepartmentService
             return (null, AcademicStructureErrors.DepartmentFacultyNotFound);
         }
 
+        SecurityLog.AdministratorAction(_logger, administratorId, "Updated", "Department", department.Id);
         return (MapDepartment(department), null);
     }
 
-    public async Task<(bool success, string? error)> DeleteDepartmentAsync(Guid id)
+    public async Task<(bool success, string? error)> DeleteDepartmentAsync(Guid id, Guid administratorId)
     {
         var department = await _dbContext.Departments.FirstOrDefaultAsync(d => d.Id == id);
         if (department is null)
@@ -167,6 +184,7 @@ public class DepartmentService : IDepartmentService
             return (false, AcademicStructureErrors.DepartmentHasGroups);
         }
 
+        SecurityLog.AdministratorAction(_logger, administratorId, "Deleted", "Department", id);
         return (true, null);
     }
 

@@ -68,6 +68,13 @@ A topic is `Reserved` exactly when it has a `Pending` reservation and `Approved`
 when it has an `Approved` reservation; the service keeps `Topic.Status` in step with the
 reservation in the same `SaveChanges`.
 
+**`StudentProfile.TopicId` is the single source of truth for which topic a student holds.**
+`TopicReservations` is the history of how they got there, plus any change request still
+pending. Every read that answers "whose topic is this" or "does this student hold a topic"
+reads the column; none of them derives the answer from an `Approved` reservation. The two
+are written together in the same transaction, so they cannot disagree — but when a question
+is about the present rather than the past, the column is what answers it.
+
 Three uniqueness rules hold, enforced in the service and backed by filtered unique indexes:
 
 - at most one reservation per **topic** in `Pending` or `Approved` — a topic is wanted by one

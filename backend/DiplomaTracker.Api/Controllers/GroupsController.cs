@@ -60,7 +60,12 @@ public class GroupsController : ApiControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateGroupRequest request)
     {
-        var (group, error) = await _groupService.CreateGroupAsync(request);
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (group, error) = await _groupService.CreateGroupAsync(request, administratorId);
         return group is null
             ? ErrorResult(error)
             : CreatedAtAction(nameof(GetById), new { id = group.Id }, group);
@@ -70,7 +75,12 @@ public class GroupsController : ApiControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateGroupRequest request)
     {
-        var (group, error) = await _groupService.UpdateGroupAsync(id, request);
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (group, error) = await _groupService.UpdateGroupAsync(id, request, administratorId);
         return group is null ? ErrorResult(error) : Ok(group);
     }
 
@@ -78,7 +88,12 @@ public class GroupsController : ApiControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var (success, error) = await _groupService.DeleteGroupAsync(id);
+        if (!TryGetCurrentUser(out var user))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (success, error) = await _groupService.DeleteGroupAsync(id, user.UserId, HttpContext.RequestAborted);
         return success ? NoContent() : ErrorResult(error);
     }
 
@@ -111,7 +126,12 @@ public class GroupsController : ApiControllerBase
     [HttpPost("{groupId:guid}/reviewers")]
     public async Task<IActionResult> AddReviewer(Guid groupId, [FromBody] AddGroupReviewerRequest request)
     {
-        var (reviewer, error) = await _groupService.AddGroupReviewerAsync(groupId, request);
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (reviewer, error) = await _groupService.AddGroupReviewerAsync(groupId, request, administratorId);
         return reviewer is null ? ErrorResult(error) : Ok(reviewer);
     }
 
@@ -119,7 +139,12 @@ public class GroupsController : ApiControllerBase
     [HttpDelete("{groupId:guid}/reviewers/{reviewerId:guid}")]
     public async Task<IActionResult> RemoveReviewer(Guid groupId, Guid reviewerId)
     {
-        var (success, error) = await _groupService.RemoveGroupReviewerAsync(groupId, reviewerId);
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (success, error) = await _groupService.RemoveGroupReviewerAsync(groupId, reviewerId, administratorId);
         return success ? NoContent() : ErrorResult(error);
     }
 }

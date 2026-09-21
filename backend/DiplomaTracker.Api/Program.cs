@@ -73,6 +73,9 @@ builder.Services.AddScoped<IReservationService, ReservationService>();
 builder.Services.AddScoped<IAccessScope, AccessScope>();
 builder.Services.AddScoped<IStudentWorkflowService, StudentWorkflowService>();
 builder.Services.AddScoped<IDocumentTemplateService, DocumentTemplateService>();
+builder.Services.AddScoped<IArchiveService, ArchiveService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<SessionStateValidator>();
 
 builder.Services.AddSingleton<IFileStorage>(serviceProvider =>
 {
@@ -164,6 +167,22 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.Secret)),
             ClockSkew = TimeSpan.Zero
         };
+
+        // Phase 8 §2.1: the signature and lifetime say the token is authentic; they say nothing
+        // about the account still being allowed to use it. One projected read per authenticated
+        // request closes the gap between an administrator archiving an account and that account's
+        // token expiring.
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var validator = context.HttpContext.RequestServices.GetRequiredService<SessionStateValidator>();
+                if (!await validator.IsSessionValidAsync(context.Principal!, context.HttpContext.RequestAborted))
+                {
+                    context.Fail("The session is no longer valid.");
+                }
+            }
+        };
     });
 
 builder.Services.AddAuthorization();
@@ -179,7 +198,7 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
 
     var code = badHttpRequestException?.StatusCode switch
     {
-        StatusCodes.Status413PayloadTooLarge => OnboardingErrors.ImportFileTooLarge,
+        StatusCodes.Status413PayloadTooLarge => CommonErrors.RequestTooLarge,
         StatusCodes.Status400BadRequest => CommonErrors.ValidationFailed,
         _ => CommonErrors.Unexpected
     };

@@ -50,7 +50,12 @@ public class AdminsController : ApiControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateAdminRequest request)
     {
-        var (admin, error) = await _adminService.UpdateAdminAsync(id, request);
+        if (!TryGetUserId(out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (admin, error) = await _adminService.UpdateAdminAsync(id, request, administratorId);
         return admin is null ? ErrorResult(error) : NoContent();
     }
 

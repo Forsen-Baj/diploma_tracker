@@ -166,6 +166,7 @@ public static class DbSeeder
             Id = Guid.NewGuid(),
             UserId = userId,
             StudentNumber = "SEED-0001",
+            StudentNumberCanonical = IdentityNormalizer.StudentNumberCanonical("SEED-0001"),
             GroupId = groupId,
             SupervisorId = null,
             CreatedAt = now,

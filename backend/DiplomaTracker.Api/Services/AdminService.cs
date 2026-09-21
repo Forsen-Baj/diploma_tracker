@@ -47,9 +47,9 @@ public class AdminService : IAdminService
             return (null, OnboardingErrors.EmailTaken);
         }
 
-        if (!PasswordPolicy.IsSatisfiedBy(request.Password))
+        if (!PasswordPolicy.IsSatisfiedByElevated(request.Password))
         {
-            return (null, PasswordPolicy.Violation);
+            return (null, PasswordPolicy.ElevatedViolation);
         }
 
         var now = DateTime.UtcNow;
@@ -78,15 +78,12 @@ public class AdminService : IAdminService
             return (null, OnboardingErrors.EmailTaken);
         }
 
-        _logger.LogInformation(
-            "Administrator created: AdminUserId={AdminUserId}, AdministratorId={AdministratorId}",
-            user.Id,
-            administratorId);
+        SecurityLog.AdministratorAction(_logger, administratorId, "Created", "Administrator", user.Id);
 
         return (MapAdmin(user), null);
     }
 
-    public async Task<(AdminResponse? admin, string? error)> UpdateAdminAsync(Guid id, UpdateAdminRequest request)
+    public async Task<(AdminResponse? admin, string? error)> UpdateAdminAsync(Guid id, UpdateAdminRequest request, Guid administratorId)
     {
         var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Role == "Admin" && u.Id == id);
         if (user is null)
@@ -115,6 +112,7 @@ public class AdminService : IAdminService
             return (null, OnboardingErrors.EmailTaken);
         }
 
+        SecurityLog.AdministratorAction(_logger, administratorId, "Updated", "Administrator", user.Id);
         return (MapAdmin(user), null);
     }
 
@@ -126,19 +124,16 @@ public class AdminService : IAdminService
             return (false, AdminErrors.NotFound);
         }
 
-        if (!PasswordPolicy.IsSatisfiedBy(password))
+        if (!PasswordPolicy.IsSatisfiedByElevated(password))
         {
-            return (false, PasswordPolicy.Violation);
+            return (false, PasswordPolicy.ElevatedViolation);
         }
 
         user.PasswordHash = _passwordHasher.HashPassword(password);
         user.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync();
 
-        _logger.LogInformation(
-            "Administrator password set: AdminUserId={AdminUserId}, AdministratorId={AdministratorId}",
-            user.Id,
-            administratorId);
+        SecurityLog.AdministratorAction(_logger, administratorId, "Updated", "Administrator", user.Id);
 
         return (true, null);
     }
@@ -170,10 +165,7 @@ public class AdminService : IAdminService
             return (false, AdminErrors.LastActive);
         }
 
-        _logger.LogInformation(
-            "Administrator deactivated: AdminUserId={AdminUserId}, AdministratorId={AdministratorId}",
-            id,
-            administratorId);
+        SecurityLog.AdministratorAction(_logger, administratorId, "Deactivated", "Administrator", id);
 
         return (true, null);
     }
@@ -190,10 +182,7 @@ public class AdminService : IAdminService
         user.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync();
 
-        _logger.LogInformation(
-            "Administrator reactivated: AdminUserId={AdminUserId}, AdministratorId={AdministratorId}",
-            user.Id,
-            administratorId);
+        SecurityLog.AdministratorAction(_logger, administratorId, "Activated", "Administrator", user.Id);
 
         return (true, null);
     }

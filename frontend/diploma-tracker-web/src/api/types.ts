@@ -480,7 +480,14 @@ export type GroupProgress = {
   students: {
     studentProfileId: string
     name: string
-    cells: { groupTaskId: string; studentTaskId: string; status: StudentTaskStatus; mark: number | null; isLate: boolean }[]
+    cells: {
+      groupTaskId: string
+      studentTaskId: string
+      status: StudentTaskStatus
+      mark: number | null
+      isLate: boolean
+      isOverdue: boolean
+    }[]
   }[]
 }
 
@@ -488,7 +495,7 @@ export type StudentProgress = {
   studentProfileId: string
   approved: number
   total: number
-  lateSubmissions: number
+  lateSteps: number
   averageMark: number | null
   nextDeadline: string | null
 }
@@ -540,4 +547,147 @@ export type EligibleStudent = {
   name: string
   groupCode: string
   groupAcademicYear: string
+}
+
+export type Paged<T> = {
+  items: T[]
+  page: number
+  pageSize: number
+  total: number
+}
+
+export type LatestDecision = {
+  studentTaskId: string
+  submissionId: string
+  stepTitle: string
+  stepOrder: number
+  version: number
+  decision: 'Approved' | 'Returned'
+  mark: number | null
+  reviewerName: string | null
+  reviewerComment: string | null
+  decidedAt: string
+}
+
+export type StudentDashboard = {
+  progress: StudentProgress
+  latestDecision: LatestDecision | null
+}
+
+export type DashboardGroupRow = {
+  groupId: string
+  groupCode: string
+  academicYear: string
+  departmentName: string
+  studentCount: number
+  approvedTopicCount: number
+  stepsApproved: number
+  stepsTotal: number
+  waitingReviews: number
+  lateSteps: number
+  overdueSteps: number
+}
+
+export type OverdueStepRow = {
+  studentTaskId: string
+  studentProfileId: string
+  studentName: string
+  groupId: string
+  groupCode: string
+  stepTitle: string
+  stepOrder: number
+  deadline: string
+  daysOverdue: number
+}
+
+export type SupervisedStudentRow = {
+  studentProfileId: string
+  studentName: string
+  groupId: string
+  groupCode: string
+  topicTitle: string | null
+  currentStepTitle: string | null
+  currentStepStatus: StudentTaskStatus | null
+  nextDeadline: string | null
+}
+
+export type TeacherDashboard = {
+  waitingReviews: number
+  latestForReview: ReviewQueueItem[]
+  overdueSteps: OverdueStepRow[]
+  supervisedStudents: SupervisedStudentRow[]
+  groups: DashboardGroupRow[]
+}
+
+export type AdminDashboard = {
+  topicSelection: {
+    totalStudents: number
+    withApprovedTopic: number
+    withPendingRequest: number
+    withoutTopic: number
+    deadline: string | null
+    isOpen: boolean
+  }
+  reviewBacklog: {
+    waitingReviews: number
+    waitingLate: number
+    overdueSteps: number
+  }
+  structure: {
+    faculties: number
+    departments: number
+    groups: number
+    activeStudents: number
+    unclaimedAccounts: number
+    teachers: number
+    topicsAvailable: number
+    topicsReserved: number
+    topicsApproved: number
+  }
+  groups: DashboardGroupRow[]
+}
+
+export type ArchivedGroupSummary = {
+  id: string
+  groupCode: string
+  academicYear: string
+  departmentName: string
+  facultyName: string
+  groupDeletedAt: string | null
+  studentCount: number
+  fileCount: number
+  totalSizeBytes: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type ArchivedFile = {
+  id: string
+  studentName: string
+  studentNumber: string
+  stepTitle: string
+  stepOrder: number
+  deadline: string
+  version: number
+  submittedAt: string
+  isLate: boolean
+  decision: 'Approved' | 'Returned' | null
+  mark: number | null
+  reviewerName: string | null
+  reviewerComment: string | null
+  decidedAt: string | null
+  kind: 'Main' | 'Supporting'
+  originalName: string
+  sizeBytes: number
+}
+
+export type ArchivedGroupDetails = ArchivedGroupSummary & {
+  reviewerNames: string[]
+  files: ArchivedFile[]
+}
+
+export type ArchiveUsage = {
+  groupCount: number
+  fileCount: number
+  totalSizeBytes: number
 }
