@@ -107,6 +107,33 @@ namespace DiplomaTracker.Api.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "DocumentTemplates",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    OwnerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    StorageKey = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
+                    OriginalFileName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
+                    SizeBytes = table.Column<long>(type: "bigint", nullable: false),
+                    VisibleToAllStudents = table.Column<bool>(type: "bit", nullable: false),
+                    VisibleToAllTeachers = table.Column<bool>(type: "bit", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_DocumentTemplates", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_DocumentTemplates_Users_OwnerId",
+                        column: x => x.OwnerId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Groups",
                 columns: table => new
                 {
@@ -159,6 +186,54 @@ namespace DiplomaTracker.Api.Migrations
                         principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "DocumentTemplateTeachers",
+                columns: table => new
+                {
+                    TemplateId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    TeacherId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_DocumentTemplateTeachers", x => new { x.TemplateId, x.TeacherId });
+                    table.ForeignKey(
+                        name: "FK_DocumentTemplateTeachers_DocumentTemplates_TemplateId",
+                        column: x => x.TemplateId,
+                        principalTable: "DocumentTemplates",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_DocumentTemplateTeachers_Users_TeacherId",
+                        column: x => x.TeacherId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "DocumentTemplateGroups",
+                columns: table => new
+                {
+                    TemplateId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    GroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_DocumentTemplateGroups", x => new { x.TemplateId, x.GroupId });
+                    table.ForeignKey(
+                        name: "FK_DocumentTemplateGroups_DocumentTemplates_TemplateId",
+                        column: x => x.TemplateId,
+                        principalTable: "DocumentTemplates",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_DocumentTemplateGroups_Groups_GroupId",
+                        column: x => x.GroupId,
+                        principalTable: "Groups",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -410,6 +485,21 @@ namespace DiplomaTracker.Api.Migrations
                 column: "Title");
 
             migrationBuilder.CreateIndex(
+                name: "IX_DocumentTemplateGroups_GroupId",
+                table: "DocumentTemplateGroups",
+                column: "GroupId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentTemplates_OwnerId",
+                table: "DocumentTemplates",
+                column: "OwnerId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentTemplateTeachers_TeacherId",
+                table: "DocumentTemplateTeachers",
+                column: "TeacherId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Faculties_Name",
                 table: "Faculties",
                 column: "Name",
@@ -562,6 +652,12 @@ namespace DiplomaTracker.Api.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
+                name: "DocumentTemplateGroups");
+
+            migrationBuilder.DropTable(
+                name: "DocumentTemplateTeachers");
+
+            migrationBuilder.DropTable(
                 name: "GroupReviewers");
 
             migrationBuilder.DropTable(
@@ -572,6 +668,9 @@ namespace DiplomaTracker.Api.Migrations
 
             migrationBuilder.DropTable(
                 name: "TopicReservations");
+
+            migrationBuilder.DropTable(
+                name: "DocumentTemplates");
 
             migrationBuilder.DropTable(
                 name: "Submissions");

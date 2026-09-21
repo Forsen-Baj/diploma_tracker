@@ -11,7 +11,7 @@ Newest status first; keep entries short.
 | System design (binding authority) | `docs/superpowers/specs/2026-09-15-diploma-tracker-system-design.md` |
 | Increment designs | `docs/superpowers/specs/<date>-<topic>-design.md` |
 | Implementation plans | `docs/superpowers/plans/` |
-| Session handoffs (latest: `2026-09-19-phase-5-resume.md`) | `docs/superpowers/handoffs/` |
+| Session handoffs (latest: `2026-09-20-phase-6-complete.md`) | `docs/superpowers/handoffs/` |
 | Tests to write at the end of the project | `docs/superpowers/test-backlog.md` |
 | Per-plan execution ledger, briefs, reports, review packages (git-ignored, local only — does **not** travel between machines, so a handoff must be self-contained) | `.superpowers/sdd/<plan-name>/` |
 | End-to-end check scripts (committed since 2026-09-18) | `.superpowers/checks/` |
@@ -34,9 +34,9 @@ management) sits between 2 and 3.
 | Structure and administration refinements | Done — commit `Implement design system and structure refinements` | `2026-09-17-structure-and-administration-refinements-design.md` | `2026-09-17-structure-and-administration-refinements.md` |
 | 4 Topics and reservation | Done — commit `Implement thesis topics and reservation` | `2026-09-17-topics-and-reservation-design.md` (amended 2026-09-18) | `2026-09-17-topics-and-reservation.md` |
 | 5 Submission and review | Done — commits `Added basic submission workflow`, `Complete submission and review` | `2026-09-17-submission-and-review-design.md` | `2026-09-17-submission-and-review.md` |
-| 6 Document templates | Planned | `2026-09-17-document-templates-design.md` | `2026-09-17-document-templates.md` |
+| 6 Document templates | Done — commit `Implement document templates` | `2026-09-17-document-templates-design.md` (amended 2026-09-19) | `2026-09-17-document-templates.md` |
 | 7 Document preview and commenting | Deferred by the owner; revisit after phase 6 | — | — |
-| 8 Hardening and polish | Opened by the owner 2026-09-19; design not yet written. Scope: the security items in *Parked* (rate limiting and its prerequisites, security logging, admin password length, identity proof during registration, token lifetime after archiving, world-readable reviewer lists and structure, OOXML container validation), the accessibility pass, step reordering, the orphaned-upload archive (a small feature with its own design paragraph), the performance and data niggles | — | — |
+| 8 Hardening and polish | Scope settled by the owner 2026-09-19; design not yet written — prompt in `handoffs/2026-09-19-phase-8-design-prompt.md`. Built after phase 6 | — | — |
 
 Build order: onboarding → 3 → 4 → 5 → 6 → 8. Specs live in `docs/superpowers/specs/`, plans in
 `docs/superpowers/plans/`. Each plan assumes the previous ones are implemented; execute them
@@ -71,21 +71,21 @@ before the global selection deadline (phase 4); output is `.docx` only, no PDF (
 teachers see only relevant groups (phase 5).
 
 Parked for later (not blocking):
-- List reads use `Include` rather than projecting to DTOs in the query (`GroupService`,
-  `DepartmentService`); revisit when the phase 4 topic catalogue enlarges lists.
-- When a new faculty collides with two different existing faculties at once (one on name,
-  one on short name), the 409 message may name the short name rather than the name.
 - Tests to write in the end-of-project testing pass are collected in
   `docs/superpowers/test-backlog.md`, one section per phase.
-- Rate limiting is built but switched off (`RateLimiting:Enabled` = `false` in `appsettings.json`) until the owner enables it. Before enabling: forwarded-headers handling for a reverse proxy, a per-IP budget that suits a classroom behind one NAT (login and claim share one budget), and whether `PUT /api/auth/password` needs a limit.
-- Onboarding questions still open: student-number normalisation keeps internal spaces and does not fold Latin/Cyrillic lookalikes; administrators may change their own password to 8 characters; email + student number is weak proof of identity while registration is open.
-- Drag-and-drop reordering of step templates: owner wants it in phase 8, after the core workflows.
-- Parked from the phase 5 review and security audit, owner's decision: the upload content check is four bytes of ZIP magic, so a `.jar` (on the supporting blocklist) passes as a `.docx` — a real fix opens a `ZipArchive`, requires `[Content_Types].xml` plus the `word/`/`ppt/` prefix and caps the compression ratio, and the spec's §5 wording should stop implying the blocklist covers `.jar`; `studentTask.notFound`/`notYours` (and the submission pair) are existence oracles the spec's §7 mandates (unexploitable with random v4 ids; the file endpoint does it right); the review queue is unpaginated; spec §8 shortfalls — the student dashboard omits the most recent decision and the teacher dashboard shows a group count instead of the progress of visible groups; progress-matrix keyboard access belongs to the accessibility pass.
-- Orphaned upload files when a group is deleted: the owner wants an archive of them that an administrator can manage — a phase 8 feature, not a bug fix.
-- Owner notes from the phase 5 browser walkthrough, not yet triaged: *My work* shows a blocked step only as *Not started*, with no hint that it is blocked; the step timeline lists versions oldest first; a zero-byte main file is refused with "add the main document"; the teacher's *My groups* rows open on click but show no affordance; the bulk step-assignment date inputs have no accessible names; names read "Demo Teacher" in the header but "Teacher Demo" in the timeline and queue; the native file input's "Choose file" text follows the browser language, not the interface language; the *Late submissions* tile counts late submissions (two versions of one step count twice) exactly as the design's `students/{id}/progress` row says — confirm that is what the owner wants.
-- The check scripts leave about 60 **unarchived** students (and `RF Step …` templates) in `SEED-A` (about 15 per full pass of the six scripts), which crowd the progress matrix and the group page; find which scripts skip the archive step described under *Gotchas*.
-- Parked from the phase 3 review: a group whose students are all archived cannot be deleted; reviewer lists and the academic structure are readable by any signed-in user; tokens stay valid up to 60 minutes after archiving or deactivation; accessibility pass (request sequencing, modal initial focus, segmented-control keyboard behaviour, loading states announced).
-- Parked from the phase 4 review, owner to decide: `IsSelectionOpenAsync` re-reads `PlatformSettings` on every call; `TopicService` repeats five identical correlated subqueries per topic row; `StudentProfile.TopicId` and the `Approved` reservation are two sources of truth for whether a student holds a topic; a rejection carrying **no** comment shows the student nothing at all on their *My topic* card (the spec ties that block to the comment); `selectionClosedRaw` is computed only at render, so a page left open across the deadline keeps offering the actions until something re-renders (the API refuses the call regardless).
+- Phase 8 "Hardening and polish" holds everything else the reviews parked; its settled scope
+  and the design prompt are in `docs/superpowers/handoffs/2026-09-19-phase-8-design-prompt.md`.
+- Parked from phase 6, for phase 8: two concurrent template file replacements orphan the losing
+  file (no concurrency token on `DocumentTemplate`) — goes with the orphaned-upload archive; an
+  upload over the 12 MB request limit is refused by the global 413 mapping, whose message talks
+  about a student import rather than a template; template generation and upload have **no
+  concurrency cap** (owner accepted the risk 2026-09-19 — both are CPU-bound and any signed-in
+  user can call generate); `{{supervisor.email}}` shows a student the supervisor of any catalogue
+  topic they pick, although the topic list hides it (owner: intended, staff emails are public).
+- Accessibility pass (request sequencing, modal initial focus, segmented-control keyboard
+  behaviour, loading states announced, progress-matrix keyboard access): parked until the owner
+  has consulted on it; not in phase 8.
+- Rate limiting is built but switched off (`RateLimiting:Enabled` = `false` in `appsettings.json`) and stays that way by the owner’s decision (2026-09-19); it is not in phase 8. Before enabling: forwarded-headers handling for a reverse proxy, a per-IP budget that suits a classroom behind one NAT (login and claim share one budget), and whether `PUT /api/auth/password` needs a limit.
 - The interface ships **one theme only** — `src/index.css` defines a single set of `--color-*` values and there is no `prefers-color-scheme`, `data-theme` or toggle anywhere. Do not assume a dark mode exists when styling.
 
 ## How work is run
@@ -143,6 +143,9 @@ Parked for later (not blocking):
   against the content root to `backend/DiplomaTracker.Api/App_Data/uploads`, git-ignored as
   `App_Data/`); hosted deployments set `Storage__RootPath`. Startup validation refuses a
   missing or unwritable path.
+- `DocumentFormat.OpenXml` 3.5.1 is referenced by the API for template scanning and generation
+  (phase 6). Template uploads are also bounded before parsing: at most 1,000 zip entries, 100 MB
+  uncompressed, 20 MB of `word/*.xml`, XML depth 128.
 - Secrets (`ConnectionStrings:DefaultConnection`, `Jwt:Secret`) live in user-secrets,
   never in `appsettings*.json`. Never print them.
 - Development seed accounts: `admin@diploma.local`, `teacher@diploma.local`,
@@ -176,6 +179,21 @@ Parked for later (not blocking):
 - **Visibility** for teachers goes through `IAccessScope` (groups they review, or where they
   supervise a student); new group- or student-scoped queries must use it. A hidden resource
   answers exactly like a missing one — same status, code and message.
+- **Never upload a picked `File` handle directly.** Chrome aborts with
+  `net::ERR_UPLOAD_FILE_CHANGED` when the file's bytes changed on disk after it was picked (the
+  natural "fix it in Word and press Save again" loop), and `fetch` rejects with a plain
+  `TypeError` that looks like "no connection to the server" while the server never sees the
+  request. Snapshot the bytes at submit (`await file.arrayBuffer()`, upload a fresh `File`) and
+  map a read failure to "the file changed on disk, choose it again".
+- **Template markers** are matched per paragraph after joining its runs, in body, tables,
+  headers, footers, footnotes, endnotes and comments; anything between `{{` and `}}` counts, so
+  an unknown key is refused at upload. A new key needs an entry in `MarkerVocabulary` **and** in
+  `templates.markerDescriptions` in both translation files. `{{group.code}}` is the group marker —
+  there is no `group.name`.
+- **A template upload is refused if it carries active or external content** (macros, embedded or
+  ActiveX objects, altChunk, custom UI, external relationships other than http/https/mailto
+  hyperlinks, an attached template, or INCLUDE/LINK/DDE fields), because every generated copy is
+  handed to students and staff. Ordinary `HYPERLINK` fields and tables of contents are fine.
 - **Every `DateTime` on the wire is UTC and ends in `Z`.** `UtcDateTimeJsonConverter` is
   registered globally in `Program.cs`; an offset-less value sent to the API is read as UTC, so
   the client must send UTC instants (the admin UI converts local input). Never introduce
@@ -186,7 +204,7 @@ Parked for later (not blocking):
   in-app browser, and sign-in there is done by the owner.
 - **Rate limiter is off by configuration.** With `RateLimiting:Enabled` = `true`, `login` and `claim` allow 10 requests per minute per IP; scripted checks must then pace their calls or they receive 429.
 - **Seed student number** is `SEED-0001`; imported and claimable test students need their own unique numbers.
-- **`.superpowers/` is never committed:** `.superpowers/sdd/` has its own ignore file and `/.superpowers/checks/` is in `.gitignore`.
+- **`.superpowers/sdd/` is never committed** (it has its own ignore file, and it does not travel between machines — a handoff must be self-contained). `.superpowers/checks/` **is** committed, despite the stale-looking `.gitignore` entry: the scripts were added with `git add -f` on 2026-09-18 and tracked files stay tracked.
 - **Error contract:** every API error is `{ code, message }` (`fields` for `validation.failed`, `errors` for import rows); codes live in per-area catalogues and are translated in `src/i18n/{uk,en}.json`. Never compare message text.
 - **Check scripts** (`.superpowers/checks/`) run against the live local database. They are committed (they were git-ignored until 2026-09-18). Uniqueness across runs is carried by **codes, emails and student numbers**, never by the academic year — the year is a realistic `2026/2027` and the format rule now rejects stamped values. A script that creates groups deletes them at the end of a successful run; because a group cannot be deleted while any student points at it and students cannot be deleted at all, the script first restores, moves them into the seeded group and archives them there.
 - **i18n:** `npm run i18n:check` validates that uk and en have the same keys and each language's own plural categories (uk one/few/many, en one/other).
@@ -218,5 +236,8 @@ Parked for later (not blocking):
 - 2026-09-17 — Onboarding refined: an access reset reopens only that student's account (`ClaimReopened`), account events are logged, rate limiting switched off, group details show student number and claim status.
 - 2026-09-18 — Design system and structure refinements implemented: `{ code, message }` error contract, Tailwind 4 + Headless UI component library, uk/en interface, group codes, steps per faculty with start dates, administrators page, student archiving, steps for late joiners.
 - 2026-09-18 — Owner notes from the phase 3 browser test applied: academic year restricted to digits and `/ \ - .` (max 20, `validation.failed` with `format`), `Group.Name` removed entirely so the code is the only group identity, step template `Order` unique per faculty (`taskTemplate.orderTaken` on create; an update moves the step and shifts its neighbours), check scripts use realistic academic years and delete every group they create.
+- 2026-09-20 — Phase 6 implemented: Word templates with a 20-marker vocabulary, per-template audiences (groups, named teachers, all teachers, all students), upload validation (package safety, marker scanning, size and depth limits), generation filling body, tables, headers, footnotes and endnotes, the Documents page for every role, and `templates-check.mjs` (60 checks). Whole-plan review (0 Critical, 3 Important) and security audit (1 High, 2 Medium) fixed in one wave; the scoped re-review's two Important defects in the field-code check fixed; walkthrough passed with the owner opening generated documents in Word. Owner decisions: no concurrency cap (accepted risk), `{{supervisor.email}}` stays visible to students, generation clears author document properties.
+- 2026-09-20 — Owner's manual test of phase 6 produced two fixes (commit `Fix template upload retry and fill a student's own topic`): a retried upload now snapshots the file's bytes at Save, so fixing a refused template in Word and pressing Save again works instead of failing with a misleading "no connection" message; and a student's document is filled from their own topic (approved or reserved) — naming a catalogue topic is refused, and the dialog offers a choice only when an approved topic and a pending change request both exist.
+- 2026-09-19 — Parked items triaged by the owner: twenty go to phase 8 (prompt in `handoffs/2026-09-19-phase-8-design-prompt.md`); rate limiting stays off, registration identity proof and structure readability stay as they are, the walkthrough notes are dropped, the accessibility pass stays parked.
 - 2026-09-19 — Phase 5 implemented: step submissions with a main document and up to three supporting files, versioned resubmission, reviewer approve (mark 0–100) / return (comment), strict step order, late flag, secured downloads, review queue, group progress matrix, student and teacher dashboards. Whole-plan review (0 Critical, 7 Important) and security audit (1 High, 3 Medium) fixed in one wave; the scoped re-review's two new Minors fixed; seven-step browser walkthrough passed. All API dates now serialise as UTC. Phase 8 "Hardening and polish" opened.
 - 2026-09-19 — Phase 4 implemented: topic catalogue, reservations, student proposals, change requests for an approved topic, administrator assignment from the student form (`PUT /api/students/{id}/topic`), administrator amendment of a topic at any stage, and the global selection deadline on a new Settings page. Reviewed in two halves (backend 1 Critical / 8 Important, frontend 2 Critical / 9 Important); one fix wave and a scoped re-review returned 39 of 40 findings fixed with no new defects.

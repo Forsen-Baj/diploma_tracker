@@ -9,6 +9,7 @@ using DiplomaTracker.Api.Filters;
 using DiplomaTracker.Api.Interfaces;
 using DiplomaTracker.Api.Models;
 using DiplomaTracker.Api.Services;
+using DiplomaTracker.Api.Services.Documents;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics;
@@ -71,6 +72,7 @@ builder.Services.AddScoped<ITopicService, TopicService>();
 builder.Services.AddScoped<IReservationService, ReservationService>();
 builder.Services.AddScoped<IAccessScope, AccessScope>();
 builder.Services.AddScoped<IStudentWorkflowService, StudentWorkflowService>();
+builder.Services.AddScoped<IDocumentTemplateService, DocumentTemplateService>();
 
 builder.Services.AddSingleton<IFileStorage>(serviceProvider =>
 {
@@ -209,6 +211,16 @@ app.UseStatusCodePages(async context =>
 StartupValidation.ValidateJwtSettings(app.Services.GetRequiredService<IOptions<JwtSettings>>().Value);
 StartupValidation.ValidateCorsSettings(app.Services.GetRequiredService<IOptions<CorsSettings>>().Value);
 _ = app.Services.GetRequiredService<IFileStorage>();
+
+// Fix wave M15: logged once, here, rather than per-request - a trimmed Linux container without
+// tzdata/ICU makes every document's date.today/date.year marker silently use UTC instead of Kyiv
+// time, with no other trace.
+if (MarkerVocabulary.KyivTimeZoneFallenBackToUtc)
+{
+    app.Logger.LogWarning(
+        "None of Europe/Kyiv, Europe/Kiev or FLE Standard Time could be resolved on this host; " +
+        "document date markers (date.today, date.year) will use UTC instead of Kyiv time.");
+}
 
 using (var scope = app.Services.CreateScope())
 {

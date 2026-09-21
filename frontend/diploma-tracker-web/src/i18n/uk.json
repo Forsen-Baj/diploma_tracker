@@ -23,7 +23,8 @@
     "optional": "необов'язково",
     "select": "Оберіть…",
     "savedToast": "Зміни збережено",
-    "deletedToast": "Видалено"
+    "deletedToast": "Видалено",
+    "noOptions": "Немає варіантів"
   },
   "nav": {
     "dashboard": "Головна",
@@ -40,7 +41,8 @@
     "account": "Обліковий запис",
     "signOut": "Вийти",
     "language": "Мова",
-    "review": "Рецензування"
+    "review": "Рецензування",
+    "documents": "Документи"
   },
   "roles": {
     "Admin": "Адміністратор",
@@ -223,6 +225,17 @@
     },
     "selection": {
       "closed": "Термін вибору теми минув."
+    },
+    "template": {
+      "notFound": "Шаблон не знайдено.",
+      "notOwner": "Змінювати можна лише власні шаблони.",
+      "fileMissing": "Додайте шаблон у форматі .docx.",
+      "invalidFile": "Файл не є коректним документом Word.",
+      "unknownMarkers": "Шаблон містить невідомі маркери.",
+      "tooLarge": "Шаблон більший за 10 МБ.",
+      "audienceNotAllowed": "Ви не можете надати доступ цій аудиторії.",
+      "groupInvalid": "Однієї з обраних груп не існує.",
+      "teacherInvalid": "Один з обраних викладачів не існує або неактивний."
     }
   },
   "auth": {
@@ -619,5 +632,69 @@
     "clearDeadline": "Прибрати термін",
     "deadlineSaved": "Термін збережено",
     "deadlineCleared": "Термін прибрано"
+  },
+  "templates": {
+    "title": "Документи",
+    "subtitle": "Шаблони заяв і бланків; завантажені документи заповнюються вашими даними.",
+    "add": "Додати шаблон",
+    "edit": "Редагувати шаблон",
+    "name": "Назва",
+    "description": "Опис",
+    "owner": "Автор",
+    "updatedAt": "Оновлено",
+    "file": "Файл шаблону (.docx)",
+    "replaceFile": "Замінити файл",
+    "fileHint": "Word-документ до 10 МБ із маркерами, наприклад:",
+    "removeCommentsHint": "Перед завантаженням вилучіть коментарі та відстеження змін.",
+    "audienceTitle": "Хто бачить шаблон",
+    "groups": "Групи",
+    "teachers": "Викладачі",
+    "allTeachers": "Усі викладачі",
+    "allStudents": "Усі студенти",
+    "audienceSummary": "Групи: {{groups}}, викладачі: {{teachers}}",
+    "allStudentsBadge": "Усім студентам",
+    "allTeachersBadge": "Усім викладачам",
+    "markersTitle": "Доступні маркери",
+    "copied": "Маркер скопійовано",
+    "copyMarkerAria": "Скопіювати маркер {{marker}}",
+    "clipboardUnavailable": "Буфер обміну тут недоступний; текст маркера виділено, щоб ви могли скопіювати його самостійно.",
+    "download": "Завантажити",
+    "downloadTitle": "Завантажити «{{name}}»",
+    "downloadAudienceLabel": "Кому призначено документ",
+    "topic": "Тема",
+    "topicContext": "Тема: {{title}}",
+    "blank": "Порожній бланк",
+    "forStudent": "Для студента",
+    "student": "Студент",
+    "sourceDownload": "Завантажити оригінал",
+    "deleteConfirm": "Видалити шаблон «{{name}}»?",
+    "empty": "Доступних документів немає.",
+    "saved": "Шаблон збережено",
+    "fileNotReplaced": "Дані збережено; файл не замінено.",
+    "fileChanged": "Файл змінився на диску. Оберіть його ще раз.",
+    "listLoadError": "Не вдалося завантажити список.",
+    "unknownMarkersList": "Невідомі маркери:",
+    "markerDescriptions": {
+      "student_lastName": "Прізвище студента",
+      "student_firstName": "Ім'я студента",
+      "student_patronymic": "По батькові студента",
+      "student_fullName": "Прізвище, ім'я та по батькові студента",
+      "student_shortName": "Прізвище та ініціали студента",
+      "student_email": "Електронна пошта студента",
+      "student_number": "Номер студентського квитка",
+      "group_code": "Шифр групи",
+      "group_academicYear": "Навчальний рік групи",
+      "department_name": "Назва кафедри",
+      "department_shortName": "Скорочена назва кафедри",
+      "faculty_name": "Назва факультету",
+      "faculty_shortName": "Скорочена назва факультету",
+      "topic_title": "Назва теми",
+      "topic_description": "Опис теми",
+      "supervisor_fullName": "ПІБ керівника",
+      "supervisor_shortName": "Прізвище та ініціали керівника",
+      "supervisor_email": "Електронна пошта керівника",
+      "date_today": "Сьогоднішня дата (дд.мм.рррр)",
+      "date_year": "Поточний рік"
+    }
   }
 }

@@ -261,3 +261,34 @@ its review completes.
 - Request-sequencing guards in `ReviewQueuePage`, `StepDetails`, `GroupProgressPage` (a stale response never overwrites a newer one).
 - `formatBytes` values and unit keys in both languages; `StepDetails.blockedMessage` prefers `steps.blocked.*` and falls back to the error catalogue.
 - Timeline rendering of decided and undecided versions; progress matrix cell navigation; queue filters.
+
+## Document templates
+
+### Unit level (no database)
+- `MarkerVocabulary`: 20 keys (`group.code`, not `group.name`); case-insensitive lookup; full name with and without patronymic; short name initials; `date.today`/`date.year` in Kyiv time around midnight UTC; unknown key resolves to empty; the value normaliser (CR/LF, `\v`, `\f`, U+2028/9 become line breaks; characters invalid in XML 1.0 removed; surrogate pairs kept whole).
+- `DocxMarkerProcessor.TryReadMarkers`: body, table, header, footer, footnote, endnote, comment; split runs; spaces around the key; a key with inner spaces is unknown; non-Word input returns false; text-box paragraphs counted once.
+- `DocxMarkerProcessor.Fill`: split-run replacement keeps the first run's formatting and empties the rest; several markers in one paragraph; adjacent markers; multi-line values produce `<w:br/>`; markers in headers and footers; unaffected paragraphs unchanged; author document properties cleared.
+- Package safety: a `.docm`/`.dotx` renamed to `.docx` refused; VbaProject, EmbeddedPackage, EmbeddedObject, ActiveXControl, AlternativeFormatImport (altChunk), CustomUI and RibbonExtensibility parts refused; an external relationship refused, including one in `HyperlinkRelationships` or `DataPartReferenceRelationships` (e.g. `file://\host\share`), while `http`/`https`/`mailto` hyperlinks are accepted; `AttachedTemplate` refused; a field whose leading keyword is INCLUDE/INCLUDETEXT/INCLUDEPICTURE/INCLUDETIFF/LINK/DDE/DDEAUTO refused, including one whose instruction is split across several `<w:instrText>` runs, while an ordinary `HYPERLINK` field (and a table of contents) is accepted.
+- Zip and XML limits: more than 1,000 entries, more than 100 MB uncompressed, more than 20 MB of `word/*.xml`, XML nested deeper than 128, and a DTD each refuse with `template.invalidFile`; an entry whose declared uncompressed size is smaller than its data cannot exceed the budget.
+- Marker regex: a paragraph of `{{` followed by 200,000 spaces finishes within the match timeout (the old lazy pattern backtracked catastrophically); a paragraph longer than 100,000 characters is refused at upload.
+- `FileNameSanitizer`: control characters, `\ / : * ? " < > |`, trailing dots and spaces, over-long names with a surrogate pair on the boundary — same results on Windows and Linux; shared with phase 5 submissions.
+
+### Service level, InMemory
+- `DocumentTemplateService` visibility for admin, owner teacher, all-teachers, named teacher, all-students, named group, other group.
+- Audience rules: a teacher turning on all-students refused; a teacher adding a group they cannot see refused with the same code as a nonexistent group; a group they already had stays saveable; an admin's all-students survives a teacher's save; unknown group (admin) and inactive teacher refused; more than 500 ids refused.
+- Management: non-owner teacher (`template.notOwner` when visible, `template.notFound` when not); replacing the file deletes the old stored file; deleting removes the stored file; a save failure that proves nothing committed deletes the newly stored file, any other failure leaves it and logs the key; a delete failing with `IOException` or `UnauthorizedAccessException` does not fail the request.
+- Generation: student default topic order (approved, pending, none) — the pending case is a regression test, it once threw because `Select` preceded `Include`; student named topic visible vs not; staff for reviewable vs unrelated student; blank form; file name sanitisation; the unknown-marker list capped at 50 entries of 100 characters.
+
+### SQL Server integration
+- Cascade from groups to `DocumentTemplateGroups`; restrict from users to `DocumentTemplateTeachers`.
+- Two concurrent file replacements: today the loser's file is orphaned silently (no concurrency token — parked for phase 8).
+
+### HTTP level
+- Multipart binding of `groupIds`/`teacherIds` lists; `errors` array on `template.unknownMarkers`; download headers (`Content-Disposition` with RFC 5987 for Cyrillic names, `nosniff`); the 12 MB request limit and `RequestFormLimits`; role restrictions on every route; `/api/templates/students` scoping.
+
+### Frontend
+- Editor: admin-only all-students checkbox; a teacher's save preserving the existing all-students value; groups the teacher can no longer see still shown and removable; unknown-marker list rendering; replace-file flow and the "details saved, file not replaced" message.
+- Download dialog: student topic default; staff blank vs student; inline message when a list fails to load.
+- Marker list copy to clipboard, including the fallback when `navigator.clipboard` is unavailable.
+- `MultiSelect`: `aria-invalid`/`aria-describedby`, the no-options row, values not present in the options.
+- `DocumentsPage` request sequencing.

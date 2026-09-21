@@ -45,11 +45,25 @@ topic application picks the topic, and the document arrives already completed.
 (`TemplateId`, `TeacherId`) hold the selected audience; both cascade with the template.
 
 **Upload rules**
-- `.docx` only, at most 10 MB, content must be a valid Word document.
-- Every marker in the document — body, tables, headers and footers — must belong to the
-  vocabulary in §4. An upload containing unknown markers is refused with the list of
-  unknown markers, so a typing mistake is found at once rather than when a student
-  downloads the form.
+- `.docx` only, at most 10 MB, content must be a plain Word document (not a macro-enabled
+  document or a Word template renamed to `.docx`). Before the document is opened its package
+  is inspected: at most 1,000 parts and 100 MB uncompressed in total, at most 20 MB of Word
+  XML, and XML nested at most 128 levels deep, so a small upload cannot expand into an
+  unbounded amount of work.
+- A template carries no active or external content, because every generated copy reaches
+  students and staff under the university's name: no macros, embedded objects, ActiveX
+  controls, imported HTML chunks or custom ribbons; no external relationships except web and
+  mail hyperlinks; no attached template; no `INCLUDE…`, `LINK` or `DDE` fields. Such an upload
+  is refused as an invalid file.
+- Every marker in the document — body, tables, headers, footers, footnotes, endnotes and
+  comments — must belong to the vocabulary in §4. Anything written between `{{` and `}}`
+  counts as a marker, whatever its characters, so a template cannot carry literal
+  double-brace text. An upload containing unknown markers is refused with the list of
+  unknown markers (at most 50), so a typing mistake is found at once rather than when a
+  student downloads the form.
+- Generated documents do not carry the author's identifying document properties (author,
+  last modified by, company, template path); the editor reminds authors to remove comments
+  and tracked changes before uploading.
 - Replacing the file of an existing template runs the same checks.
 
 **Who sees a template**
@@ -59,13 +73,17 @@ topic application picks the topic, and the document arrives already completed.
 
 **Who manages a template**
 - Administrators manage any template and may choose any audience.
-- Teachers manage only their own templates. Their audience is limited to groups they can see
-  (the phase 5 visibility rule) and to named teachers; they cannot choose *all students*.
-  *All teachers* is allowed.
+- Teachers manage only their own templates. The groups they add are limited to groups they
+  can see (the phase 5 visibility rule), plus named teachers; a group they no longer see may
+  stay in the audience or be removed, but not added again. They cannot turn on *all
+  students*, but an administrator's *all students* choice survives their edits. *All
+  teachers* is allowed.
 
 ## 4. Marker vocabulary
 
-A marker is `{{key}}`; spaces inside the braces are ignored and keys are case-insensitive.
+A marker is `{{key}}`; spaces around the key are ignored (`{{ student.lastName }}`) and keys
+are case-insensitive. Values are written as plain text: line breaks become Word line breaks
+and characters Word cannot store are dropped.
 
 | Key | Value |
 |---|---|
@@ -73,7 +91,7 @@ A marker is `{{key}}`; spaces inside the braces are ignored and keys are case-in
 | `student.fullName` | `Прізвище Ім'я По батькові` (patronymic omitted when empty) |
 | `student.shortName` | `Прізвище І. П.` |
 | `student.email`, `student.number` | Email and student ID number |
-| `group.name`, `group.academicYear` | The student's group |
+| `group.code`, `group.academicYear` | The student's group (its code is the group's only name) |
 | `department.name`, `department.shortName` | The group's department |
 | `faculty.name`, `faculty.shortName` | The department's faculty |
 | `topic.title`, `topic.description` | The topic chosen for generation (§5) |
@@ -101,9 +119,14 @@ response is the `.docx` stream named `<template name> — <student last name>.do
   contains only the date markers, giving a blank form.
 
 **Which topic**
-- A student may name any topic visible to them in the catalogue (phase 4) or their own; the
-  supervisor markers come from that topic. Without `topicId`, the student's approved topic is
-  used, otherwise their pending reservation's topic, otherwise none.
+- A document is filled from the reader's own data: a student's document carries a topic the
+  student holds, never one merely browsed in the catalogue. `topicId` names one of the
+  student's own reservations — approved or still pending — and anything else is refused like
+  an unknown topic. Without `topicId` the approved topic is used, otherwise the pending
+  reservation's topic, otherwise none.
+- The interface follows the same rule: a student who holds one topic is not asked to choose,
+  and only a student with both an approved topic and a pending change request is offered the
+  two.
 - Staff generating for a student always use that student's approved or pending topic;
   `topicId` is ignored.
 
@@ -113,9 +136,10 @@ a marker is found regardless of splitting, and the replacement keeps the formatt
 run where the marker starts. Paragraphs without markers are left untouched.
 
 **Errors** — `template.notFound` (404; also for templates the user cannot see),
-`template.notOwner` (403), `template.invalidFile` (400), `template.unknownMarkers` (400, with
-`markers`), `template.tooLarge` (400), `template.audienceNotAllowed` (403),
-`student.notFound` (404; also for students the user cannot see), `topic.notFound` (404).
+`template.notOwner` (403), `template.invalidFile` (400), `template.unknownMarkers` (400, the
+unknown markers listed in the standard `errors` field), `template.tooLarge` (400), `template.audienceNotAllowed` (403),
+`student.notFound` (404; also for students the user cannot see), `student.profileNotFound`
+(404; a student account without a student profile), `topic.notFound` (404).
 
 ## 6. API
 
@@ -129,13 +153,15 @@ run where the marker starts. Paragraphs without markers are left untouched.
 | DELETE | `/api/templates/{id}` | owner, Admin | Delete template and stored file |
 | GET | `/api/templates/{id}/source` | owner, Admin | Download the original file with markers |
 | POST | `/api/templates/{id}/generate` | any role (visible) | Generate (§5) |
-| GET | `/api/templates/markers` | Teacher, Admin | Vocabulary with descriptions |
+| GET | `/api/templates/markers` | Teacher, Admin | Vocabulary (keys and markers; descriptions live in the interface translations) |
+| GET | `/api/templates/students` | Teacher, Admin | Students the caller may generate for (non-archived, active), with group code and academic year |
 
 ## 7. Interface
 
 - **Documents** tab (every role) — list of visible templates with name and description.
-  - Student: *Download* opens a small dialog with a topic selector pre-set to their own topic,
-    then downloads the filled document.
+  - Student: *Download* fills the document from their own record. The dialog names the topic
+    it will use and asks nothing when the student holds one topic or none; it offers a choice
+    only when an approved topic and a pending change request both exist.
   - Teacher and administrator: *Download* offers *Blank* or *For a student* (student
     selector limited to visible students).
 - **Template editor** (Teacher, Admin) — name, description, file upload, audience (groups
@@ -151,8 +177,8 @@ generator, endpoints, then pages. Automated checks: backend build,
 `has-pending-model-changes`, a scripted check that uploads a sample template containing
 split-run markers in body, table and header, refuses an unknown marker, generates for a
 student with a pending topic and for a chosen catalogue topic, and confirms visibility and
-audience refusals; the generated file is opened with the Open XML SDK in the script to assert
-the filled values. Frontend `tsc`, lint and build. The owner opens generated documents in
+audience refusals; the script reads the generated package with a minimal zip reader and
+asserts the filled text of the document, header and footer parts. Frontend `tsc`, lint and build. The owner opens generated documents in
 Word at the end. Unit tests go to `docs/superpowers/test-backlog.md`.
 
 ## 9. Not included

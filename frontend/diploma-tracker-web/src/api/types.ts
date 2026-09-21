@@ -492,3 +492,52 @@ export type StudentProgress = {
   averageMark: number | null
   nextDeadline: string | null
 }
+
+export type NamedOption = {
+  id: string
+  name: string
+}
+
+export type TemplateAudience = {
+  visibleToAllStudents: boolean
+  visibleToAllTeachers: boolean
+  groups: NamedOption[]
+  teachers: NamedOption[]
+}
+
+export type DocumentTemplate = {
+  id: string
+  name: string
+  description: string | null
+  ownerId: string
+  ownerName: string
+  originalFileName: string
+  sizeBytes: number
+  createdAt: string
+  updatedAt: string
+  canManage: boolean
+  audience: TemplateAudience | null
+}
+
+export type TemplateInput = {
+  name: string
+  description?: string
+  visibleToAllStudents: boolean
+  visibleToAllTeachers: boolean
+  groupIds: string[]
+  teacherIds: string[]
+}
+
+export type MarkerInfo = {
+  key: string
+  marker: string
+}
+
+// Pre-flight A1: the group is identified only by its code, so the selector label (and the value
+// this field carries) is the group code, not a name.
+export type EligibleStudent = {
+  id: string
+  name: string
+  groupCode: string
+  groupAcademicYear: string
+}
