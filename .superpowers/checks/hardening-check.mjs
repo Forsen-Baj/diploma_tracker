@@ -444,6 +444,10 @@ const teacherDashboard = (await call('GET', '/api/dashboard/teacher', { token: q
 const teacherQueueTotal = (await call('GET', `/api/review/queue?groupId=${queueGroup.id}`, { token: queueTeacherToken })).body.total
 check('30 teacher dashboard waitingReviews matches queue total', teacherDashboard.waitingReviews, teacherQueueTotal)
 check('30a teacher dashboard latestForReview capped at five', teacherDashboard.latestForReview.length <= 5, true)
+// §7.4: the group table lists the groups a teacher reviews. The seed teacher supervises the queue
+// students (their topics are hers) but does not review their group, so it is not in her table.
+check('30b reviewer sees the group in the dashboard table', teacherDashboard.groups.some((g) => g.groupId === queueGroup.id), true)
+check('30c a supervisor who does not review it does not', (await call('GET', '/api/dashboard/teacher', { token: teacher })).body.groups.some((g) => g.groupId === queueGroup.id), false)
 
 const adminDashboard = (await call('GET', '/api/dashboard/admin', { token: admin })).body
 const ts = adminDashboard.topicSelection

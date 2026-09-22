@@ -168,10 +168,20 @@ public class DashboardService : IDashboardService
         };
     }
 
-    /// The per-group breakdown, identical for both roles apart from which groups are in it.
+    /// The per-group breakdown, identical for both roles apart from which groups are in it: every
+    /// group for an administrator, and for a teacher only the groups they review (§7.4). A group a
+    /// teacher sees only because they supervise one of its students is left out, as its overdue
+    /// and waiting figures are about students the teacher does not review; that student appears
+    /// under the students they supervise instead.
     private async Task<IReadOnlyList<DashboardGroupRow>> GroupRowsAsync(UserContext user, DateTime now)
     {
-        return await _accessScope.VisibleGroups(user).AsNoTracking()
+        var groups = _accessScope.VisibleGroups(user);
+        if (user.IsTeacher)
+        {
+            groups = groups.Where(g => g.Reviewers.Any(r => r.ReviewerId == user.UserId));
+        }
+
+        return await groups.AsNoTracking()
             .OrderByDescending(g => g.AcademicYear)
             .ThenBy(g => g.Code)
             .Select(g => new DashboardGroupRow
