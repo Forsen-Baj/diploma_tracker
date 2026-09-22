@@ -80,3 +80,14 @@ export async function removeGroup(call, token, group) {
   }
   return listed
 }
+
+// Work on the steps starts only once a student holds a topic. This gives one: a teacher creates a
+// catalogue topic in the student's department and an administrator assigns it. The topic is
+// deleted in the late phase, after the student's group - and with it the student's hold on the
+// topic - is gone. Returns the assignment's response.
+export async function giveTopic(call, cleanup, { admin, teacher, departmentId, studentId, title }) {
+  const created = await call('POST', '/api/topics', { token: teacher, json: { title, departmentId } })
+  const topic = created.body ?? created.data
+  cleanup.addLast(`topic ${title}`, () => call('DELETE', `/api/topics/${topic.id}`, { token: admin }))
+  return call('PUT', `/api/students/${studentId}/topic`, { token: admin, json: { topicId: topic.id } })
+}

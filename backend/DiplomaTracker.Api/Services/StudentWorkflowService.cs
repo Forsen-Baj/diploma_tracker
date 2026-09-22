@@ -45,7 +45,7 @@ public class StudentWorkflowService : IStudentWorkflowService
         }
 
         var tasks = await LoadStudentTasksAsync(profile.Id, profile.GroupId);
-        return (BuildSteps(tasks).Select(step => step.Response).ToList(), null);
+        return (BuildSteps(tasks, profile.TopicId is not null).Select(step => step.Response).ToList(), null);
     }
 
     public async Task<(StepDetailsResponse? step, string? error)> GetStepAsync(UserContext user, Guid studentTaskId)
@@ -78,7 +78,7 @@ public class StudentWorkflowService : IStudentWorkflowService
             return (null, WorkflowErrors.StudentTaskNotYours);
         }
 
-        var steps = BuildSteps(await LoadStudentTasksAsync(task.StudentProfileId, task.StudentProfile.GroupId));
+        var steps = BuildSteps(await LoadStudentTasksAsync(task.StudentProfileId, task.StudentProfile.GroupId), task.StudentProfile.TopicId is not null);
         var step = steps.First(s => s.Task.Id == task.Id);
         if (!step.Response.CanSubmit)
         {
@@ -560,7 +560,7 @@ public class StudentWorkflowService : IStudentWorkflowService
 
     private async Task<StepDetailsResponse> BuildDetailsAsync(UserContext user, StudentTask task)
     {
-        var steps = BuildSteps(await LoadStudentTasksAsync(task.StudentProfileId, task.StudentProfile.GroupId));
+        var steps = BuildSteps(await LoadStudentTasksAsync(task.StudentProfileId, task.StudentProfile.GroupId), task.StudentProfile.TopicId is not null);
         var step = steps.First(s => s.Task.Id == task.Id).Response;
 
         var timeline = await _dbContext.Submissions.AsNoTracking()
@@ -655,7 +655,10 @@ public class StudentWorkflowService : IStudentWorkflowService
             .ToListAsync();
     }
 
-    private static List<BuiltStep> BuildSteps(IReadOnlyList<StepRow> rows)
+    /// A step can be submitted only while the student holds a topic (StudentProfile.TopicId, the
+    /// single source of truth), its previous step is approved, and it is neither approved nor
+    /// awaiting review. The missing topic is reported first: it is the first thing to fix.
+    private static List<BuiltStep> BuildSteps(IReadOnlyList<StepRow> rows, bool hasTopic)
     {
         var result = new List<BuiltStep>(rows.Count);
         for (var index = 0; index < rows.Count; index++)
@@ -667,6 +670,7 @@ public class StudentWorkflowService : IStudentWorkflowService
             {
                 StudentTaskStatus.Approved => WorkflowErrors.AlreadyApproved,
                 StudentTaskStatus.Submitted => WorkflowErrors.AwaitingReview,
+                _ when !hasTopic => WorkflowErrors.TopicRequired,
                 _ when !previousApproved => WorkflowErrors.PreviousNotApproved,
                 _ => null
             };

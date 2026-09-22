@@ -580,6 +580,8 @@ finds nothing referencing it.
   list is removed, and the text no longer implies it stops a disguised archive.
 - `2026-09-17-submission-and-review-design.md` §7 and §8 — the review queue is paged; the student
   progress figure counts late steps.
+- `2026-09-17-submission-and-review-design.md` §2, §4, §7 and §8 — work on the steps starts only
+  once the student holds a topic (`step.topicRequired`, 409). (Owner decision, 2026-09-23.)
 - `2026-09-17-topics-and-reservation-design.md` — `StudentProfile.TopicId` is named as the single
   source of truth and reservations as history.
 - `2026-09-17-document-templates-design.md` — `DocumentTemplate` carries a row version and a

@@ -156,6 +156,7 @@
       "notYours": "This step belongs to another student."
     },
     "step": {
+      "topicRequired": "Choose a topic first: work on the steps starts once your topic is approved.",
       "previousNotApproved": "The previous step must be approved first.",
       "awaitingReview": "The latest submission is still under review.",
       "alreadyApproved": "This step is already approved."
@@ -564,6 +565,7 @@
       "Approved": "Approved"
     },
     "blocked": {
+      "step_topicRequired": "You can start working on the steps once your topic is approved.",
       "step_previousNotApproved": "The previous step must be approved first.",
       "step_awaitingReview": "Your work is under review.",
       "step_alreadyApproved": "This step is approved."

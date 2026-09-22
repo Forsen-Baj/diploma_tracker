@@ -1,4 +1,4 @@
-import { createCleanup, removeGroup } from './checkCleanup.mjs'
+import { createCleanup, giveTopic, removeGroup } from './checkCleanup.mjs'
 
 const API = 'http://localhost:5000'
 const stamp = Date.now().toString().slice(-6)
@@ -129,8 +129,15 @@ const studentToken = await login(studentEmail, 'Password1!')
 // The student is added to the group after its steps are assigned, so LateJoinerTaskAssigner
 // creates the StudentTask rows at membership time (Services/LateJoinerTaskAssigner.cs) - nothing
 // creates them lazily on read.
+const stepsWithoutTopic = (await call('GET', '/api/student-tasks/mine', { token: studentToken })).body
+check('01 steps exist on join', stepsWithoutTopic.length, 2)
+
+// Work starts only once the student holds a topic.
+check('01a without a topic the first step is blocked', stepsWithoutTopic[0].blockReason, 'step.topicRequired')
+check('01b submitting without a topic refused', (await call('POST', `/api/student-tasks/${stepsWithoutTopic[0].id}/submissions`, { token: studentToken, form: form({ main: docx }) })).body.code, 'step.topicRequired')
+await giveTopic(call, cleanup, { admin, teacher, departmentId: department.id, studentId: student.id, title: `Workflow Topic ${stamp}` })
+
 const steps = (await call('GET', '/api/student-tasks/mine', { token: studentToken })).body
-check('01 steps exist on join', steps.length, 2)
 check('02 first step can submit', steps[0].canSubmit, true)
 check('03 second step blocked', steps[1].blockReason, 'step.previousNotApproved')
 check('04 submit second step refused', (await call('POST', `/api/student-tasks/${steps[1].id}/submissions`, { token: studentToken, form: form({ main: docx }) })).body.code, 'step.previousNotApproved')

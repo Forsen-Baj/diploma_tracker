@@ -1,5 +1,5 @@
 import { inflateRawSync } from 'node:zlib'
-import { createCleanup, removeGroup } from './checkCleanup.mjs'
+import { createCleanup, giveTopic, removeGroup } from './checkCleanup.mjs'
 
 // Phase 8 §9 verification script (Task 17 step 3): the 35 checks enumerated in the task-17 brief,
 // covering sessions/passwords (§2), uploads (§3), identity (§5), archive (§4), queue/progress/
@@ -229,6 +229,8 @@ const uploadsGroupTask = (await call('POST', '/api/group-tasks', { token: admin,
 const uploaderEmail = `uploader.${stamp}@student.local`
 const uploader = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Upload', lastName: 'Er', email: uploaderEmail, studentNumber: `UP${stamp}`, password: 'Password1!', groupId: commonGroup.id } })).body
 const uploaderToken = await loginToken(uploaderEmail, 'Password1!')
+// Work on the steps starts only once a student holds a topic (every submitting student gets one).
+await giveTopic(call, cleanup, { admin, teacher, departmentId: hardeningDepartment.id, studentId: uploader.id, title: `Upload Topic ${stamp}` })
 const uploaderSteps = (await call('GET', '/api/student-tasks/mine', { token: uploaderToken })).body
 const uploadStepId = uploaderSteps.find((s) => s.groupTaskId === uploadsGroupTask.id).id
 
@@ -271,6 +273,7 @@ const archiveGroupTask = (await call('POST', '/api/group-tasks', { token: admin,
 const studentXEmail = `archive.x.${stamp}@student.local`
 const studentX = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Archive', lastName: 'X', email: studentXEmail, studentNumber: `AX${stamp}`, password: 'Password1!', groupId: archiveGroup.id } })).body
 const studentXToken = await loginToken(studentXEmail, 'Password1!')
+await giveTopic(call, cleanup, { admin, teacher, departmentId: hardeningDepartment.id, studentId: studentX.id, title: `Archive Topic ${stamp}` })
 const studentYEmail = `archive.y.${stamp}@student.local`
 const studentY = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Archive', lastName: 'Y', email: studentYEmail, studentNumber: `AY${stamp}`, password: 'Password1!', groupId: archiveGroup.id } })).body
 
@@ -330,6 +333,7 @@ async function submitInMoveA(suffix) {
   const email = `move.${suffix}.${stamp}@student.local`
   const created = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Move', lastName: suffix, email, studentNumber: `MV${suffix}${stamp}`, password: 'Password1!', groupId: moveA.id } })).body
   const token = await loginToken(email, 'Password1!')
+  await giveTopic(call, cleanup, { admin, teacher, departmentId: hardeningDepartment.id, studentId: created.id, title: `Move Topic ${suffix} ${stamp}` })
   const step = (await call('GET', '/api/student-tasks/mine', { token })).body[0]
   await call('POST', `/api/student-tasks/${step.id}/submissions`, { token, form: submissionForm({ main: docx(paragraph(`Moved work ${suffix} ${stamp}`)) }) })
   return { ...created, email, token }
@@ -378,6 +382,7 @@ await call('POST', `/api/groups/${queueGroup.id}/reviewers`, { token: admin, jso
 async function makeQueueStudent(suffix) {
   const email = `queue.${suffix}.${stamp}@student.local`
   const created = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Queue', lastName: suffix, email, studentNumber: `Q${suffix}${stamp}`, password: 'Password1!', groupId: queueGroup.id } })).body
+  await giveTopic(call, cleanup, { admin, teacher, departmentId: hardeningDepartment.id, studentId: created.id, title: `Queue Topic ${suffix} ${stamp}` })
   return { id: created.id, token: await loginToken(email, 'Password1!') }
 }
 

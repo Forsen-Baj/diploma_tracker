@@ -20,6 +20,7 @@ group come from the same data and appear on the dashboards.
 | Topic | Decision |
 |---|---|
 | Who reviews | Teachers assigned as reviewers of the student's group, and the student's own supervisor; administrators may act on any submission |
+| When work starts | Once the student holds a topic (`StudentProfile.TopicId` is set — an approved request or proposal, or an administrator's assignment); a pending or rejected request is not enough, and a student whose topic is released cannot submit again until they hold one |
 | Step order | Strict: a step accepts submissions only after the previous step is approved |
 | Files per submission | One main document (`.docx`, `.pdf` or `.pptx`) plus up to three supporting files from an allowlist (`.pdf`, `.docx`, `.pptx`, `.png`, `.jpg`/`.jpeg`) |
 | Messages | The student may add a message to a submission; the reviewer comments on the decision |
@@ -70,7 +71,7 @@ progress on one assigned step.
 ## 4. Workflow
 
 ```
-Pending   --submit (student, previous step Approved)--> Submitted
+Pending   --submit (student holds a topic, previous step Approved)--> Submitted
 Submitted --approve (reviewer, mark required)--------> Approved   (final)
 Submitted --return (reviewer, comment required)------> Returned
 Returned  --submit again (student)-------------------> Submitted  (Version + 1)
@@ -136,7 +137,7 @@ administrators see everything.
 | GET | `/api/students/{id}/progress` | Student (own), Teacher (visible), Admin | Steps approved of total, late steps, average mark |
 
 **Error codes:** `studentTask.notFound` (404), `studentTask.notYours` (403),
-`step.previousNotApproved` (409), `step.awaitingReview` (409), `step.alreadyApproved` (409),
+`step.topicRequired` (409), `step.previousNotApproved` (409), `step.awaitingReview` (409), `step.alreadyApproved` (409),
 `submission.notFound` (404), `submission.alreadyDecided` (409), `submission.notReviewer`
 (403), `file.mainMissing` (400), `file.typeNotAllowed` (400), `file.tooLarge` (400),
 `file.tooMany` (400), `file.contentMismatch` (400), `review.markRequired` (400),
@@ -150,7 +151,8 @@ administrators see everything.
 - Step page — step description and deadline; timeline of submissions (version, date, late
   marker, message, files) each followed by its decision (reviewer, date, mark or comment);
   a submit form (main file, supporting files, message) shown only when submitting is
-  allowed, otherwise the reason (awaiting review, previous step not approved, approved).
+  allowed, otherwise the reason (no topic yet, awaiting review, previous step not approved,
+  approved). A missing topic is named first, because it is the first thing to settle.
 - Dashboard — progress summary (approved of total, average mark), next deadline, the most
   recent decision, and the *My topic* card from phase 4.
 
