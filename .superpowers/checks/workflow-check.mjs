@@ -1,4 +1,4 @@
-import { createCleanup } from './checkCleanup.mjs'
+import { createCleanup, removeGroup } from './checkCleanup.mjs'
 
 const API = 'http://localhost:5000'
 const stamp = Date.now().toString().slice(-6)
@@ -39,7 +39,51 @@ async function call(method, path, { token, json, form } = {}) {
 
 const login = async (email, password) => (await call('POST', '/api/auth/login', { json: { email, password } })).body.token
 
-const docx = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00])
+// ---------- minimal zip writer (same shape as hardening-check.mjs) ----------
+const crcTable = new Uint32Array(256).map((_, n) => {
+  let c = n
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+  return c >>> 0
+})
+function crc32(bytes) {
+  let c = 0xffffffff
+  for (const b of bytes) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8)
+  return (c ^ 0xffffffff) >>> 0
+}
+function zip(files) {
+  const locals = []
+  const centrals = []
+  let offset = 0
+  for (const file of files) {
+    const name = Buffer.from(file.name, 'utf8')
+    const data = Buffer.from(file.content, 'utf8')
+    const crc = crc32(data)
+    const local = Buffer.alloc(30)
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt32LE(crc, 14)
+    local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(name.length, 26)
+    const central = Buffer.alloc(46)
+    central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt32LE(crc, 16)
+    central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(name.length, 28); central.writeUInt32LE(offset, 42)
+    locals.push(local, name, data)
+    centrals.push(central, name)
+    offset += local.length + name.length + data.length
+  }
+  const centralSize = centrals.reduce((sum, part) => sum + part.length, 0)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10)
+  end.writeUInt32LE(centralSize, 12); end.writeUInt32LE(offset, 16)
+  return Buffer.concat([...locals, ...centrals, end])
+}
+
+// A minimal, genuine .docx (same parts as hardening-check.mjs): [Content_Types].xml, the package
+// relationship and a non-empty word/document.xml, which OfficePackageInspector requires of a file
+// named .docx. A PDF is matched on its signature only, so the stub below is a valid .pdf.
+const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+const docx = new Uint8Array(zip([
+  { name: '[Content_Types].xml', content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>' },
+  { name: '_rels/.rels', content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
+  { name: 'word/document.xml', content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${W}><w:body><w:p><w:r><w:t>Work</w:t></w:r></w:p></w:body></w:document>` }
+]))
 const pdf = new TextEncoder().encode('%PDF-1.4\n%fake\n')
 const fakeDocx = new TextEncoder().encode('not a zip file')
 const big = new Uint8Array(21 * 1024 * 1024)
@@ -60,7 +104,7 @@ const teacher = await login('teacher@diploma.local', 'Teacher123!')
 // Arrange: group with two steps, a student, the seed teacher as reviewer, a second teacher unrelated
 const department = (await call('GET', '/api/departments', { token: admin })).body[0]
 const group = (await call('POST', '/api/groups', { token: admin, json: { departmentId: department.id, code: `WF${stamp}`, academicYear: '2026/2027', description: '' } })).body
-cleanup.add(`group ${group.code}`, () => call('DELETE', `/api/groups/${group.id}`, { token: admin }))
+cleanup.add(`group ${group.code}`, () => removeGroup(call, admin, group))
 const teachers = (await call('GET', '/api/teachers', { token: admin })).body
 const teacherId = teachers.find((t) => t.email === 'teacher@diploma.local').id
 await call('POST', `/api/groups/${group.id}/reviewers`, { token: admin, json: { reviewerId: teacherId } })
@@ -81,17 +125,6 @@ await call('POST', `/api/groups/${group.id}/assign-all-task-templates`, { token:
 const studentEmail = `flow.${stamp}@student.local`
 const student = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Flow', lastName: 'Student', email: studentEmail, studentNumber: `F${stamp}`, password: 'Password1!', groupId: group.id } })).body
 const studentToken = await login(studentEmail, 'Password1!')
-
-// Students need the three-step dance: a student can never be deleted, and a group cannot be
-// deleted while any student points at it. Registered as one undo step at the moment the student
-// is created; SEEDED_GROUP_ID is resolved at run time by looking up the group whose code is SEED-A.
-cleanup.add('student -> seeded group', async () => {
-  const seedGroups = (await call('GET', '/api/groups', { token: admin })).body
-  const seededGroupId = seedGroups.find((g) => g.code === 'SEED-A').id
-  await call('POST', '/api/students/restore', { token: admin, json: { studentIds: [student.id] } })
-  await call('PUT', `/api/students/${student.id}/group`, { token: admin, json: { groupId: seededGroupId } })
-  await call('POST', '/api/students/archive', { token: admin, json: { studentIds: [student.id] } })
-})
 
 // The student is added to the group after its steps are assigned, so LateJoinerTaskAssigner
 // creates the StudentTask rows at membership time (Services/LateJoinerTaskAssigner.cs) - nothing

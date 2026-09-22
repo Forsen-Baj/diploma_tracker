@@ -1,9 +1,10 @@
 // Extra regression check for the fix-wave-backend fixes not covered by onboarding-check.mjs:
 // 1. A stray/unterminated quote in a CSV import is rejected with a single 400 file-level error.
 // 2. PUT /api/registration with an empty body ({}) is rejected with 400.
-import { createCleanup } from './checkCleanup.mjs'
+import { createCleanup, removeGroup } from './checkCleanup.mjs'
 
 const API = 'http://localhost:5000'
+const stamp = Date.now().toString().slice(-6)
 const results = []
 const cleanup = createCleanup()
 
@@ -47,7 +48,11 @@ async function loginAdmin() {
 async function runChecks() {
 const admin = await loginAdmin()
 const groups = (await call('GET', '/api/groups', { token: admin })).data
-const groupId = groups.find((g) => g.code === 'SEED-A').id
+const seedGroup = groups.find((g) => g.code === 'SEED-A')
+// Imported students land in a group of this script's own, removed with them at the end.
+const ownGroup = (await call('POST', '/api/groups', { token: admin, json: { departmentId: seedGroup.departmentId, code: `FW${stamp}`, academicYear: '2026/2027', description: '' } })).data
+cleanup.add(`group ${ownGroup.code}`, () => removeGroup(call, admin, ownGroup))
+const groupId = ownGroup.id
 
 // 1a. Stray quote mid-file (matches the review's R1 example).
 const strayQuoteCsv =
@@ -82,7 +87,6 @@ check('unterminated-quote CSV rejected: row-level error names the line the quote
 })
 
 // 1c. Quoted line breaks and doubled quotes still work (regression guard for the tokenizer rewrite).
-const stamp = Date.now().toString().slice(-6)
 const stillWorksCsv =
   'lastName;firstName;email;studentNumber\r\n' +
   `"Коваль\r\nмолодша";Олена;olena.quoted.${stamp}@x.local;NQ${stamp}1\r\n` +
@@ -90,16 +94,6 @@ const stillWorksCsv =
 const stillWorksResult = await call('POST', `/api/groups/${groupId}/students/import`, { token: admin, form: csvForm(stillWorksCsv) })
 check('quoted line break + doubled quote still import: status', stillWorksResult.status, 200)
 check('quoted line break + doubled quote still import: created', stillWorksResult.data?.created, 2)
-
-// These two students land straight in the seeded group, so cleanup only has to archive them - no
-// restore or move is needed since they were never archived and never left SEED-A.
-const importedStudents = (await call('GET', '/api/students', { token: admin })).data
-const quotedIds = importedStudents
-  .filter((s) => s.email === `olena.quoted.${stamp}@x.local` || s.email === `ivan.quoted.${stamp}@x.local`)
-  .map((s) => s.id)
-if (quotedIds.length > 0) {
-  cleanup.add('imported students -> archive', () => call('POST', '/api/students/archive', { token: admin, json: { studentIds: quotedIds } }))
-}
 
 // 2. PUT /api/registration with {} -> 400.
 const emptyPut = await call('PUT', '/api/registration', { token: admin, json: {} })

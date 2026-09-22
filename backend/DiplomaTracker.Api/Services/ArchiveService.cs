@@ -115,7 +115,9 @@ public class ArchiveService : IArchiveService
         var knownReviewerIds = archive.Reviewers.Select(r => r.ReviewerId).ToHashSet();
         foreach (var reviewer in reviewers.Where(r => !knownReviewerIds.Contains(r.ReviewerId)))
         {
-            archive.Reviewers.Add(new ArchivedGroupReviewer
+            // Added through the set, like the files below: a child with a preset Guid reached only
+            // through a tracked archive's collection would be taken for an existing row and updated.
+            _dbContext.ArchivedGroupReviewers.Add(new ArchivedGroupReviewer
             {
                 Id = Guid.NewGuid(),
                 ArchivedGroupId = archive.Id,

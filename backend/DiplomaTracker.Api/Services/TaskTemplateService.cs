@@ -278,6 +278,38 @@ public class TaskTemplateService : ITaskTemplateService
         return (Map(template), null);
     }
 
+    /// Phase 8 §6. A step no group has been given can be deleted; one that is assigned is
+    /// refused, because its group tasks and every student's work on them hang off it. The gap it
+    /// leaves in the faculty's order is closed by the next reorder.
+    public async Task<(bool success, string? error)> DeleteTaskTemplateAsync(Guid id, Guid administratorId)
+    {
+        var template = await _dbContext.DiplomaTaskTemplates.FirstOrDefaultAsync(t => t.Id == id);
+        if (template is null)
+        {
+            return (false, TaskErrors.TemplateNotFound);
+        }
+
+        if (await _dbContext.GroupTasks.AnyAsync(g => g.DiplomaTaskTemplateId == id))
+        {
+            return (false, TaskErrors.TemplateAssigned);
+        }
+
+        _dbContext.DiplomaTaskTemplates.Remove(template);
+
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
+        {
+            // A group was given this step between the check and the delete.
+            return (false, TaskErrors.TemplateAssigned);
+        }
+
+        SecurityLog.AdministratorAction(_logger, administratorId, "Deleted", "TaskTemplate", id);
+        return (true, null);
+    }
+
     /// Phase 8 §6. One request carries the whole new order, so the result does not depend on the
     /// order the client happened to send individual moves in.
     ///

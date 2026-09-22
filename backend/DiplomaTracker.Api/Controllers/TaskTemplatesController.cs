@@ -87,6 +87,19 @@ public class TaskTemplatesController : ApiControllerBase
         return template is null ? ErrorResult(error) : Ok(template);
     }
 
+    [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (success, error) = await _taskTemplateService.DeleteTaskTemplateAsync(id, administratorId);
+        return success ? NoContent() : ErrorResult(error);
+    }
+
     [HttpPatch("{id:guid}/deactivate")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Deactivate(Guid id)

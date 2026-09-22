@@ -136,7 +136,8 @@
       "orderTaken": "Another step in this faculty already uses this order.",
       "facultyNotFound": "The selected faculty does not exist.",
       "inUse": "Cannot change the faculty of a step that is assigned to a group.",
-      "orderMismatch": "The new order must list every step of this faculty exactly once."
+      "orderMismatch": "The new order must list every step of this faculty exactly once.",
+      "assigned": "Cannot delete a step that is assigned to a group."
     },
     "groupTask": {
       "notFound": "Group step not found.",

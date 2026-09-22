@@ -1,4 +1,4 @@
-import { createCleanup } from './checkCleanup.mjs'
+import { createCleanup, removeGroup } from './checkCleanup.mjs'
 
 const API = 'http://localhost:5000'
 const stamp = Date.now().toString().slice(-6)
@@ -38,17 +38,6 @@ async function call(method, path, { token, json } = {}) {
 
 const login = async (email, password) => (await call('POST', '/api/auth/login', { json: { email, password } })).body.token
 
-// Students need the three-step dance: a student can never be deleted, and a group cannot be
-// deleted while any student points at it. Registered as one undo step at the moment each student
-// is created; SEEDED_GROUP_ID is resolved once below.
-function archiveStudentUndo(label, studentId, seededGroupId, admin) {
-  cleanup.add(label, async () => {
-    await call('POST', '/api/students/restore', { token: admin, json: { studentIds: [studentId] } })
-    await call('PUT', `/api/students/${studentId}/group`, { token: admin, json: { groupId: seededGroupId } })
-    await call('POST', '/api/students/archive', { token: admin, json: { studentIds: [studentId] } })
-  })
-}
-
 async function runChecks() {
 const admin = await login('admin@diploma.local', 'Admin123!')
 const teacher = await login('teacher@diploma.local', 'Teacher123!')
@@ -57,13 +46,16 @@ const groups = (await call('GET', '/api/groups', { token: admin })).body
 // Group.Name no longer exists; the seed group's identity is its Code alone.
 const seedGroup = groups.find((g) => g.code === 'SEED-A')
 const departmentId = seedGroup.departmentId
+// Every student this script creates lives in a group of its own, removed with them at the end;
+// any student-proposal topic they own goes with their account (Phase 8 §4.7).
+const ownGroup = (await call('POST', '/api/groups', { token: admin, json: { departmentId, code: `TP${stamp}`, academicYear: '2026/2027', description: '' } })).body
+cleanup.add(`group ${ownGroup.code}`, () => removeGroup(call, admin, ownGroup))
 const teachers = (await call('GET', '/api/teachers', { token: admin })).body
 const teacherId = teachers.find((t) => t.email === 'teacher@diploma.local').id
 
 async function createStudent(suffix) {
   const email = `topic.${suffix}.${stamp}@student.local`
-  const created = await call('POST', '/api/students', { token: admin, json: { firstName: 'Topic', lastName: `Student${suffix}`, email, studentNumber: `T${suffix}${stamp}`, password: 'Password1!', groupId: seedGroup.id } })
-  archiveStudentUndo(`student ${suffix} -> seeded group`, created.body.id, seedGroup.id, admin)
+  const created = await call('POST', '/api/students', { token: admin, json: { firstName: 'Topic', lastName: `Student${suffix}`, email, studentNumber: `T${suffix}${stamp}`, password: 'Password1!', groupId: ownGroup.id } })
   return { id: created.body.id, token: await login(email, 'Password1!') }
 }
 
@@ -173,7 +165,7 @@ const winnerReservation = race.find((r) => r.status === 200).body
 // ever decides - cancel it before the topic can be deleted.
 cleanup.add(`topic ${t2.title} (race winner's pending reservation)`, async () => {
   await call('POST', `/api/reservations/${winnerReservation.id}/cancel`, { token: winner.token })
-  await call('DELETE', `/api/topics/${t2.id}`, { token: admin })
+  return call('DELETE', `/api/topics/${t2.id}`, { token: admin })
 })
 
 // Assignment from the student form
@@ -242,7 +234,7 @@ cleanup.add('topics six/seven/eight (change-request tangle)', async () => {
   }
   await call('DELETE', `/api/topics/${t6.id}`, { token: admin })
   await call('DELETE', `/api/topics/${t7.id}`, { token: admin })
-  await call('DELETE', `/api/topics/${t8.id}`, { token: admin })
+  return call('DELETE', `/api/topics/${t8.id}`, { token: admin })
 })
 
 // Teacher lists and deletion
@@ -268,7 +260,7 @@ check('57 student now holds the catalogue topic', (await call('GET', `/api/stude
 check('58 the accepted proposal topic is gone', (await call('GET', `/api/topics/${propC1a.topicId}`, { token: admin })).status, 404)
 cleanup.add(`topic ${t9.title} (C1a)`, async () => {
   await call('POST', `/api/reservations/${changeC1a.id}/release`, { token: teacher, json: { comment: 'check cleanup' } })
-  await call('DELETE', `/api/topics/${t9.id}`, { token: admin })
+  return call('DELETE', `/api/topics/${t9.id}`, { token: admin })
 })
 
 // C1b: an administrator assigns a different topic over a student's approved proposal.
@@ -283,7 +275,7 @@ cleanup.add(`topic ${t10.title} (C1b)`, async () => {
   if (approved) {
     await call('POST', `/api/reservations/${approved.id}/release`, { token: teacher, json: { comment: 'check cleanup' } })
   }
-  await call('DELETE', `/api/topics/${t10.id}`, { token: admin })
+  return call('DELETE', `/api/topics/${t10.id}`, { token: admin })
 })
 
 // C1c: an administrator clears a student's approved proposal outright (the other half of the
@@ -309,7 +301,7 @@ cleanup.add(`topic ${t11.title} (I4)`, async () => {
   if (pending) {
     await call('POST', `/api/reservations/${pending.id}/cancel`, { token: s8.token })
   }
-  await call('DELETE', `/api/topics/${t11.id}`, { token: admin })
+  return call('DELETE', `/api/topics/${t11.id}`, { token: admin })
 })
 }
 

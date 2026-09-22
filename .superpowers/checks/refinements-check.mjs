@@ -1,4 +1,4 @@
-import { createCleanup } from './checkCleanup.mjs'
+import { createCleanup, removeGroup } from './checkCleanup.mjs'
 
 const API = 'http://localhost:5000'
 const stamp = Date.now().toString().slice(-6)
@@ -28,24 +28,11 @@ async function call(method, path, { token, json } = {}) {
 
 const login = (email, password) => call('POST', '/api/auth/login', { json: { email, password } })
 
-// Students need the three-step dance: a student can never be deleted, and a group cannot be
-// deleted while any student points at it. Registered as one undo step at the moment each batch of
-// students is created.
-function archiveStudentsUndo(label, studentIds, seededGroupId, admin) {
-  cleanup.add(label, async () => {
-    await call('POST', '/api/students/restore', { token: admin, json: { studentIds } })
-    for (const studentId of studentIds) {
-      await call('PUT', `/api/students/${studentId}/group`, { token: admin, json: { groupId: seededGroupId } })
-    }
-    await call('POST', '/api/students/archive', { token: admin, json: { studentIds } })
-  })
-}
-
 async function runChecks() {
 const admin = (await login('admin@diploma.local', 'Admin123!')).data.token
 
-const seededGroups = (await call('GET', '/api/groups', { token: admin })).data
-const seededGroupId = seededGroups.find((g) => g.code === 'SEED-A').id
+// Every student this script creates lives in one of its own groups; removeGroup archives them,
+// deletes the group - and with it their accounts (Phase 8 §4.7) - and purges its archive.
 
 // ---------------------------------------------------------------------------
 // Group code uniqueness per academic year
@@ -57,7 +44,9 @@ const departmentsA = (await call('GET', `/api/departments?facultyId=${facultyA.i
 const departmentA = departmentsA[0]
 
 const facultyB = (await call('POST', '/api/faculties', { token: admin, json: { name: `RF Faculty ${stamp}`, shortName: `RF${stamp}` } })).data
+cleanup.addLast(`faculty ${facultyB.shortName}`, () => call('DELETE', `/api/faculties/${facultyB.id}`, { token: admin }))
 const departmentB = (await call('POST', '/api/departments', { token: admin, json: { facultyId: facultyB.id, name: `RF Department ${stamp}`, shortName: `RFD${stamp}` } })).data
+cleanup.addLast(`department ${departmentB.shortName}`, () => call('DELETE', `/api/departments/${departmentB.id}`, { token: admin }))
 
 const groupCode = `RFCODE${stamp}`
 const yearA = '2026/2027'
@@ -65,19 +54,19 @@ const yearB = '2027/2028'
 
 const group1 = await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentB.id, code: groupCode, academicYear: yearA } })
 check('01 create group', group1.status, 201)
-cleanup.add(`group ${group1.data.code}`, () => call('DELETE', `/api/groups/${group1.data.id}`, { token: admin }))
+cleanup.add(`group ${group1.data.code}`, () => removeGroup(call, admin, group1.data))
 check('02 group code duplicate same year', (await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentB.id, code: groupCode, academicYear: yearA } })).status, 409)
 check('03 group code duplicate same year -> code', (await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentB.id, code: groupCode, academicYear: yearA } })).data.code, 'group.codeTaken')
 
 const groupYearB = await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentB.id, code: groupCode, academicYear: yearB } })
 check('04 same code, different year allowed', groupYearB.status, 201)
-cleanup.add(`group ${groupYearB.data.code} (${yearB})`, () => call('DELETE', `/api/groups/${groupYearB.data.id}`, { token: admin }))
+cleanup.add(`group ${groupYearB.data.code} (${yearB})`, () => removeGroup(call, admin, groupYearB.data))
 
 const groupMismatch = group1.data
 
 const groupMatch = await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentA.id, code: `RFMATCH${stamp}`, academicYear: yearA } })
 check('05 create matching-faculty group', groupMatch.status, 201)
-cleanup.add(`group ${groupMatch.data.code}`, () => call('DELETE', `/api/groups/${groupMatch.data.id}`, { token: admin }))
+cleanup.add(`group ${groupMatch.data.code}`, () => removeGroup(call, admin, groupMatch.data))
 
 // B9: academic year is restricted to digits, '/', '\', '-', '.' and whitespace
 const badAcademicYear = await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentB.id, code: `RFBADYEAR${stamp}`, academicYear: 'RF-123-A' } })
@@ -88,14 +77,14 @@ check('07 invalid academic year format -> code', badAcademicYear.data.code, 'val
 // Task templates per faculty
 // ---------------------------------------------------------------------------
 
-// Faculty A is the seeded faculty, shared with every other run, so a fixed order collides with
-// whatever an earlier run left behind. Take the next free order instead; faculty B is created
-// fresh each run, so its orders need no such care.
+// Faculty A is the seeded faculty, so its steps are taken after the ones already there and deleted
+// again at the end; faculty B is created fresh each run, so its orders need no such care.
 const existingA = (await call('GET', `/api/task-templates?facultyId=${facultyA.id}`, { token: admin })).data
 const orderA = Math.max(0, ...existingA.map((t) => t.order)) + 1
 
 const templateA = await call('POST', '/api/task-templates', { token: admin, json: { facultyId: facultyA.id, title: `RF Step ${stamp}`, order: orderA } })
 check('08 create task template', templateA.status, 201)
+if (templateA.status === 201) cleanup.addLast(`task template ${templateA.data.title}`, () => call('DELETE', `/api/task-templates/${templateA.data.id}`, { token: admin }))
 
 const listByFacultyA = (await call('GET', `/api/task-templates?facultyId=${facultyA.id}`, { token: admin })).data
 check('09 faculty filter includes own template', listByFacultyA.some((t) => t.id === templateA.data.id), true)
@@ -110,6 +99,7 @@ check('12 duplicate order in same faculty -> code', duplicateOrder.data.code, 't
 // B1: the same active title is allowed in a different faculty (per-faculty uniqueness)
 const templateBSameTitle = await call('POST', '/api/task-templates', { token: admin, json: { facultyId: facultyB.id, title: templateA.data.title, order: 993 } })
 check('B1 same active title allowed in a different faculty', templateBSameTitle.status, 201)
+if (templateBSameTitle.status === 201) cleanup.addLast(`task template ${templateBSameTitle.data.title} (faculty B)`, () => call('DELETE', `/api/task-templates/${templateBSameTitle.data.id}`, { token: admin }))
 
 // B7: task-template writes are Admin-only; a teacher gets 403
 const teacherToken = (await login('teacher@diploma.local', 'Teacher123!')).data.token
@@ -138,7 +128,6 @@ const lateJoinerEmail = `latejoiner.${stamp}@student.local`
 const lateJoinerPassword = 'Password1!'
 const lateJoiner = await call('POST', '/api/students', { token: admin, json: { firstName: 'Late', lastName: 'Joiner', email: lateJoinerEmail, studentNumber: `LJ${stamp}`, groupId: groupMatch.data.id, password: lateJoinerPassword } })
 check('18 create late joiner', lateJoiner.status, 201)
-archiveStudentsUndo('late joiner -> seeded group', [lateJoiner.data.id], seededGroupId, admin)
 
 const lateJoinerToken = (await login(lateJoinerEmail, lateJoinerPassword)).data.token
 // Phase 5 removed /api/student/my-tasks; /api/student-tasks/mine replaces it.
@@ -150,9 +139,9 @@ check('19 late joiner receives existing group step', myTasks.some((t) => t.group
 // ---------------------------------------------------------------------------
 
 const admin1Email = `rfadmin1.${stamp}@x.local`
-const admin1 = await call('POST', '/api/admins', { token: admin, json: { firstName: 'RF', lastName: 'AdminOne', email: admin1Email, password: 'Admin1Pass!' } })
+const admin1 = await call('POST', '/api/admins', { token: admin, json: { firstName: 'RF', lastName: 'AdminOne', email: admin1Email, password: 'Admin1Pass1!' } })
 check('20 create admin', admin1.status, 201)
-check('21 create admin duplicate email', (await call('POST', '/api/admins', { token: admin, json: { firstName: 'RF', lastName: 'Dup', email: admin1Email, password: 'Admin1Pass!' } })).status, 409)
+check('21 create admin duplicate email', (await call('POST', '/api/admins', { token: admin, json: { firstName: 'RF', lastName: 'Dup', email: admin1Email, password: 'Admin1Pass1!' } })).status, 409)
 
 check('22 set admin password', (await call('PUT', `/api/admins/${admin1.data.id}/password`, { token: admin, json: { password: 'Admin1Pass2!' } })).status, 204)
 const admin1Token = (await login(admin1Email, 'Admin1Pass2!')).data.token
@@ -161,18 +150,18 @@ check('23 admin1 signs in with new password', typeof admin1Token, 'string')
 check('24 deactivate self', (await call('POST', `/api/admins/${admin1.data.id}/deactivate`, { token: admin1Token })).status, 400)
 
 const admin2Email = `rfadmin2.${stamp}@x.local`
-const admin2 = await call('POST', '/api/admins', { token: admin, json: { firstName: 'RF', lastName: 'AdminTwo', email: admin2Email, password: 'Admin2Pass!' } })
+const admin2 = await call('POST', '/api/admins', { token: admin, json: { firstName: 'RF', lastName: 'AdminTwo', email: admin2Email, password: 'Admin2Pass2!' } })
 check('25 create second admin', admin2.status, 201)
 check('26 deactivate admin2', (await call('POST', `/api/admins/${admin2.data.id}/deactivate`, { token: admin })).status, 204)
 check('27 deactivate admin1', (await call('POST', `/api/admins/${admin1.data.id}/deactivate`, { token: admin })).status, 204)
 
-// Only the seed admin remains active now. Use admin1's still-valid token (issued before it was
-// deactivated) to attempt deactivating the seed admin: not a self-deactivation (different id), so
-// this exercises the "last active administrator" guard rather than the self-guard.
-const seedAdminId = (await call('GET', '/api/admins', { token: admin })).data.find((a) => a.email === 'admin@diploma.local').id
-const lastActive = await call('POST', `/api/admins/${seedAdminId}/deactivate`, { token: admin1Token })
-check('28 deactivate last active administrator', lastActive.status, 409)
-check('29 deactivate last active administrator code', lastActive.data.code, 'admin.lastActive')
+// Administrator 1's token was issued before the account was deactivated. A session reflects the
+// account's current state (Phase 8 §2.1), so it is refused on its next request. This is also why
+// the "last active administrator" guard cannot be reached through the API: any active caller is a
+// second active administrator, and deactivating yourself is refused first.
+const staleSession = await call('GET', '/api/auth/me', { token: admin1Token })
+check('28 deactivated administrator token refused', staleSession.status, 401)
+check('29 deactivated administrator token code', staleSession.data?.code, 'auth.userNotFound')
 
 check('30 reactivate admin1', (await call('POST', `/api/admins/${admin1.data.id}/activate`, { token: admin })).status, 204)
 // Restore invariant for future runs: only the seed admin stays active among admins this script creates.
@@ -187,7 +176,6 @@ const arch2Email = `rfarchive2.${stamp}@student.local`
 const archPassword = 'Password1!'
 const arch1 = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Arch', lastName: 'One', email: arch1Email, studentNumber: `RFA1${stamp}`, groupId: groupMatch.data.id, password: archPassword } })).data
 const arch2 = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Arch', lastName: 'Two', email: arch2Email, studentNumber: `RFA2${stamp}`, groupId: groupMatch.data.id, password: archPassword } })).data
-archiveStudentsUndo('archive students -> seeded group', [arch1.id, arch2.id], seededGroupId, admin)
 
 const archiveResult = await call('POST', '/api/students/archive', { token: admin, json: { studentIds: [arch1.id, arch2.id] } })
 check('32 archive two students', archiveResult.status, 200)
@@ -220,12 +208,11 @@ check('43 restored student signs in', (await login(arch1Email, archPassword)).st
 // ---------------------------------------------------------------------------
 
 const groupG = await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentA.id, code: `RFGROUP${stamp}`, academicYear: yearA } })
-cleanup.add(`group ${groupG.data.code}`, () => call('DELETE', `/api/groups/${groupG.data.id}`, { token: admin }))
+cleanup.add(`group ${groupG.data.code}`, () => removeGroup(call, admin, groupG.data))
 const gStudent1Email = `rfgroup1.${stamp}@student.local`
 const gStudent2Email = `rfgroup2.${stamp}@student.local`
 const gStudent1 = (await call('POST', '/api/students', { token: admin, json: { firstName: 'G', lastName: 'One', email: gStudent1Email, studentNumber: `RFG1${stamp}`, groupId: groupG.data.id, password: 'Password1!' } })).data
 const gStudent2 = (await call('POST', '/api/students', { token: admin, json: { firstName: 'G', lastName: 'Two', email: gStudent2Email, studentNumber: `RFG2${stamp}`, groupId: groupG.data.id, password: 'Password1!' } })).data
-archiveStudentsUndo('group-archive students -> seeded group', [gStudent1.id, gStudent2.id], seededGroupId, admin)
 
 const groupArchive = await call('POST', `/api/groups/${groupG.data.id}/students/archive`, { token: admin })
 check('44 group archive', groupArchive.status, 200)
@@ -239,14 +226,14 @@ check('47 group archive unknown group', (await call('POST', '/api/groups/0000000
 // ---------------------------------------------------------------------------
 
 const groupH = await call('POST', '/api/groups', { token: admin, json: { departmentId: departmentA.id, code: `RFCOUNT${stamp}`, academicYear: yearA } })
-cleanup.add(`group ${groupH.data.code}`, () => call('DELETE', `/api/groups/${groupH.data.id}`, { token: admin }))
+cleanup.add(`group ${groupH.data.code}`, () => removeGroup(call, admin, groupH.data))
 const hStudent1Email = `rfcount1.${stamp}@student.local`
 const hStudent2Email = `rfcount2.${stamp}@student.local`
 const hStudent1 = (await call('POST', '/api/students', { token: admin, json: { firstName: 'H', lastName: 'One', email: hStudent1Email, studentNumber: `RFH1${stamp}`, groupId: groupH.data.id, password: 'Password1!' } })).data
 const hStudent2 = (await call('POST', '/api/students', { token: admin, json: { firstName: 'H', lastName: 'Two', email: hStudent2Email, studentNumber: `RFH2${stamp}`, groupId: groupH.data.id, password: 'Password1!' } })).data
-archiveStudentsUndo('deadline-count students -> seeded group', [hStudent1.id, hStudent2.id], seededGroupId, admin)
 
 const templateH = (await call('POST', '/api/task-templates', { token: admin, json: { facultyId: facultyA.id, title: `RF Count Step ${stamp}`, order: orderA + 2 } })).data
+cleanup.addLast(`task template ${templateH.title}`, () => call('DELETE', `/api/task-templates/${templateH.id}`, { token: admin }))
 const groupTaskH = (await call('POST', '/api/group-tasks', { token: admin, json: { groupId: groupH.data.id, taskTemplateId: templateH.id, deadline: future1 } })).data
 
 check('48 archive one student in the count group', (await call('POST', '/api/students/archive', { token: admin, json: { studentIds: [hStudent1.id] } })).status, 200)

@@ -1,4 +1,4 @@
-import { createCleanup } from './checkCleanup.mjs'
+import { createCleanup, removeGroup } from './checkCleanup.mjs'
 
 const API = 'http://localhost:5000'
 const stamp = Date.now().toString().slice(-6)
@@ -39,7 +39,11 @@ function csvForm(content, name = 'students.csv') {
 async function runChecks() {
 const admin = (await login('admin@diploma.local', 'Admin123!')).data.token
 const groups = (await call('GET', '/api/groups', { token: admin })).data
-const groupId = groups.find((g) => g.code === 'SEED-A').id
+const seedGroup = groups.find((g) => g.code === 'SEED-A')
+// Every student this script creates lands in a group of its own, removed with them at the end.
+const ownGroup = (await call('POST', '/api/groups', { token: admin, json: { departmentId: seedGroup.departmentId, code: `ON${stamp}`, academicYear: '2026/2027', description: '' } })).data
+cleanup.add(`group ${ownGroup.code}`, () => removeGroup(call, admin, ownGroup))
+const groupId = ownGroup.id
 const teachers = (await call('GET', '/api/teachers', { token: admin })).data
 const teacherId = teachers.find((t) => t.email === 'teacher@diploma.local').id
 
@@ -65,15 +69,6 @@ const firstImport = await call('POST', `/api/groups/${groupId}/students/import`,
 check('05 import valid file', firstImport.status, 200)
 check('06 import created count', firstImport.data.created, 2)
 
-// The import response carries only a count, not ids, so the two rows it created are found by
-// email. Both land straight in the seeded group, so cleanup only has to archive them.
-if (firstImport.status === 200) {
-  const afterFirstImport = (await call('GET', '/api/students', { token: admin })).data
-  const importedIds = afterFirstImport.filter((s) => s.email === emailA || s.email === emailB.toUpperCase()).map((s) => s.id)
-  if (importedIds.length > 0) {
-    cleanup.add('imported students -> archive', () => call('POST', '/api/students/archive', { token: admin, json: { studentIds: importedIds } }))
-  }
-}
 const secondImport = await call('POST', `/api/groups/${groupId}/students/import`, { token: admin, form: csvForm(validCsv) })
 check('07 re-import skipped count', secondImport.data.skipped.length, 2)
 check('08 re-import created count', secondImport.data.created, 0)
@@ -115,6 +110,7 @@ check('30 reset account claims again', (await call('POST', '/api/auth/claim', { 
 
 // Teachers and manual students
 check('31 teacher password too short', (await call('PUT', `/api/teachers/${teacherId}/password`, { token: admin, json: { password: 'short' } })).status, 400)
+cleanup.add('seed teacher password', () => call('PUT', `/api/teachers/${teacherId}/password`, { token: admin, json: { password: 'Teacher123!' } }))
 check('32 teacher password set', (await call('PUT', `/api/teachers/${teacherId}/password`, { token: admin, json: { password: 'Teacher456!' } })).status, 204)
 check('33 teacher signs in with new password', (await login('teacher@diploma.local', 'Teacher456!')).status, 200)
 await call('PUT', `/api/teachers/${teacherId}/password`, { token: admin, json: { password: 'Teacher123!' } })
@@ -122,9 +118,6 @@ check('34 manual student duplicate number', (await call('POST', '/api/students',
 const manual = await call('POST', '/api/students', { token: admin, json: { firstName: 'M', lastName: 'N', email: `manual.${stamp}@x.local`, studentNumber: `M${stamp}`, groupId } })
 check('35 manual student without password', manual.status, 201)
 check('36 manual student unclaimed', manual.data.isClaimed, false)
-if (manual.status === 201) {
-  cleanup.add(`student ${manual.data.id} -> archive`, () => call('POST', '/api/students/archive', { token: admin, json: { studentIds: [manual.data.id] } }))
-}
 check('37 manual student unknown group', (await call('POST', '/api/students', { token: admin, json: { firstName: 'M', lastName: 'N', email: `manual2.${stamp}@x.local`, studentNumber: `M2${stamp}`, groupId: '00000000-0000-0000-0000-000000000001' } })).status, 400)
 
 // Reopened claim (B8 a-e): reset access lets one account claim while registration is closed,
@@ -137,7 +130,6 @@ const c2Number = `CL${stamp}2`
 await call('PUT', '/api/registration', { token: admin, json: { open: true } })
 const c1 = (await call('POST', '/api/students', { token: admin, json: { firstName: 'C', lastName: 'One', email: c1Email, studentNumber: c1Number, groupId } })).data
 const c2 = (await call('POST', '/api/students', { token: admin, json: { firstName: 'C', lastName: 'Two', email: c2Email, studentNumber: c2Number, groupId } })).data
-cleanup.add('claim students c1, c2 -> archive', () => call('POST', '/api/students/archive', { token: admin, json: { studentIds: [c1.id, c2.id] } }))
 
 // (a) registration closed, neither student reopened -> claim refused
 await call('PUT', '/api/registration', { token: admin, json: { open: false } })

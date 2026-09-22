@@ -12,6 +12,7 @@ public static class TaskErrors
     public const string TemplateInUse = "taskTemplate.inUse";
     public const string TemplateOrderTaken = "taskTemplate.orderTaken";
     public const string TemplateOrderMismatch = "taskTemplate.orderMismatch";
+    public const string TemplateAssigned = "taskTemplate.assigned";
 
     public const string GroupTaskNotFound = "groupTask.notFound";
     public const string GroupTaskGroupNotFound = "groupTask.groupNotFound";
@@ -37,6 +38,7 @@ public static class TaskErrors
         new(TemplateInUse, StatusCodes.Status409Conflict, "Cannot change the faculty of a task template that is assigned to a group."),
         new(TemplateOrderTaken, StatusCodes.Status409Conflict, "Another step in this faculty already uses this order."),
         new(TemplateOrderMismatch, StatusCodes.Status400BadRequest, "The new order must list every step of this faculty exactly once."),
+        new(TemplateAssigned, StatusCodes.Status409Conflict, "Cannot delete a step that is assigned to a group."),
         new(GroupTaskNotFound, StatusCodes.Status404NotFound, "Group task not found."),
         new(GroupTaskGroupNotFound, StatusCodes.Status400BadRequest, "The selected group does not exist."),
         new(GroupTaskTemplateNotFound, StatusCodes.Status400BadRequest, "One or more selected task templates do not exist."),

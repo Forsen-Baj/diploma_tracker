@@ -374,6 +374,13 @@ rewritten as `1..n`, closing any gaps left by deletions.
 
 The list re-renders optimistically and reverts if the request fails.
 
+A step that no group has been given can be deleted outright — `DELETE /api/task-templates/{id}`,
+administrators only, answered with 204. A step some group has been given is refused
+(`taskTemplate.assigned`, 409): its group tasks and every student's work on them hang off it, so
+it is deactivated instead, as before. Once the last group holding it is deleted, it can go. The
+gap a deletion leaves in the faculty's order is closed by the next reorder. Deletion is an API
+operation; the Steps page keeps activate and deactivate as its controls.
+
 ## 7. Progress, lateness and what each role sees
 
 ### 7.1 A step can be overdue without a submission
@@ -492,12 +499,16 @@ the dashboards' "waiting for review" figure reads, so it stays correct without a
 **Check scripts leave the database as they found it.** Every script in `.superpowers/checks/`
 removes what it created — students, topics, step templates, groups, templates — on success *and*
 on failure, through a cleanup registered as each artefact is created and run from a `finally`.
-`templates-check.mjs` is the model. Because a group cannot be deleted while a student points at
-it and students cannot be deleted at all, a script restores the students it archived, moves them
-into the seeded group and archives them there, which the existing scripts already do; what is
-new is that this runs when the script fails, and that step templates and topics are cleaned up
-too. The seeded data — `FICS`, `SE`, `SEED-A`, the eight step templates, the three accounts — is
-never touched.
+Every student a script creates lives in a group the script created for the purpose; removing
+that group archives its students in place, deletes the group — which deletes their accounts
+with it (§4.7) — and purges the archive entry the deletion wrote, so neither rows nor stored
+files remain. Step templates are deleted rather than deactivated (§6), and faculties,
+departments and step templates are undone after everything else, once nothing hangs off them.
+An undo is judged by the status the API answers; one that is refused is reported by name at the
+end of the run instead of being counted as done. The seeded data — `FICS`, `SE`, `SEED-A`, the
+eight step templates, the three accounts — ends every run exactly as it started. Staff accounts a
+script creates are deactivated at the end, because the system has no way to delete a teacher or
+an administrator.
 
 **Line endings are pinned.** A `.gitattributes` at the repository root declares `* text=auto
 eol=crlf`: text is stored with LF and checked out with CRLF, which is what the editors and
@@ -526,6 +537,7 @@ must drop its local database**, and the owner is told before it happens.
 | Method | Route | Access | Purpose |
 |---|---|---|---|
 | PUT | `/api/task-templates/order` | Admin | Complete new order for one faculty |
+| DELETE | `/api/task-templates/{id}` | Admin | Delete a step no group has been given |
 | GET | `/api/review/queue` | Teacher, Admin | Paged: `page`, `pageSize`, `groupId`, `late` |
 | GET | `/api/dashboard/student` | Student | Progress summary and most recent decision |
 | GET | `/api/dashboard/teacher` | Teacher | Counts, latest five to review, overdue steps, supervised students, per-group rows |
@@ -541,7 +553,8 @@ must drop its local database**, and the owner is told before it happens.
 `/api/dashboard/*` endpoints are replaced by the real ones above.
 
 New error codes: `password.policyElevated` (400), `request.tooLarge` (413),
-`taskTemplate.orderMismatch` (400), `template.conflict` (409), `archive.notFound` (404). All are
+`taskTemplate.orderMismatch` (400), `taskTemplate.assigned` (409), `template.conflict` (409),
+`archive.notFound` (404). All are
 translated in `uk` and `en`. A file that cannot be removed from disk during a purge does not fail
 the purge: the rows go, the failure is logged, and the blob is collected by the next purge that
 finds nothing referencing it.

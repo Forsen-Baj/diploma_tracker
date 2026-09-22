@@ -1,5 +1,5 @@
 import { inflateRawSync } from 'node:zlib'
-import { createCleanup } from './checkCleanup.mjs'
+import { createCleanup, removeGroup } from './checkCleanup.mjs'
 
 // Phase 8 §9 verification script (Task 17 step 3): the 35 checks enumerated in the task-17 brief,
 // covering sessions/passwords (§2), uploads (§3), identity (§5), archive (§4), queue/progress/
@@ -80,12 +80,14 @@ const textOf = (xml) => [...xml.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].ma
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 const paragraph = (text) => `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`
 
-// A minimal, genuine .docx: just [Content_Types].xml and a non-empty word/document.xml - the two
-// things OfficePackageInspector.Inspect requires. No header/footer/markers, since this script
-// never uploads a document with `{{...}}` placeholders.
+// A minimal, genuine .docx: [Content_Types].xml, the package relationship and a non-empty
+// word/document.xml. OfficePackageInspector needs the first and last; a template upload opens the
+// file with the OpenXML SDK, which also needs _rels/.rels to find the main part. No
+// header/footer/markers, since this script never uploads a document with `{{...}}` placeholders.
 function docx(bodyXml) {
   return zip([
-    { name: '[Content_Types].xml', content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>' },
+    { name: '[Content_Types].xml', content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>' },
+    { name: '_rels/.rels', content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
     { name: 'word/document.xml', content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${W}><w:body>${bodyXml}</w:body></w:document>` }
   ])
 }
@@ -152,31 +154,25 @@ const teacher = await loginToken('teacher@diploma.local', 'Teacher123!')
 // shape as refinements-check.mjs's own faculty B. The department itself has no such restriction and
 // is deleted once every group under it is gone.
 const hardeningFaculty = (await call('POST', '/api/faculties', { token: admin, json: { name: `Hardening Faculty ${stamp}`, shortName: `HF${stamp}` } })).body
+cleanup.addLast(`faculty ${hardeningFaculty.shortName}`, () => call('DELETE', `/api/faculties/${hardeningFaculty.id}`, { token: admin }))
 const hardeningDepartment = (await call('POST', '/api/departments', { token: admin, json: { facultyId: hardeningFaculty.id, name: `Hardening Department ${stamp}`, shortName: `HD${stamp}` } })).body
-cleanup.add(`department ${hardeningDepartment.shortName}`, () => call('DELETE', `/api/departments/${hardeningDepartment.id}`, { token: admin }))
+cleanup.addLast(`department ${hardeningDepartment.shortName}`, () => call('DELETE', `/api/departments/${hardeningDepartment.id}`, { token: admin }))
 
 let templateOrder = 0
 async function makeStepTemplate(title) {
   templateOrder += 1
   const created = await call('POST', '/api/task-templates', { token: admin, json: { facultyId: hardeningFaculty.id, title: `${title} ${stamp}`, order: templateOrder } })
-  cleanup.add(`task template ${created.body.title} -> deactivate`, () => call('PATCH', `/api/task-templates/${created.body.id}/deactivate`, { token: admin }))
+  cleanup.addLast(`task template ${created.body.title}`, () => call('DELETE', `/api/task-templates/${created.body.id}`, { token: admin }))
   return created.body
 }
 
 // One shared throwaway group for the sections that only need a place to put students (§2 uploads,
 // §5 identity) plus the session/password students (§2 of the brief's own numbering) and the
 // audience group for the templates check (§4.6). Archived students are permanently deleted when
-// their group is deleted (GroupService.DeleteGroupAsync), so archiving every student created here
-// and then deleting the group leaves nothing behind - no seeded-group move needed, since none of
-// these students were ever meant to survive the run.
-const commonGroupStudentIds = []
+// their group is deleted (GroupService.DeleteGroupAsync), so removeGroup - archive every active
+// student, delete the group, purge its archive - leaves nothing behind.
 const commonGroup = (await call('POST', '/api/groups', { token: admin, json: { departmentId: hardeningDepartment.id, code: `HCOMMON${stamp}`, academicYear: '2026/2027', description: '' } })).body
-cleanup.add(`group ${commonGroup.code}`, async () => {
-  if (commonGroupStudentIds.length > 0) {
-    await call('POST', '/api/students/archive', { token: admin, json: { studentIds: commonGroupStudentIds } })
-  }
-  await call('DELETE', `/api/groups/${commonGroup.id}`, { token: admin })
-})
+cleanup.add(`group ${commonGroup.code}`, () => removeGroup(call, admin, commonGroup))
 
 async function runChecks() {
 
@@ -201,14 +197,12 @@ if (okTeacher.status === 201) {
 
 const sessionAEmail = `session.a.${stamp}@student.local`
 const sessionA = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Session', lastName: 'A', email: sessionAEmail, studentNumber: `SA${stamp}`, password: 'Password1!', groupId: commonGroup.id } })).body
-commonGroupStudentIds.push(sessionA.id)
 const sessionAToken = await loginToken(sessionAEmail, 'Password1!')
 await call('POST', '/api/students/archive', { token: admin, json: { studentIds: [sessionA.id] } })
 check('04 archived student token refused on /me', (await call('GET', '/api/auth/me', { token: sessionAToken })).status, 401)
 
 const sessionBEmail = `session.b.${stamp}@student.local`
 const sessionB = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Session', lastName: 'B', email: sessionBEmail, studentNumber: `SB${stamp}`, password: 'Password1!', groupId: commonGroup.id } })).body
-commonGroupStudentIds.push(sessionB.id)
 const sessionBToken = await loginToken(sessionBEmail, 'Password1!')
 check('05 reset access', (await call('POST', `/api/students/${sessionB.id}/reset-access`, { token: admin })).status, 204)
 check('05a reset student token refused on /me', (await call('GET', '/api/auth/me', { token: sessionBToken })).status, 401)
@@ -234,7 +228,6 @@ const uploadsGroupTask = (await call('POST', '/api/group-tasks', { token: admin,
 
 const uploaderEmail = `uploader.${stamp}@student.local`
 const uploader = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Upload', lastName: 'Er', email: uploaderEmail, studentNumber: `UP${stamp}`, password: 'Password1!', groupId: commonGroup.id } })).body
-commonGroupStudentIds.push(uploader.id)
 const uploaderToken = await loginToken(uploaderEmail, 'Password1!')
 const uploaderSteps = (await call('GET', '/api/student-tasks/mine', { token: uploaderToken })).body
 const uploadStepId = uploaderSteps.find((s) => s.groupTaskId === uploadsGroupTask.id).id
@@ -252,9 +245,6 @@ check('08/11 genuine docx + genuine png succeed', genuineUpload.status, 200)
 const numberLatin = `AB${stamp}`
 const numberCyrillic = `АВ ${stamp}` // Cyrillic А, В, a space, then the stamp
 const identity1 = await call('POST', '/api/students', { token: admin, json: { firstName: 'Id', lastName: 'One', email: `id.one.${stamp}@student.local`, studentNumber: numberLatin, password: 'Password1!', groupId: commonGroup.id } })
-if (identity1.status === 201) {
-  commonGroupStudentIds.push(identity1.body.id)
-}
 check('13 first student number returned exactly as entered', identity1.body.studentNumber, numberLatin)
 const identity2 = await call('POST', '/api/students', { token: admin, json: { firstName: 'Id', lastName: 'Two', email: `id.two.${stamp}@student.local`, studentNumber: numberCyrillic, password: 'Password1!', groupId: commonGroup.id } })
 check('12 Cyrillic lookalike number collides', identity2.body.code, 'student.numberTaken')
@@ -262,7 +252,7 @@ check('12 Cyrillic lookalike number collides', identity2.body.code, 'student.num
 const identityFacultyName = `Identity Faculty ${stamp}`
 const identityFacultyShort = `IF${stamp}`
 const identityFaculty = (await call('POST', '/api/faculties', { token: admin, json: { name: identityFacultyName, shortName: identityFacultyShort } })).body
-cleanup.add(`faculty ${identityFaculty.shortName}`, () => call('DELETE', `/api/faculties/${identityFaculty.id}`, { token: admin }))
+cleanup.addLast(`faculty ${identityFaculty.shortName}`, () => call('DELETE', `/api/faculties/${identityFaculty.id}`, { token: admin }))
 check('14a faculty name-only collision', (await call('POST', '/api/faculties', { token: admin, json: { name: identityFacultyName, shortName: `IF2${stamp}` } })).body.code, 'faculty.nameTaken')
 check('14b faculty short-name-only collision', (await call('POST', '/api/faculties', { token: admin, json: { name: `Identity Faculty B ${stamp}`, shortName: identityFacultyShort } })).body.code, 'faculty.shortNameTaken')
 
@@ -271,26 +261,18 @@ check('14b faculty short-name-only collision', (await call('POST', '/api/faculti
 // ===========================================================================
 
 const archiveGroup = (await call('POST', '/api/groups', { token: admin, json: { departmentId: hardeningDepartment.id, code: `HARCH${stamp}`, academicYear: '2026/2027', description: '' } })).body
-const archiveStudentIds = []
 // Safety net: if a check below throws before the group is deliberately deleted (check 18) and
 // purged (check 24), this still leaves nothing behind.
-cleanup.add(`group ${archiveGroup.code}`, async () => {
-  if (archiveStudentIds.length > 0) {
-    await call('POST', '/api/students/archive', { token: admin, json: { studentIds: archiveStudentIds } })
-  }
-  await call('DELETE', `/api/groups/${archiveGroup.id}`, { token: admin })
-})
+cleanup.add(`group ${archiveGroup.code}`, () => removeGroup(call, admin, archiveGroup))
 
 const archiveTemplate = await makeStepTemplate('Archive Step')
 const archiveGroupTask = (await call('POST', '/api/group-tasks', { token: admin, json: { groupId: archiveGroup.id, taskTemplateId: archiveTemplate.id, deadline: '2099-01-01T00:00:00Z' } })).body
 
 const studentXEmail = `archive.x.${stamp}@student.local`
 const studentX = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Archive', lastName: 'X', email: studentXEmail, studentNumber: `AX${stamp}`, password: 'Password1!', groupId: archiveGroup.id } })).body
-archiveStudentIds.push(studentX.id)
 const studentXToken = await loginToken(studentXEmail, 'Password1!')
 const studentYEmail = `archive.y.${stamp}@student.local`
 const studentY = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Archive', lastName: 'Y', email: studentYEmail, studentNumber: `AY${stamp}`, password: 'Password1!', groupId: archiveGroup.id } })).body
-archiveStudentIds.push(studentY.id)
 
 const studentXSteps = (await call('GET', '/api/student-tasks/mine', { token: studentXToken })).body
 const archiveStepId = studentXSteps.find((s) => s.groupTaskId === archiveGroupTask.id).id
@@ -329,20 +311,13 @@ check('23 student forbidden from archive listing', (await call('GET', '/api/arch
 check('24 purge succeeds', (await call('DELETE', `/api/archive/groups/${archiveEntry.id}`, { token: admin })).status, 204)
 const archiveListAfterPurge = (await call('GET', '/api/archive/groups', { token: admin })).body
 check('24a purged archive is empty of that group', archiveListAfterPurge.some((g) => g.id === archiveEntry.id), false)
-archiveStudentIds.length = 0 // both students and the group are already gone; nothing left for the safety-net undo to do
 
 // ===========================================================================
 // Queue, progress and dashboards (§7, §8)
 // ===========================================================================
 
 const queueGroup = (await call('POST', '/api/groups', { token: admin, json: { departmentId: hardeningDepartment.id, code: `HQUEUE${stamp}`, academicYear: '2026/2027', description: '' } })).body
-const queueStudentIds = []
-cleanup.add(`group ${queueGroup.code}`, async () => {
-  if (queueStudentIds.length > 0) {
-    await call('POST', '/api/students/archive', { token: admin, json: { studentIds: queueStudentIds } })
-  }
-  await call('DELETE', `/api/groups/${queueGroup.id}`, { token: admin })
-})
+cleanup.add(`group ${queueGroup.code}`, () => removeGroup(call, admin, queueGroup))
 
 const queueTeacherEmail = `queue.teacher.${stamp}@diploma.local`
 const queueTeacherId = (await call('POST', '/api/teachers', { token: admin, json: { firstName: 'Queue', lastName: 'Teacher', email: queueTeacherEmail, password: 'Teacher456!' } })).body.id
@@ -353,7 +328,6 @@ await call('POST', `/api/groups/${queueGroup.id}/reviewers`, { token: admin, jso
 async function makeQueueStudent(suffix) {
   const email = `queue.${suffix}.${stamp}@student.local`
   const created = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Queue', lastName: suffix, email, studentNumber: `Q${suffix}${stamp}`, password: 'Password1!', groupId: queueGroup.id } })).body
-  queueStudentIds.push(created.id)
   return { id: created.id, token: await loginToken(email, 'Password1!') }
 }
 
@@ -428,12 +402,13 @@ check('31 admin dashboard topic-selection figures sum to active students', ts.wi
 // a faculty's templates in every request, so this stays simple only if nothing else ever creates a
 // template under it. Like hardeningFaculty, it can never be deleted once it holds a template.
 const reorderFaculty = (await call('POST', '/api/faculties', { token: admin, json: { name: `Reorder Faculty ${stamp}`, shortName: `RO${stamp}` } })).body
+cleanup.addLast(`faculty ${reorderFaculty.shortName}`, () => call('DELETE', `/api/faculties/${reorderFaculty.id}`, { token: admin }))
 
 const r1 = (await call('POST', '/api/task-templates', { token: admin, json: { facultyId: reorderFaculty.id, title: `Reorder One ${stamp}`, order: 1 } })).body
 const r2 = (await call('POST', '/api/task-templates', { token: admin, json: { facultyId: reorderFaculty.id, title: `Reorder Two ${stamp}`, order: 2 } })).body
 const r3 = (await call('POST', '/api/task-templates', { token: admin, json: { facultyId: reorderFaculty.id, title: `Reorder Three ${stamp}`, order: 3 } })).body
 for (const t of [r1, r2, r3]) {
-  cleanup.add(`task template ${t.title} -> deactivate`, () => call('PATCH', `/api/task-templates/${t.id}/deactivate`, { token: admin }))
+  cleanup.addLast(`task template ${t.title}`, () => call('DELETE', `/api/task-templates/${t.id}`, { token: admin }))
 }
 
 const reversed = await call('PUT', '/api/task-templates/order', { token: admin, json: { facultyId: reorderFaculty.id, templateIds: [r3.id, r2.id, r1.id] } })
@@ -455,9 +430,14 @@ check('34 duplicate id refused', duplicate.body.code, 'taskTemplate.orderMismatc
 
 const templateV1 = docx(paragraph(`Version One ${stamp}`))
 const templateV2 = docx(paragraph(`Version Two ${stamp}`))
+// A teacher may share a template only with a group they can see, so the seed teacher reviews the
+// common group first. The reviewer row goes with the group when it is deleted.
+const seedTeacherId = (await call('GET', '/api/teachers', { token: admin })).body.find((t) => t.email === 'teacher@diploma.local').id
+await call('POST', `/api/groups/${commonGroup.id}/reviewers`, { token: admin, json: { reviewerId: seedTeacherId } })
 const templateCreated = await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: `Hardening Template ${stamp}`, bytes: templateV1, groupIds: [commonGroup.id] }) })
+check('35 template created', templateCreated.status, 201)
 const hardeningTemplateId = templateCreated.body.id
-cleanup.add(`template ${hardeningTemplateId}`, async () => {
+if (hardeningTemplateId) cleanup.add(`template ${hardeningTemplateId}`, async () => {
   const stillThere = await call('GET', `/api/templates/${hardeningTemplateId}`, { token: admin })
   if (stillThere.body?.code !== 'template.notFound') {
     await call('DELETE', `/api/templates/${hardeningTemplateId}`, { token: teacher })
