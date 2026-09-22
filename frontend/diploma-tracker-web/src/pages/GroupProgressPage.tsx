@@ -24,7 +24,10 @@ export function GroupProgressPage() {
 
   // Reached both from the teacher's own group list and from the shared dashboard group table
   // (task-15 brief, Step 5), so the back link has to return to whichever list the viewer owns.
-  const backToGroupsPath = user?.role === 'Admin' ? '/admin/groups' : '/teacher/groups'
+  const isAdmin = user?.role === 'Admin'
+  const backToGroupsPath = isAdmin ? '/admin/groups' : '/teacher/groups'
+  // The admin's groups list uses the wording "Back to groups"; teachers keep the "my groups" wording.
+  const backToGroupsLabel = isAdmin ? t('groups.backToGroups') : t('progress.backToGroups')
 
   const [progress, setProgress] = useState<GroupProgress | null>(null)
   const [students, setStudents] = useState<GroupStudent[]>([])
@@ -85,7 +88,7 @@ export function GroupProgressPage() {
     <>
       <Link to={backToGroupsPath} className="mb-4 inline-flex h-10 items-center gap-2 rounded-control bg-transparent px-4 text-sm font-medium text-accent hover:bg-surface">
         <ArrowLeft className="size-4" aria-hidden />
-        {t('progress.backToGroups')}
+        {backToGroupsLabel}
       </Link>
 
       {isLoading && (

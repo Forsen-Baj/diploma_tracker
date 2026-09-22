@@ -301,10 +301,20 @@ public class StudentWorkflowService : IStudentWorkflowService
 
         var total = await query.CountAsync();
 
+        // M4: page and pageSize are both clamped above, but page alone can still be large enough
+        // that (page - 1) * pageSize overflows a 32-bit int (e.g. page=100000000, pageSize=100)
+        // and wraps negative, which SQL Server refuses as an OFFSET. Computed in long and capped,
+        // a page past the end simply finds nothing to skip to and returns an empty page.
+        var offset = (long)(page - 1) * pageSize;
+        if (offset > int.MaxValue)
+        {
+            offset = int.MaxValue;
+        }
+
         var rows = await query
             .OrderBy(s => s.SubmittedAt)
             .ThenBy(s => s.Id)
-            .Skip((page - 1) * pageSize)
+            .Skip((int)offset)
             .Take(pageSize)
             .Select(s => new ReviewQueueItem
             {

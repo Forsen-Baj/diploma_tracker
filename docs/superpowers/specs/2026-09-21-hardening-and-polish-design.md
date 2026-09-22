@@ -218,17 +218,26 @@ ArchivedFile
 ```
 
 One `ArchivedGroup` exists per group that has anything archived, whatever put it there; a
-second archiving event for the same group adds files to the row that is already present.
+second archiving event for the same group adds files to the row that is already present. An
+archiving event that finds no file writes no row. The copied name columns are sized for a full
+name — three 100-character parts and two spaces, 302 characters — and `StorageKey` matches the
+live column it copies.
 
 ### 4.3 What fills it
 
 **Deleting a group** archives first, then deletes. Inside one transaction the system writes the
 `ArchivedGroup` (with `GroupDeletedAt` set), the reviewers who were assigned to it, and one
-`ArchivedFile` per submitted file of every student in that group, then lets the cascade run.
+`ArchivedFile` per submitted file the deletion is about to remove, then lets the cascade run.
+That is every file submitted on the group's steps — including the work of students who have
+since moved to another group — and every file of the archived students whose accounts go with
+the group, including work from a group they belonged to earlier. All of it lands in the deleted
+group's archive; each row names its student and step, so nothing is lost by pooling it.
 Nothing is deleted before the archive rows are committed, so a failure at any point leaves the
 group intact.
 
-**Archiving a student** archives a copy and changes nothing else. The student's rows, steps,
+**Archiving a student** — one at a time, several at once, or every student of a group — archives
+a copy, settles the student's live topic reservations (a pending request is withdrawn, a held
+catalogue topic returns to *Available*), and changes nothing else. The student's rows, steps,
 submissions and files stay exactly where they are — archiving a student is reversible today and
 stays reversible, with their whole history intact when they are restored. (Owner decision,
 2026-09-21.)
@@ -300,7 +309,10 @@ group that no longer exists.
 Their reservations, student tasks and topic links cascade or are cleared with the profile; any
 `StudentProposal` topic they owned is deleted with them, and a catalogue topic they held
 returns to `Available`. The confirmation dialog names the group, the number of archived students
-whose accounts will be deleted, and the number of files being archived.
+whose accounts will be deleted, and the number of files being archived; it reads them from
+`GET /api/groups/{id}/deletion-preview`, which counts files with the same rule the deletion
+archives by. While the group still has an active student the dialog says so and offers no
+delete.
 
 ## 5. Identity and structure
 
@@ -463,7 +475,8 @@ Two properties the *My topic* card is expected to hold:
 
 - A rejected request is shown **whether or not the decision carried a comment**. The card is
   driven by the rejection, not by the comment; a rejection without a comment shows the topic, the
-  rejected badge and the date, and no comment paragraph. It is dismissible as it is today.
+  rejected badge, the date, and a sentence saying the request was rejected without a comment in
+  place of the comment paragraph. (Owner decision, 2026-09-23.) It is dismissible as it is today.
 - The selection deadline is evaluated **against the passing of time**, not only when something
   else causes a render. The page schedules a re-evaluation for the deadline instant (and
   re-evaluates when the window regains focus), so a page left open across the deadline stops
@@ -538,6 +551,7 @@ must drop its local database**, and the owner is told before it happens.
 |---|---|---|---|
 | PUT | `/api/task-templates/order` | Admin | Complete new order for one faculty |
 | DELETE | `/api/task-templates/{id}` | Admin | Delete a step no group has been given |
+| GET | `/api/groups/{id}/deletion-preview` | Admin | Active and archived student counts, and the number of files a deletion would archive |
 | GET | `/api/review/queue` | Teacher, Admin | Paged: `page`, `pageSize`, `groupId`, `late` |
 | GET | `/api/dashboard/student` | Student | Progress summary and most recent decision |
 | GET | `/api/dashboard/teacher` | Teacher | Counts, latest five to review, overdue steps, supervised students, per-group rows |

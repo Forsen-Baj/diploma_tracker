@@ -137,7 +137,8 @@ public class GroupServiceTests
 
     private static GroupService CreateService(AppDbContext context) =>
         new(context, NullLogger<GroupService>.Instance, new AccessScope(context),
-            new ArchiveService(context, new LocalFileStorage(Path.GetTempPath()), NullLogger<ArchiveService>.Instance));
+            new ArchiveService(context, new LocalFileStorage(Path.GetTempPath()), NullLogger<ArchiveService>.Instance),
+            new ReservationService(context, new TopicSettingsService(context, NullLogger<TopicSettingsService>.Instance), NullLogger<ReservationService>.Instance));
 
     private static Group AddGroupWithOneStudent(AppDbContext context)
     {

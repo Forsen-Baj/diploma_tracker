@@ -139,13 +139,13 @@ namespace DiplomaTracker.Api.Migrations
 
                     b.Property<string>("StorageKey")
                         .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
 
                     b.Property<string>("StudentName")
                         .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("nvarchar(300)");
+                        .HasMaxLength(302)
+                        .HasColumnType("nvarchar(302)");
 
                     b.Property<string>("StudentNumber")
                         .IsRequired()
@@ -230,8 +230,8 @@ namespace DiplomaTracker.Api.Migrations
 
                     b.Property<string>("ReviewerName")
                         .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("nvarchar(300)");
+                        .HasMaxLength(302)
+                        .HasColumnType("nvarchar(302)");
 
                     b.HasKey("Id");
 

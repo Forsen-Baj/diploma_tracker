@@ -60,6 +60,9 @@ export function ReviewQueuePage() {
         const result = await getReviewQueue(groupId || undefined, late, page)
         if (requestRef.current !== requestId) return
         setData(result)
+        if (result.items.length === 0 && result.total > 0 && page > 1) {
+          setPage(Math.max(1, Math.ceil(result.total / result.pageSize)))
+        }
       } catch (err) {
         if (requestRef.current !== requestId) return
         setLoadError(errorMessage(err))

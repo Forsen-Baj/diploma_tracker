@@ -77,7 +77,8 @@ public class AdminBootstrapperTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => AdminBootstrapper.EnsureAdminAsync(context, _passwordHasher, settings, Now));
 
-        Assert.Contains("at least 12", exception.Message);
+        Assert.Contains("Bootstrap__AdminPassword", exception.Message);
+        Assert.Contains("between 12 and 128", exception.Message);
         Assert.False(await context.Users.AnyAsync());
     }
 }

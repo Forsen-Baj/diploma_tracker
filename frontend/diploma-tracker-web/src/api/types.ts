@@ -120,6 +120,12 @@ export type UpdateGroupRequest = {
   academicYear: string
 }
 
+export type GroupDeletionPreview = {
+  activeStudentCount: number
+  archivedStudentCount: number
+  fileCount: number
+}
+
 export type GroupReviewer = {
   id: string
   groupId: string

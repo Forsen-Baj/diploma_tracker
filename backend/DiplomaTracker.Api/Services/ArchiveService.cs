@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using DiplomaTracker.Api.Data;
 using DiplomaTracker.Api.DTOs.Archive;
 using DiplomaTracker.Api.DTOs.Workflow;
@@ -51,6 +52,23 @@ public class ArchiveService : IArchiveService
         return archived;
     }
 
+    /// Phase 8 §4.1/I1: the files a group deletion must archive. A student who has since moved
+    /// out keeps their old `StudentTask` rows, reached via `GroupTask.GroupId`; a student
+    /// archived in this group with submissions from an earlier group is reached via
+    /// `StudentProfile.GroupId`. Owner decision: everything goes into the deleted group's
+    /// archive, whichever side matched. Shared by the archiving write path and the
+    /// deletion-preview read path so the two can never disagree on what will be archived.
+    private static Expression<Func<SubmissionFile, bool>> GroupDeletionFileFilter(Guid groupId) =>
+        f => f.Submission.StudentTask.GroupTask.GroupId == groupId
+            || f.Submission.StudentTask.StudentProfile.GroupId == groupId;
+
+    /// Phase 8 §I3: same predicate the deletion itself archives by, so the preview the admin
+    /// confirms against never disagrees with what actually happens.
+    public Task<int> CountFilesForGroupDeletionAsync(Guid groupId, CancellationToken cancellationToken) =>
+        _dbContext.SubmissionFiles.AsNoTracking()
+            .Where(GroupDeletionFileFilter(groupId))
+            .CountAsync(cancellationToken);
+
     private async Task<int> ArchiveAsync(
         Guid groupId,
         IReadOnlyList<Guid>? studentProfileIds,
@@ -76,9 +94,60 @@ public class ArchiveService : IArchiveService
 
         var now = DateTime.UtcNow;
 
+        // Archiving individual students keeps today's narrower filter: only their own group's
+        // work, because their rows in any earlier group are archived when that group is
+        // eventually deleted or the student is archived from it directly.
+        var filesQuery = markGroupDeleted
+            ? _dbContext.SubmissionFiles.AsNoTracking().Where(GroupDeletionFileFilter(groupId))
+            : _dbContext.SubmissionFiles.AsNoTracking()
+                .Where(f => f.Submission.StudentTask.StudentProfile.GroupId == groupId
+                    && f.Submission.StudentTask.GroupTask.GroupId == groupId);
+
+        if (studentProfileIds is not null)
+        {
+            filesQuery = filesQuery.Where(f => studentProfileIds.Contains(f.Submission.StudentTask.StudentProfileId));
+        }
+
+        var rows = await filesQuery
+            .Select(f => new
+            {
+                f.StorageKey,
+                f.OriginalName,
+                f.ContentType,
+                f.SizeBytes,
+                f.Kind,
+                StudentLastName = f.Submission.StudentTask.StudentProfile.User.LastName,
+                StudentFirstName = f.Submission.StudentTask.StudentProfile.User.FirstName,
+                StudentPatronymic = f.Submission.StudentTask.StudentProfile.User.Patronymic,
+                f.Submission.StudentTask.StudentProfile.StudentNumber,
+                StepTitle = f.Submission.StudentTask.GroupTask.DiplomaTaskTemplate.Title,
+                StepOrder = f.Submission.StudentTask.GroupTask.DiplomaTaskTemplate.Order,
+                f.Submission.StudentTask.GroupTask.Deadline,
+                f.Submission.Version,
+                f.Submission.SubmittedAt,
+                f.Submission.IsLate,
+                f.Submission.Decision,
+                f.Submission.Mark,
+                ReviewerLastName = f.Submission.Reviewer != null ? f.Submission.Reviewer.LastName : null,
+                ReviewerFirstName = f.Submission.Reviewer != null ? f.Submission.Reviewer.FirstName : null,
+                f.Submission.ReviewerComment,
+                f.Submission.DecidedAt
+            })
+            .ToListAsync(cancellationToken);
+
         var archive = await _dbContext.ArchivedGroups
             .Include(a => a.Reviewers)
             .FirstOrDefaultAsync(a => a.SourceGroupId == groupId, cancellationToken);
+
+        // Phase 8 §4.2/M1: one ArchivedGroup exists per group that has anything archived. An
+        // empty group, or a student who never submitted, must not create a bare row that then
+        // shows on the Archive page with nothing in it. An archive already there is a different
+        // matter - it is updated below whatever this call finds, because its metadata (group
+        // deleted, reviewers) can change independently of whether new files turned up.
+        if (archive is null && rows.Count == 0)
+        {
+            return 0;
+        }
 
         if (archive is null)
         {
@@ -126,42 +195,6 @@ public class ArchiveService : IArchiveService
                     .Where(part => !string.IsNullOrWhiteSpace(part)))
             });
         }
-
-        var filesQuery = _dbContext.SubmissionFiles.AsNoTracking()
-            .Where(f => f.Submission.StudentTask.StudentProfile.GroupId == groupId
-                && f.Submission.StudentTask.GroupTask.GroupId == groupId);
-
-        if (studentProfileIds is not null)
-        {
-            filesQuery = filesQuery.Where(f => studentProfileIds.Contains(f.Submission.StudentTask.StudentProfileId));
-        }
-
-        var rows = await filesQuery
-            .Select(f => new
-            {
-                f.StorageKey,
-                f.OriginalName,
-                f.ContentType,
-                f.SizeBytes,
-                f.Kind,
-                StudentLastName = f.Submission.StudentTask.StudentProfile.User.LastName,
-                StudentFirstName = f.Submission.StudentTask.StudentProfile.User.FirstName,
-                StudentPatronymic = f.Submission.StudentTask.StudentProfile.User.Patronymic,
-                f.Submission.StudentTask.StudentProfile.StudentNumber,
-                StepTitle = f.Submission.StudentTask.GroupTask.DiplomaTaskTemplate.Title,
-                StepOrder = f.Submission.StudentTask.GroupTask.DiplomaTaskTemplate.Order,
-                f.Submission.StudentTask.GroupTask.Deadline,
-                f.Submission.Version,
-                f.Submission.SubmittedAt,
-                f.Submission.IsLate,
-                f.Submission.Decision,
-                f.Submission.Mark,
-                ReviewerLastName = f.Submission.Reviewer != null ? f.Submission.Reviewer.LastName : null,
-                ReviewerFirstName = f.Submission.Reviewer != null ? f.Submission.Reviewer.FirstName : null,
-                f.Submission.ReviewerComment,
-                f.Submission.DecidedAt
-            })
-            .ToListAsync(cancellationToken);
 
         var existingKeys = await _dbContext.ArchivedFiles.AsNoTracking()
             .Where(f => f.ArchivedGroupId == archive.Id)
@@ -397,10 +430,12 @@ public class ArchiveService : IArchiveService
             {
                 await _storage.DeleteAsync(key, cancellationToken);
             }
-            catch (IOException exception)
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
                 // §11: a blob that cannot be removed does not fail the purge. The rows are gone;
-                // the next purge that finds nothing referencing this key collects it.
+                // the next purge that finds nothing referencing this key collects it. A read-only
+                // file or a permissions problem surfaces as UnauthorizedAccessException, not
+                // IOException, so both are handled the same way.
                 _logger.LogWarning(exception, "Archived blob could not be deleted: StorageKey={StorageKey}", key);
             }
         }

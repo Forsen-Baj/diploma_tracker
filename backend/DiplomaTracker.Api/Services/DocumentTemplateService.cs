@@ -186,7 +186,18 @@ public class DocumentTemplateService : IDocumentTemplateService
         template.UpdatedAt = DateTime.UtcNow;
         UpdateAudience(template, request.GroupIds, request.TeacherIds);
 
-        await _dbContext.SaveChangesAsync();
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // M3: DocumentTemplate carries a RowVersion, so a details edit that races a file
+            // replacement is now concurrency-checked too, the same as ReplaceFileAsync.
+            _dbContext.ChangeTracker.Clear();
+            return (null, TemplateErrors.Conflict);
+        }
+
         return await GetTemplateAsync(user, id);
     }
 

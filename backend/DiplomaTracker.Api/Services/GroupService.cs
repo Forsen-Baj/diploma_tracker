@@ -15,13 +15,20 @@ public class GroupService : IGroupService
     private readonly ILogger<GroupService> _logger;
     private readonly IAccessScope _accessScope;
     private readonly IArchiveService _archive;
+    private readonly IReservationService _reservationService;
 
-    public GroupService(AppDbContext dbContext, ILogger<GroupService> logger, IAccessScope accessScope, IArchiveService archive)
+    public GroupService(
+        AppDbContext dbContext,
+        ILogger<GroupService> logger,
+        IAccessScope accessScope,
+        IArchiveService archive,
+        IReservationService reservationService)
     {
         _dbContext = dbContext;
         _logger = logger;
         _accessScope = accessScope;
         _archive = archive;
+        _reservationService = reservationService;
     }
 
     /// Phase 8 §8: the API returns exactly the columns it sends. This used to materialise a
@@ -193,38 +200,29 @@ public class GroupService : IGroupService
         // Archive BEFORE anything is deleted: a failure here leaves the group intact.
         var archivedFileCount = await _archive.ArchiveGroupAsync(id, cancellationToken);
 
+        // Phase 8 §M2: only archived profiles are loaded here, even though the check above
+        // already refused an active student. A student added or restored into the group between
+        // the two reads is not swept up into this delete - the Group->StudentProfile FK is
+        // Restrict, so their profile still pointing at this group makes the save below fail and
+        // the existing FK-violation handler answers group.hasStudents, never a deleted active
+        // account.
         var profiles = await _dbContext.StudentProfiles
             .Include(p => p.User)
-            .Where(p => p.GroupId == id)
+            .Where(p => p.GroupId == id && p.ArchivedAt != null)
             .ToListAsync(cancellationToken);
 
-        var heldTopicIds = profiles.Where(p => p.TopicId is not null).Select(p => p.TopicId!.Value).ToList();
+        var now = DateTime.UtcNow;
 
-        // Both links are Restrict, so they are cleared and saved before the profiles go.
+        // Phase 8 §I2 safety net: settle each profile's reservations before their accounts go,
+        // exactly as StudentService.ArchiveStudentsAsync does - a pending catalogue reservation
+        // returns its topic to Available, a pending or approved StudentProposal topic is deleted,
+        // and an approved catalogue topic returns to Available. Without this a reservation
+        // cascade-deletes with the account and leaves its topic stranded (§4.7).
         foreach (var profile in profiles)
         {
-            profile.TopicId = null;
-            profile.SupervisorId = null;
+            await _reservationService.SettleReservationsForArchiveAsync(profile.Id, now);
         }
         await _dbContext.SaveChangesAsync(cancellationToken);
-
-        var heldTopics = await _dbContext.Topics
-            .Where(t => heldTopicIds.Contains(t.Id))
-            .ToListAsync(cancellationToken);
-
-        foreach (var topic in heldTopics)
-        {
-            if (topic.Origin == TopicOrigin.StudentProposal)
-            {
-                // A proposal exists only for the student who proposed it.
-                _dbContext.Topics.Remove(topic);
-            }
-            else
-            {
-                topic.Status = TopicStatus.Available;
-                topic.UpdatedAt = DateTime.UtcNow;
-            }
-        }
 
         // Deleting the user cascades to the profile, its reservations and its student tasks;
         // student tasks cascade to submissions and submission files. The group's own cascade
@@ -247,6 +245,38 @@ public class GroupService : IGroupService
 
         SecurityLog.GroupDeleted(_logger, administratorId, id, groupCode, archivedFileCount, profiles.Count);
         return (true, null);
+    }
+
+    /// Phase 8 §4.7/I3: what the delete confirmation dialog names before the admin commits to an
+    /// irreversible, account-deleting operation. fileCount uses the same predicate the deletion
+    /// itself archives by (ArchiveService.CountFilesForGroupDeletionAsync), so the two can never
+    /// disagree.
+    public async Task<(GroupDeletionPreviewResponse? preview, string? error)> GetDeletionPreviewAsync(Guid groupId, CancellationToken cancellationToken)
+    {
+        var groupExists = await _dbContext.Groups.AnyAsync(g => g.Id == groupId, cancellationToken);
+        if (!groupExists)
+        {
+            return (null, GroupErrors.NotFound);
+        }
+
+        var counts = await _dbContext.StudentProfiles.AsNoTracking()
+            .Where(p => p.GroupId == groupId)
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Active = g.Count(p => p.ArchivedAt == null),
+                Archived = g.Count(p => p.ArchivedAt != null)
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var fileCount = await _archive.CountFilesForGroupDeletionAsync(groupId, cancellationToken);
+
+        return (new GroupDeletionPreviewResponse
+        {
+            ActiveStudentCount = counts?.Active ?? 0,
+            ArchivedStudentCount = counts?.Archived ?? 0,
+            FileCount = fileCount
+        }, null);
     }
 
     public async Task<(IReadOnlyList<GroupStudentResponse>? students, string? error)> GetGroupStudentsAsync(UserContext user, Guid groupId)
@@ -306,6 +336,16 @@ public class GroupService : IGroupService
 
         var now = DateTime.UtcNow;
         var archivedIds = StudentArchiver.Archive(profiles, now);
+
+        // Phase 8 §I2: as StudentService.ArchiveStudentsAsync does - an archived student's live
+        // reservations must not linger, or a topic's supervisor would still see and could approve
+        // a pending request, or hold a topic permanently approved for an account that can no
+        // longer act on it.
+        foreach (var archivedId in archivedIds)
+        {
+            await _reservationService.SettleReservationsForArchiveAsync(archivedId, now);
+        }
+
         await _dbContext.SaveChangesAsync();
         await _archive.ArchiveStudentsAsync(archivedIds, CancellationToken.None);
 

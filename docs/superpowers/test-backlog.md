@@ -391,3 +391,52 @@ its review completes.
   shows the overdue badge.
 - A rejection without a comment still renders the block on My topic.
 - The topic page stops offering Reserve when the deadline passes with the page open.
+
+### Whole-plan review (2026-09-23)
+
+- **Group deletion with moved students** (after the I1 fix), in both directions:
+  - a student who moved out of the deleted group;
+  - an archived student with submissions in an earlier group.
+  In each case assert that the `ArchivedFile` rows exist and no blob is orphaned.
+- **Archive then delete with a pending reservation** (after the I2 fix): the catalogue topic returns to `Available`, and a pending proposal topic is deleted.
+- **`SessionStateValidator`**: each branch (Missing, Inactive, Unclaimed, RoleChanged, Malformed) returns false. A valid account returns true.
+- **`OfficePackageInspector`**:
+  - missing `[Content_Types].xml`;
+  - missing `word/` or `ppt/` part;
+  - a `.docx` with only `xl/`;
+  - more than 1,000 entries;
+  - past 100 MB total, or past 20 MB of XML;
+  - depth over 128;
+  - a JAR renamed `.docx`.
+- **`SubmissionFileRules`**: allowlist per path; PNG/JPEG/PDF signature mismatch; zero-length supporting file.
+- **`IdentityNormalizer.StudentNumberCanonical`**:
+  - each of the 13 Cyrillic folds;
+  - separators and whitespace stripped;
+  - lowercase Cyrillic;
+  - a separators-only input that folds to empty, which should be refused as `validation.failed`.
+- **`ArchiveService.PurgeGroupAsync`**:
+  - a key still live in `SubmissionFiles` is kept;
+  - a key held by another archived group is kept;
+  - an unreferenced key is deleted;
+  - a failing delete does not fail the purge.
+- **`ArchiveService.ArchiveAsync` called twice for one reviewed group** (regression for the second commit's `DbUpdateConcurrencyException`), on SQL Server. The InMemory provider cannot show it.
+- **Archive visibility**:
+  - a teacher sees an archive only via a stored reviewer id;
+  - a hidden archive answers `archive.notFound` on the list, the details and the file download.
+- **Template row version**:
+  - a concurrent replace yields `template.conflict` and the losing new blob is deleted;
+  - after the M3 fix, a concurrent details edit yields `template.conflict`.
+- **Reorder**: `orderMismatch` for a missing, extra or duplicate id; orders rewritten `1..n`; the unique index is never violated across the two saves (SQL Server).
+- **`DeleteTaskTemplateAsync`**: `taskTemplate.assigned` when a group holds the step; 204 otherwise.
+- **Queue paging**:
+  - clamp of `page < 1` and `pageSize` outside 1-100;
+  - a stable order across pages when `SubmittedAt` ties;
+  - after the M4 fix, a huge `page`.
+- **Overdue rule parity**: `IsOverdue` and the three `DashboardService` predicates agree for every status × (deadline past / future).
+- **`lateSteps`**: two late versions of one step count once.
+- **Admin dashboard**: `withApprovedTopic + withPendingRequest + withoutTopic == totalStudents`.
+- **Faculty and department conflicts**: a name/short-name collision against two different rows reports the name first.
+- **Password policy**: an admin's own password change at 11 vs 12 characters; admin creation; the bootstrap refusal. A teacher's or student's 8-character minimum is unaffected.
+- **`TopicSettingsService`**: one query per scope when read repeatedly; the cache is reset after `SetDeadlineAsync`.
+- **Last-active-administrator guard**: after refinements checks 28/29 were rewritten, nothing reaches it through the API. It needs a unit test at the service level.
+- **`request.tooLarge`**: confirm that a body over the limit on a multipart form actually reaches the exception handler as a 413. `BadHttpRequestException` derives from `IOException`, and form model binding may turn it into a 400 `validation.failed`. No check script covers it.

@@ -15,6 +15,10 @@ public interface IArchiveService
     /// live rows untouched. Returns the number of files archived.
     Task<int> ArchiveStudentsAsync(IReadOnlyList<Guid> studentProfileIds, CancellationToken cancellationToken);
 
+    /// Counts the SubmissionFile rows a deletion of this group would archive, using the same
+    /// predicate ArchiveGroupAsync archives by (I3: the deletion-preview endpoint).
+    Task<int> CountFilesForGroupDeletionAsync(Guid groupId, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<ArchivedGroupSummaryResponse>> GetGroupsAsync(UserContext user, string? academicYear, string? search);
     Task<(ArchivedGroupDetailsResponse? details, string? error)> GetGroupAsync(UserContext user, Guid id);
     Task<(StoredFileDownload? file, string? error)> OpenFileAsync(UserContext user, Guid fileId, CancellationToken cancellationToken);

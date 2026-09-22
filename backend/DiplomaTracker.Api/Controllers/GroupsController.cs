@@ -98,6 +98,14 @@ public class GroupsController : ApiControllerBase
     }
 
     [Authorize(Roles = "Admin")]
+    [HttpGet("{id:guid}/deletion-preview")]
+    public async Task<IActionResult> GetDeletionPreview(Guid id)
+    {
+        var (preview, error) = await _groupService.GetDeletionPreviewAsync(id, HttpContext.RequestAborted);
+        return preview is null ? ErrorResult(error) : Ok(preview);
+    }
+
+    [Authorize(Roles = "Admin")]
     [HttpPost("{groupId:guid}/students/archive")]
     public async Task<IActionResult> ArchiveStudents(Guid groupId)
     {

@@ -40,10 +40,10 @@ public static class SecurityLog
             "Access refused: ActorUserId={ActorUserId}, Role={Role}, Resource={Resource}, ResourceId={ResourceId}",
             actorUserId, role, resource, resourceId);
 
-    public static void StudentsImported(ILogger logger, Guid administratorId, int created, int updated, int failed) =>
+    public static void StudentsImported(ILogger logger, Guid administratorId, int created, int skipped) =>
         logger.LogInformation(
-            "Students imported: AdministratorId={AdministratorId}, Created={Created}, Updated={Updated}, Failed={Failed}",
-            administratorId, created, updated, failed);
+            "Students imported: AdministratorId={AdministratorId}, Created={Created}, Skipped={Skipped}",
+            administratorId, created, skipped);
 
     public static void StudentsArchived(ILogger logger, Guid administratorId, int count, IReadOnlyList<Guid> studentProfileIds) =>
         logger.LogInformation(
@@ -55,9 +55,9 @@ public static class SecurityLog
             "Students restored: AdministratorId={AdministratorId}, Count={Count}, StudentProfileIds={StudentProfileIds}",
             administratorId, count, studentProfileIds);
 
-    /// Action is Created, Updated, Deleted, Activated or Deactivated; entity is the entity type
-    /// name (Faculty, Department, Group, TaskTemplate, GroupTask, Teacher, Administrator,
-    /// Student, Topic, Settings).
+    /// Action is Created, Updated, Deleted, Activated, Deactivated, PasswordSet or Reordered;
+    /// entity is the entity type name (Faculty, Department, Group, TaskTemplate, GroupTask,
+    /// Teacher, Administrator, Student, Topic, Settings).
     public static void AdministratorAction(ILogger logger, Guid administratorId, string action, string entity, Guid entityId) =>
         logger.LogInformation(
             "Administrator action: AdministratorId={AdministratorId}, Action={Action}, Entity={Entity}, EntityId={EntityId}",

@@ -28,7 +28,7 @@ public static class AdminBootstrapper
         if (!PasswordPolicy.IsSatisfiedByElevated(settings.AdminPassword))
         {
             throw new InvalidOperationException(
-                $"Bootstrap:AdminPassword must be at least {PasswordPolicy.ElevatedMinimumLength} characters.");
+                $"Bootstrap__AdminPassword must be between {PasswordPolicy.ElevatedMinimumLength} and {PasswordPolicy.MaximumLength} characters.");
         }
 
         dbContext.Users.Add(new AppUser

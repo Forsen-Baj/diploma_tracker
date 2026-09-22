@@ -133,7 +133,7 @@ public class AdminService : IAdminService
         user.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync();
 
-        SecurityLog.AdministratorAction(_logger, administratorId, "Updated", "Administrator", user.Id);
+        SecurityLog.AdministratorAction(_logger, administratorId, "PasswordSet", "Administrator", user.Id);
 
         return (true, null);
     }

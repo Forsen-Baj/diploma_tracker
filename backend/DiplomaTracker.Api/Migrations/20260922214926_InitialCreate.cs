@@ -85,7 +85,7 @@ namespace DiplomaTracker.Api.Migrations
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     ArchivedGroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    StudentName = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
+                    StudentName = table.Column<string>(type: "nvarchar(302)", maxLength: 302, nullable: false),
                     StudentNumber = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
                     StepTitle = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
                     StepOrder = table.Column<int>(type: "int", nullable: false),
@@ -102,7 +102,7 @@ namespace DiplomaTracker.Api.Migrations
                     OriginalName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
                     ContentType = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     SizeBytes = table.Column<long>(type: "bigint", nullable: false),
-                    StorageKey = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    StorageKey = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
                     ArchivedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
                 constraints: table =>
@@ -123,7 +123,7 @@ namespace DiplomaTracker.Api.Migrations
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     ArchivedGroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     ReviewerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ReviewerName = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false)
+                    ReviewerName = table.Column<string>(type: "nvarchar(302)", maxLength: 302, nullable: false)
                 },
                 constraints: table =>
                 {

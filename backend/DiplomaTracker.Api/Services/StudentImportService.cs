@@ -191,7 +191,7 @@ public class StudentImportService : IStudentImportService
             return StudentImportOutcome.Failed(OnboardingErrors.ImportGroupNotFound);
         }
 
-        SecurityLog.StudentsImported(_logger, administratorId, toCreate.Count, skipped.Count, errors.Count);
+        SecurityLog.StudentsImported(_logger, administratorId, toCreate.Count, skipped.Count);
 
         return StudentImportOutcome.Succeeded(new StudentImportResult
         {

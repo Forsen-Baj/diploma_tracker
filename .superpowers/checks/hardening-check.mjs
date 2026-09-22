@@ -312,6 +312,56 @@ check('24 purge succeeds', (await call('DELETE', `/api/archive/groups/${archiveE
 const archiveListAfterPurge = (await call('GET', '/api/archive/groups', { token: admin })).body
 check('24a purged archive is empty of that group', archiveListAfterPurge.some((g) => g.id === archiveEntry.id), false)
 
+// Group deletion archives every file it removes (§4.3), including work that crossed groups: a
+// student who moved out of the deleted group, and an archived student whose earlier group's work
+// goes with their account. The deletion preview (§4.7) counts by the same rule.
+const makeMoveGroup = async (suffix) => {
+  const group = (await call('POST', '/api/groups', { token: admin, json: { departmentId: hardeningDepartment.id, code: `HMV${suffix}${stamp}`, academicYear: '2026/2027', description: '' } })).body
+  cleanup.add(`group ${group.code}`, () => removeGroup(call, admin, group))
+  return group
+}
+const moveA = await makeMoveGroup('A')
+const moveB = await makeMoveGroup('B')
+const moveC = await makeMoveGroup('C')
+const moveStep = await makeStepTemplate('Move Step')
+await call('POST', '/api/group-tasks', { token: admin, json: { groupId: moveA.id, taskTemplateId: moveStep.id, deadline: '2099-01-01T00:00:00Z' } })
+
+async function submitInMoveA(suffix) {
+  const email = `move.${suffix}.${stamp}@student.local`
+  const created = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Move', lastName: suffix, email, studentNumber: `MV${suffix}${stamp}`, password: 'Password1!', groupId: moveA.id } })).body
+  const token = await loginToken(email, 'Password1!')
+  const step = (await call('GET', '/api/student-tasks/mine', { token })).body[0]
+  await call('POST', `/api/student-tasks/${step.id}/submissions`, { token, form: submissionForm({ main: docx(paragraph(`Moved work ${suffix} ${stamp}`)) }) })
+  return { ...created, email, token }
+}
+const archiveCount = async (group) => (await call('GET', `/api/archive/groups?search=${group.code}`, { token: admin })).body.find((g) => g.groupCode === group.code)?.fileCount ?? 0
+
+// An archived student whose current group is deleted takes their earlier group's work along.
+const moverP = await submitInMoveA('P')
+await call('PUT', `/api/students/${moverP.id}/group`, { token: admin, json: { groupId: moveB.id } })
+await call('POST', '/api/students/archive', { token: admin, json: { studentIds: [moverP.id] } })
+const previewB = (await call('GET', `/api/groups/${moveB.id}/deletion-preview`, { token: admin })).body
+check('24b preview names the archived account and its earlier work', JSON.stringify(previewB), JSON.stringify({ activeStudentCount: 0, archivedStudentCount: 1, fileCount: 1 }))
+check('24c deleting that group succeeds', (await call('DELETE', `/api/groups/${moveB.id}`, { token: admin })).status, 204)
+check('24d the earlier group\'s work is in the deleted group\'s archive', await archiveCount(moveB), 1)
+
+// A student who moved out keeps an account; the work left in the old group is archived with it.
+const moverR = await submitInMoveA('R')
+await call('PUT', `/api/students/${moverR.id}/group`, { token: admin, json: { groupId: moveC.id } })
+const previewA = (await call('GET', `/api/groups/${moveA.id}/deletion-preview`, { token: admin })).body
+check('24e preview of the old group counts the moved student\'s work', JSON.stringify(previewA), JSON.stringify({ activeStudentCount: 0, archivedStudentCount: 0, fileCount: 1 }))
+check('24f deleting the old group succeeds', (await call('DELETE', `/api/groups/${moveA.id}`, { token: admin })).status, 204)
+check('24g the moved student\'s old work is archived', await archiveCount(moveA), 1)
+check('24h the moved student still signs in', (await login(moverR.email, 'Password1!')).status, 200)
+check('24i preview reports the active student', (await call('GET', `/api/groups/${moveC.id}/deletion-preview`, { token: admin })).body.activeStudentCount, 1)
+
+// Archiving every student of a group settles their reservations, as archiving one does.
+const reservedTopic = (await call('POST', '/api/topics', { token: teacher, json: { title: `Hardening Topic ${stamp}`, departmentId: hardeningDepartment.id } })).body
+cleanup.add(`topic ${reservedTopic.title}`, () => call('DELETE', `/api/topics/${reservedTopic.id}`, { token: admin }))
+check('24j reservation pending', (await call('POST', `/api/topics/${reservedTopic.id}/reserve`, { token: moverR.token })).body.status, 'Pending')
+check('24k archiving the whole group', (await call('POST', `/api/groups/${moveC.id}/students/archive`, { token: admin })).status, 200)
+check('24l the reserved topic is available again', (await call('GET', `/api/topics/${reservedTopic.id}`, { token: admin })).body.status, 'Available')
+
 // ===========================================================================
 // Queue, progress and dashboards (§7, §8)
 // ===========================================================================

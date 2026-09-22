@@ -17,7 +17,7 @@ export function Pagination({ page, pageSize, total, onChange, disabled = false }
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1
   const to = Math.min(page * pageSize, total)
 
-  if (total <= pageSize) {
+  if (total <= pageSize && page <= 1) {
     return null
   }
 

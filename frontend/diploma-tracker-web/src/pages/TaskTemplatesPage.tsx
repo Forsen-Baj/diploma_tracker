@@ -114,16 +114,26 @@ export function TaskTemplatesPage() {
   const [isReordering, setIsReordering] = useState(false)
   const dragIndexRef = useRef<number | null>(null)
 
+  // Tracks the faculty currently selected so a reorder response (or its rollback) that arrives
+  // after the admin switched faculty can be told apart from one that still applies.
+  const selectedFacultyIdRef = useRef(selectedFacultyId)
+  useEffect(() => {
+    selectedFacultyIdRef.current = selectedFacultyId
+  }, [selectedFacultyId])
+
   const applyReorder = async (reordered: TaskTemplate[]) => {
+    const requestFacultyId = selectedFacultyId
     const previous = templates
     const renumbered = reordered.map((template, index) => ({ ...template, order: index + 1 }))
     setTemplates(renumbered)
     setIsReordering(true)
     try {
-      const response = await reorderTaskTemplates(selectedFacultyId, renumbered.map((template) => template.id))
+      const response = await reorderTaskTemplates(requestFacultyId, renumbered.map((template) => template.id))
+      if (selectedFacultyIdRef.current !== requestFacultyId) return
       setTemplates(response)
       toast.success(t('taskTemplates.reordered'))
     } catch (err) {
+      if (selectedFacultyIdRef.current !== requestFacultyId) return
       setTemplates(previous)
       toast.error(errorMessage(err))
     } finally {

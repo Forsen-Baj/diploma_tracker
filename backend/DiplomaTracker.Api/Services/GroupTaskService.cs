@@ -281,6 +281,13 @@ public class GroupTaskService : IGroupTaskService
 
         await _dbContext.SaveChangesAsync();
 
+        // D2: the single-create path logs one AdministratorAction per group task it creates;
+        // this bulk path skipped it entirely.
+        foreach (var created in createdGroupTasks)
+        {
+            SecurityLog.AdministratorAction(_logger, userId, "Created", "GroupTask", created.Id);
+        }
+
         if (createdGroupTasks.Count > 0)
         {
             var createdIds = createdGroupTasks.Select(x => x.Id).ToList();

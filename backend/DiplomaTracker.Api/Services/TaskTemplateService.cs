@@ -350,15 +350,29 @@ public class TaskTemplateService : ITaskTemplateService
         {
             template.Order = -template.Order;
         }
-        await _dbContext.SaveChangesAsync();
 
-        for (var index = 0; index < requested.Count; index++)
+        try
         {
-            var template = byId[requested[index]];
-            template.Order = index + 1;
-            template.UpdatedAt = now;
+            await _dbContext.SaveChangesAsync();
+
+            for (var index = 0; index < requested.Count; index++)
+            {
+                var template = byId[requested[index]];
+                template.Order = index + 1;
+                template.UpdatedAt = now;
+            }
+            await _dbContext.SaveChangesAsync();
         }
-        await _dbContext.SaveChangesAsync();
+        catch (DbUpdateException ex) when (ex.IsUniqueConstraintViolation())
+        {
+            // M10: a concurrent reorder, or a reorder racing a single-step move, can violate the
+            // unique (FacultyId, Order) index between these two saves. The transaction is rolled
+            // back rather than left half-applied, and the tracker is cleared as the sibling create
+            // and move paths do.
+            await transaction.RollbackAsync();
+            _dbContext.ChangeTracker.Clear();
+            return (null, TaskErrors.TemplateOrderTaken);
+        }
 
         await transaction.CommitAsync();
 

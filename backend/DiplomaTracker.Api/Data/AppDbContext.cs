@@ -331,7 +331,8 @@ public class AppDbContext : DbContext
         var archivedReviewer = modelBuilder.Entity<ArchivedGroupReviewer>();
         archivedReviewer.ToTable("ArchivedGroupReviewers");
         archivedReviewer.HasKey(x => x.Id);
-        archivedReviewer.Property(x => x.ReviewerName).HasMaxLength(300).IsRequired();
+        // Last + first + patronymic, each up to 100 characters, plus two separating spaces: 302.
+        archivedReviewer.Property(x => x.ReviewerName).HasMaxLength(302).IsRequired();
         archivedReviewer.HasIndex(x => new { x.ArchivedGroupId, x.ReviewerId }).IsUnique();
         archivedReviewer.HasIndex(x => x.ReviewerId);
         archivedReviewer.HasOne(x => x.ArchivedGroup)
@@ -342,7 +343,8 @@ public class AppDbContext : DbContext
         var archivedFile = modelBuilder.Entity<ArchivedFile>();
         archivedFile.ToTable("ArchivedFiles");
         archivedFile.HasKey(x => x.Id);
-        archivedFile.Property(x => x.StudentName).HasMaxLength(300).IsRequired();
+        // Last + first + patronymic, each up to 100 characters, plus two separating spaces: 302.
+        archivedFile.Property(x => x.StudentName).HasMaxLength(302).IsRequired();
         archivedFile.Property(x => x.StudentNumber).HasMaxLength(32).IsRequired();
         archivedFile.Property(x => x.StepTitle).HasMaxLength(300).IsRequired();
         archivedFile.Property(x => x.Decision).HasMaxLength(50);
@@ -351,7 +353,7 @@ public class AppDbContext : DbContext
         archivedFile.Property(x => x.Kind).HasMaxLength(50).IsRequired();
         archivedFile.Property(x => x.OriginalName).HasMaxLength(255).IsRequired();
         archivedFile.Property(x => x.ContentType).HasMaxLength(200).IsRequired();
-        archivedFile.Property(x => x.StorageKey).HasMaxLength(200).IsRequired();
+        archivedFile.Property(x => x.StorageKey).HasMaxLength(300).IsRequired();
         archivedFile.Property(x => x.ArchivedAt).IsRequired();
         // Archiving a student and later deleting their group would otherwise write the same file
         // twice. The service skips keys that are already present; this index is what makes that
