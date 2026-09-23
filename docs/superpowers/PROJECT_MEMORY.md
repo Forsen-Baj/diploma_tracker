@@ -11,7 +11,7 @@ Newest status first; keep entries short.
 | System design (binding authority) | `docs/superpowers/specs/2026-09-15-diploma-tracker-system-design.md` |
 | Increment designs | `docs/superpowers/specs/<date>-<topic>-design.md` |
 | Implementation plans | `docs/superpowers/plans/` |
-| Session handoffs (latest: `2026-09-23-phase-8-closed.md`) | `docs/superpowers/handoffs/` |
+| Session handoffs (latest: `2026-09-24-phases-9-10-planned.md`) | `docs/superpowers/handoffs/` |
 | Tests to write at the end of the project | `docs/superpowers/test-backlog.md` |
 | Per-plan execution ledger, briefs, reports, review packages (git-ignored, local only — does **not** travel between machines, so a handoff must be self-contained) | `.superpowers/sdd/<plan-name>/` |
 | End-to-end check scripts (committed since 2026-09-18) | `.superpowers/checks/` |
@@ -35,8 +35,10 @@ management) sits between 2 and 3.
 | 4 Topics and reservation | Done — commit `Implement thesis topics and reservation` | `2026-09-17-topics-and-reservation-design.md` (amended 2026-09-18) | `2026-09-17-topics-and-reservation.md` |
 | 5 Submission and review | Done — commits `Added basic submission workflow`, `Complete submission and review` | `2026-09-17-submission-and-review-design.md` | `2026-09-17-submission-and-review.md` |
 | 6 Document templates | Done — commit `Implement document templates` | `2026-09-17-document-templates-design.md` (amended 2026-09-19) | `2026-09-17-document-templates.md` |
-| 7 Document preview and commenting | Deferred by the owner; revisit after phase 6 | — | — |
+| 7 Document preview and commenting | Deferred by the owner; the last increment, after phase 10 | — | — |
 | 8 Hardening and polish | Done — commit `Implement hardening and polish` (line endings pinned separately in `Normalise line endings`), follow-ups `Fix test project and check scripts`, `Apply whole-plan review fixes` | `2026-09-21-hardening-and-polish-design.md` | `2026-09-21-hardening-and-polish.md` |
+| 9 Review panels | Planned, not implemented (branch `feature-dms`) | `2026-09-24-review-panels-and-document-routing-design.md` §3 | `2026-09-24-review-panels.md` |
+| 10 Document routing | Planned, not implemented; runs after phase 9 | same, §4 | `2026-09-24-document-routing.md` |
 
 Build order: onboarding → 3 → 4 → 5 → 6 → 8. Specs live in `docs/superpowers/specs/`, plans in
 `docs/superpowers/plans/`. Each plan assumes the previous ones are implemented; execute them
@@ -237,6 +239,12 @@ Parked for later (not blocking):
 - API errors are `{ code, message }`; a body reference that does not exist has its own 400 code, a URL resource that does not exist a 404 code.
 
 ## Log
+
+- 2026-09-24 — Owner asked for two features before the demo: several reviewers per step, and a document routing system under the *Documents* tab. Designed together (`2026-09-24-review-panels-and-document-routing-design.md`) and planned as phase 9 (review panels) and phase 10 (document routing), each with its own plan and single commit. Owner decisions:
+  - **Panels:** the supervisor always reviews; extra reviewers are added per student step by the supervisor, group reviewers or administrators; every reviewer marks or returns; approvals stick after a return; the mark is the rounded average; group reviewers only watch.
+  - **Documents:** every role has them; one holder at a time; each hand-off is for review or for signing; signing means uploading the signed copy; the existing *Documents* page is split into four sections.
+  - **Order:** phase 7 (preview and commenting) is the very last increment. The review minors (M6, M7, M11, M12, D4, D5, D7) stay deferred.
+  - **Status:** nothing is implemented yet; the owner wants every document finished first, so that subagents can start from the files.
 
 - 2026-09-23 — Phase 8 closed out. The test project compiles again (56/56), and all eight check scripts pass (347 checks, 358 with the review's additions) and leave the seeded data exactly as they found it: students live in per-script groups removed through `removeGroup`, step templates are deleted (new `DELETE /api/task-templates/{id}`), and only deactivated staff accounts remain. The scripts exposed a real 500 when a reviewed group was archived twice (fixed). Whole-plan review: 0 Critical, 3 Important, 14 Minor. All three Important findings were fixed in one wave: group deletion archives every file it removes, including work that crossed groups; archiving a whole group's students settles their reservations; and the delete dialog names the accounts and files involved (`GET /api/groups/{id}/deletion-preview`). Nine Minors were fixed too. The scoped re-review found every item resolved and nothing new. `InitialCreate` was regenerated for wider archive name columns, so **every machine must drop its database again**. Deferred by the owner: M6 (dashboards count moved students' old steps), M7 (Cancel at the deadline), M11, M12, and deferred minors 4, 5 and 7. The review report's test list is in `test-backlog.md`.
 - 2026-09-23 — The owner's walkthrough with Ukrainian demo data (`.superpowers/demo/`) led to two changes. First, a student can start work on the steps only once they hold a topic (`step.topicRequired`). Second, the teacher dashboard's group table lists only the groups the teacher reviews (§7.4), so its figures agree with the overdue list. All eight check scripts pass: 362 checks.
