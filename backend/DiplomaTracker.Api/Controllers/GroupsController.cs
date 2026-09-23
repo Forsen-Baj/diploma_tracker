@@ -1,15 +1,17 @@
 using DiplomaTracker.Api.DTOs.Groups;
+using DiplomaTracker.Api.DTOs.Students;
+using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
+using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 
 namespace DiplomaTracker.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Roles = "Admin,Teacher")]
-public class GroupsController : ControllerBase
+public class GroupsController : ApiControllerBase
 {
     private readonly IGroupService _groupService;
 
@@ -21,165 +23,136 @@ public class GroupsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var groups = await _groupService.GetGroupsAsync();
+        if (!TryGetCurrentUser(out var user))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var groups = await _groupService.GetGroupsAsync(user);
         return Ok(groups);
     }
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
-        var group = await _groupService.GetGroupByIdAsync(id);
-        if (group is null)
+        if (!TryGetCurrentUser(out var user))
         {
-            return NotFound();
+            return ErrorResult(CommonErrors.Forbidden);
         }
 
-        return Ok(group);
+        var group = await _groupService.GetGroupByIdAsync(user, id);
+        return group is null ? ErrorResult(GroupErrors.NotFound) : Ok(group);
     }
 
     [HttpGet("{groupId:guid}/students")]
     public async Task<IActionResult> GetStudents(Guid groupId)
     {
-        var role = User.FindFirstValue(ClaimTypes.Role);
-        var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrWhiteSpace(role) || string.IsNullOrWhiteSpace(userIdValue) || !Guid.TryParse(userIdValue, out var userId))
+        if (!TryGetCurrentUser(out var user))
         {
-            return Forbid();
+            return ErrorResult(CommonErrors.Forbidden);
         }
 
-        var (students, error) = await _groupService.GetGroupStudentsAsync(groupId, role, userId);
-        if (students is null)
-        {
-            if (error == "Group not found.")
-            {
-                return NotFound(new { message = error });
-            }
-
-            if (error == "Forbidden.")
-            {
-                return Forbid();
-            }
-
-            return BadRequest(new { message = error });
-        }
-
-        return Ok(students);
+        var (students, error) = await _groupService.GetGroupStudentsAsync(user, groupId);
+        return students is null ? ErrorResult(error) : Ok(students);
     }
 
     [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateGroupRequest request)
     {
-        var (group, error) = await _groupService.CreateGroupAsync(request);
-        if (group is null)
+        if (!TryGetUserContext(out _, out var administratorId))
         {
-            if (error == "Group with the same name and academic year already exists.")
-            {
-                return Conflict(new { message = error });
-            }
-
-            return BadRequest(new { message = error });
+            return ErrorResult(CommonErrors.Forbidden);
         }
 
-        return CreatedAtAction(nameof(GetById), new { id = group.Id }, group);
+        var (group, error) = await _groupService.CreateGroupAsync(request, administratorId);
+        return group is null
+            ? ErrorResult(error)
+            : CreatedAtAction(nameof(GetById), new { id = group.Id }, group);
     }
 
     [Authorize(Roles = "Admin")]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateGroupRequest request)
     {
-        var (group, error) = await _groupService.UpdateGroupAsync(id, request);
-        if (group is null)
+        if (!TryGetUserContext(out _, out var administratorId))
         {
-            if (error == "Group not found.")
-            {
-                return NotFound();
-            }
-
-            if (error == "Group with the same name and academic year already exists.")
-            {
-                return Conflict(new { message = error });
-            }
-
-            return BadRequest(new { message = error });
+            return ErrorResult(CommonErrors.Forbidden);
         }
 
-        return Ok(group);
+        var (group, error) = await _groupService.UpdateGroupAsync(id, request, administratorId);
+        return group is null ? ErrorResult(error) : Ok(group);
     }
 
     [Authorize(Roles = "Admin")]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var (success, error) = await _groupService.DeleteGroupAsync(id);
-        if (!success)
+        if (!TryGetCurrentUser(out var user))
         {
-            if (error == "Group not found.")
-            {
-                return NotFound();
-            }
-
-            if (error == "Cannot delete group because students are assigned.")
-            {
-                return Conflict(new { message = error });
-            }
-
-            return BadRequest(new { message = error });
+            return ErrorResult(CommonErrors.Forbidden);
         }
 
-        return NoContent();
+        var (success, error) = await _groupService.DeleteGroupAsync(id, user.UserId, HttpContext.RequestAborted);
+        return success ? NoContent() : ErrorResult(error);
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpGet("{id:guid}/deletion-preview")]
+    public async Task<IActionResult> GetDeletionPreview(Guid id)
+    {
+        var (preview, error) = await _groupService.GetDeletionPreviewAsync(id, HttpContext.RequestAborted);
+        return preview is null ? ErrorResult(error) : Ok(preview);
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost("{groupId:guid}/students/archive")]
+    public async Task<IActionResult> ArchiveStudents(Guid groupId)
+    {
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (archived, error) = await _groupService.ArchiveGroupStudentsAsync(groupId, administratorId);
+        return archived is null ? ErrorResult(error) : Ok(new ArchiveResultResponse { Archived = archived.Value });
     }
 
     [HttpGet("{groupId:guid}/reviewers")]
     public async Task<IActionResult> GetReviewers(Guid groupId)
     {
-        var reviewers = await _groupService.GetGroupReviewersAsync(groupId);
-        if (reviewers is null)
+        if (!TryGetCurrentUser(out var user))
         {
-            return NotFound();
+            return ErrorResult(CommonErrors.Forbidden);
         }
 
-        return Ok(reviewers);
+        var reviewers = await _groupService.GetGroupReviewersAsync(user, groupId);
+        return reviewers is null ? ErrorResult(GroupErrors.NotFound) : Ok(reviewers);
     }
 
     [Authorize(Roles = "Admin")]
     [HttpPost("{groupId:guid}/reviewers")]
     public async Task<IActionResult> AddReviewer(Guid groupId, [FromBody] AddGroupReviewerRequest request)
     {
-        var (reviewer, error) = await _groupService.AddGroupReviewerAsync(groupId, request);
-        if (reviewer is null)
+        if (!TryGetUserContext(out _, out var administratorId))
         {
-            if (error == "Group not found." || error == "Reviewer not found.")
-            {
-                return NotFound(new { message = error });
-            }
-
-            if (error == "Reviewer is already assigned to this group.")
-            {
-                return Conflict(new { message = error });
-            }
-
-            return BadRequest(new { message = error });
+            return ErrorResult(CommonErrors.Forbidden);
         }
 
-        return Ok(reviewer);
+        var (reviewer, error) = await _groupService.AddGroupReviewerAsync(groupId, request, administratorId);
+        return reviewer is null ? ErrorResult(error) : Ok(reviewer);
     }
 
     [Authorize(Roles = "Admin")]
     [HttpDelete("{groupId:guid}/reviewers/{reviewerId:guid}")]
     public async Task<IActionResult> RemoveReviewer(Guid groupId, Guid reviewerId)
     {
-        var (success, error) = await _groupService.RemoveGroupReviewerAsync(groupId, reviewerId);
-        if (!success)
+        if (!TryGetUserContext(out _, out var administratorId))
         {
-            if (error == "Group not found." || error == "Reviewer assignment not found.")
-            {
-                return NotFound(new { message = error });
-            }
-
-            return BadRequest(new { message = error });
+            return ErrorResult(CommonErrors.Forbidden);
         }
 
-        return NoContent();
+        var (success, error) = await _groupService.RemoveGroupReviewerAsync(groupId, reviewerId, administratorId);
+        return success ? NoContent() : ErrorResult(error);
     }
 }

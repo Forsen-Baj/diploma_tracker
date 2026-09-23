@@ -1,12 +1,9 @@
 import { apiRequest } from './apiClient'
 import type { CreateTaskTemplateRequest, TaskTemplate, UpdateTaskTemplateRequest } from './types'
 
-export async function getTaskTemplates(): Promise<TaskTemplate[]> {
-  return apiRequest<TaskTemplate[]>('/api/task-templates')
-}
-
-export async function getTaskTemplate(id: string): Promise<TaskTemplate> {
-  return apiRequest<TaskTemplate>(`/api/task-templates/${id}`)
+export async function getTaskTemplates(facultyId?: string): Promise<TaskTemplate[]> {
+  const query = facultyId ? `?facultyId=${encodeURIComponent(facultyId)}` : ''
+  return apiRequest<TaskTemplate[]>(`/api/task-templates${query}`)
 }
 
 export async function createTaskTemplate(request: CreateTaskTemplateRequest): Promise<TaskTemplate> {
@@ -32,5 +29,12 @@ export async function activateTaskTemplate(id: string): Promise<TaskTemplate> {
 export async function deactivateTaskTemplate(id: string): Promise<TaskTemplate> {
   return apiRequest<TaskTemplate>(`/api/task-templates/${id}/deactivate`, {
     method: 'PATCH'
+  })
+}
+
+export function reorderTaskTemplates(facultyId: string, templateIds: string[]): Promise<TaskTemplate[]> {
+  return apiRequest<TaskTemplate[]>('/api/task-templates/order', {
+    method: 'PUT',
+    body: JSON.stringify({ facultyId, templateIds })
   })
 }

@@ -8,8 +8,6 @@ namespace DiplomaTracker.Api.Services;
 
 public static class AdminBootstrapper
 {
-    public const int MinimumPasswordLength = 12;
-
     public static async Task<bool> EnsureAdminAsync(
         AppDbContext dbContext,
         IPasswordHasher passwordHasher,
@@ -27,10 +25,10 @@ public static class AdminBootstrapper
                 "No administrator exists. Set Bootstrap__AdminEmail and Bootstrap__AdminPassword to create the first one.");
         }
 
-        if (settings.AdminPassword.Length < MinimumPasswordLength)
+        if (!PasswordPolicy.IsSatisfiedByElevated(settings.AdminPassword))
         {
             throw new InvalidOperationException(
-                $"Bootstrap__AdminPassword must be at least {MinimumPasswordLength} characters long.");
+                $"Bootstrap__AdminPassword must be between {PasswordPolicy.ElevatedMinimumLength} and {PasswordPolicy.MaximumLength} characters.");
         }
 
         dbContext.Users.Add(new AppUser

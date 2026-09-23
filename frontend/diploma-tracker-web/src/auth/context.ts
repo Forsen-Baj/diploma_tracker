@@ -1,10 +1,11 @@
 import { createContext } from 'react'
-import type { CurrentUser } from '../api/types'
+import type { CurrentUser, LoginResponse } from '../api/types'
 
 export type AuthContextValue = {
   user: CurrentUser | null
   isInitializing: boolean
   login: (email: string, password: string) => Promise<CurrentUser>
+  completeSignIn: (result: LoginResponse) => CurrentUser
   logout: () => void
 }
 

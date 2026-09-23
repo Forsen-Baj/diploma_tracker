@@ -1,28 +1,32 @@
 using DiplomaTracker.Api.Data;
 using DiplomaTracker.Api.DTOs.Groups;
 using DiplomaTracker.Api.Entities;
+using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Services;
 using DiplomaTracker.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DiplomaTracker.Api.Tests.Services;
 
 public class GroupServiceTests
 {
+    private static readonly Guid AdministratorId = Guid.NewGuid();
+
     [Fact]
     public async Task CreateGroupAsync_ForUnknownDepartment_ReturnsDepartmentNotFound()
     {
         await using var context = TestDbContextFactory.Create();
 
-        var (group, error) = await new GroupService(context).CreateGroupAsync(new CreateGroupRequest
+        var (group, error) = await CreateService(context).CreateGroupAsync(new CreateGroupRequest
         {
             DepartmentId = Guid.NewGuid(),
-            Name = "SE-21",
+            Code = "SE-21",
             AcademicYear = "2026/2027"
-        });
+        }, AdministratorId);
 
         Assert.Null(group);
-        Assert.Equal(AcademicStructureErrors.DepartmentNotFound, error);
+        Assert.Equal(GroupErrors.DepartmentNotFound, error);
         Assert.False(await context.Groups.AnyAsync());
     }
 
@@ -33,15 +37,15 @@ public class GroupServiceTests
         var faculty = TestData.AddFaculty(context, "Faculty of Informatics", "FI");
         var department = TestData.AddDepartment(context, faculty.Id, "Department of Software Engineering", "SE");
 
-        var (group, error) = await new GroupService(context).CreateGroupAsync(new CreateGroupRequest
+        var (group, error) = await CreateService(context).CreateGroupAsync(new CreateGroupRequest
         {
             DepartmentId = department.Id,
-            Name = " SE-21 ",
+            Code = "SE-21",
             AcademicYear = "2026/2027"
-        });
+        }, AdministratorId);
 
         Assert.Null(error);
-        Assert.Equal("SE-21", group!.Name);
+        Assert.Equal("SE-21", group!.Code);
         Assert.Equal(department.Id, group.DepartmentId);
         Assert.Equal("Department of Software Engineering", group.DepartmentName);
         Assert.Equal(faculty.Id, group.FacultyId);
@@ -56,15 +60,15 @@ public class GroupServiceTests
         var department = TestData.AddDepartment(context, faculty.Id);
         var existing = TestData.AddGroup(context, department.Id);
 
-        var (group, error) = await new GroupService(context).UpdateGroupAsync(existing.Id, new UpdateGroupRequest
+        var (group, error) = await CreateService(context).UpdateGroupAsync(existing.Id, new UpdateGroupRequest
         {
             DepartmentId = Guid.NewGuid(),
-            Name = existing.Name,
+            Code = existing.Code,
             AcademicYear = existing.AcademicYear
-        });
+        }, AdministratorId);
 
         Assert.Null(group);
-        Assert.Equal(AcademicStructureErrors.DepartmentNotFound, error);
+        Assert.Equal(GroupErrors.DepartmentNotFound, error);
     }
 
     [Fact]
@@ -76,7 +80,7 @@ public class GroupServiceTests
         TestData.AddGroup(context, department.Id, "SE-21");
         context.ChangeTracker.Clear();
 
-        var groups = await new GroupService(context).GetGroupsAsync();
+        var groups = await CreateService(context).GetGroupsAsync(new UserContext(Guid.NewGuid(), "Admin"));
 
         var group = Assert.Single(groups);
         Assert.Equal("Department of Software Engineering", group.DepartmentName);
@@ -84,16 +88,16 @@ public class GroupServiceTests
     }
 
     [Fact]
-    public async Task GetGroupStudentsAsync_ForTeacherWhoIsNotAReviewer_IsForbidden()
+    public async Task GetGroupStudentsAsync_ForTeacherWhoIsNotAReviewer_ReturnsGroupNotFound()
     {
         await using var context = TestDbContextFactory.Create();
         var group = AddGroupWithOneStudent(context);
         var outsider = TestData.AddUser(context, "Teacher", "outsider@kpi.ua");
 
-        var (students, error) = await new GroupService(context).GetGroupStudentsAsync(group.Id, "Teacher", outsider.Id);
+        var (students, error) = await CreateService(context).GetGroupStudentsAsync(new UserContext(outsider.Id, "Teacher"), group.Id);
 
         Assert.Null(students);
-        Assert.Equal("Forbidden.", error);
+        Assert.Equal(GroupErrors.NotFound, error);
     }
 
     [Fact]
@@ -111,7 +115,7 @@ public class GroupServiceTests
         });
         await context.SaveChangesAsync();
 
-        var (students, error) = await new GroupService(context).GetGroupStudentsAsync(group.Id, "Teacher", reviewer.Id);
+        var (students, error) = await CreateService(context).GetGroupStudentsAsync(new UserContext(reviewer.Id, "Teacher"), group.Id);
 
         Assert.Null(error);
         var student = Assert.Single(students!);
@@ -124,12 +128,17 @@ public class GroupServiceTests
         await using var context = TestDbContextFactory.Create();
         var group = AddGroupWithOneStudent(context);
 
-        var (success, error) = await new GroupService(context).DeleteGroupAsync(group.Id);
+        var (success, error) = await CreateService(context).DeleteGroupAsync(group.Id, AdministratorId, CancellationToken.None);
 
         Assert.False(success);
-        Assert.Equal("Cannot delete group because students are assigned.", error);
+        Assert.Equal(GroupErrors.HasStudents, error);
         Assert.True(await context.Groups.AnyAsync(g => g.Id == group.Id));
     }
+
+    private static GroupService CreateService(AppDbContext context) =>
+        new(context, NullLogger<GroupService>.Instance, new AccessScope(context),
+            new ArchiveService(context, new LocalFileStorage(Path.GetTempPath()), NullLogger<ArchiveService>.Instance),
+            new ReservationService(context, new TopicSettingsService(context, NullLogger<TopicSettingsService>.Instance), NullLogger<ReservationService>.Instance));
 
     private static Group AddGroupWithOneStudent(AppDbContext context)
     {

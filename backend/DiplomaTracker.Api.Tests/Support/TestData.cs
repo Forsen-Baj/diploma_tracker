@@ -23,9 +23,9 @@ public static class TestData
         return department;
     }
 
-    public static Group AddGroup(AppDbContext context, Guid departmentId, string name = "SE-21", string academicYear = "2026/2027")
+    public static Group AddGroup(AppDbContext context, Guid departmentId, string code = "SE-21", string academicYear = "2026/2027")
     {
-        var group = new Group { Id = Guid.NewGuid(), DepartmentId = departmentId, Name = name, AcademicYear = academicYear, CreatedAt = Now, UpdatedAt = Now };
+        var group = new Group { Id = Guid.NewGuid(), DepartmentId = departmentId, Code = code, AcademicYear = academicYear, CreatedAt = Now, UpdatedAt = Now };
         context.Groups.Add(group);
         context.SaveChanges();
         return group;
@@ -58,7 +58,6 @@ public static class TestData
             UserId = userId,
             GroupId = groupId,
             SupervisorId = supervisorId,
-            DiplomaTopic = "Topic",
             CreatedAt = Now,
             UpdatedAt = Now
         };

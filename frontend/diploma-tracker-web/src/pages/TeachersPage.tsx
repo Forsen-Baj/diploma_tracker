@@ -1,194 +1,344 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ApiError, isApiConflict } from '../api/apiClient'
-import { createTeacher, deactivateTeacher, getTeachers, updateTeacher } from '../api/teachersApi'
+import { KeyRound, Pencil, Plus, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
+import { createTeacher, deactivateTeacher, getTeachers, setTeacherPassword, updateTeacher } from '../api/teachersApi'
+import { useErrorMessage } from '../api/useErrorMessage'
+import { PASSWORD_MAX, isPasswordLengthValid } from '../auth/passwordPolicy'
+import { Badge } from '../components/ui/Badge'
+import { Button } from '../components/ui/Button'
+import { Card } from '../components/ui/Card'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
+import { DataTable, type DataTableColumn } from '../components/ui/DataTable'
+import { EmptyState } from '../components/ui/EmptyState'
+import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
+import { TextField } from '../components/ui/TextField'
+import { useToast } from '../components/ui/useToast'
+import { optional } from '../utils/optional'
 import type { Teacher } from '../api/types'
-import { ErrorModal } from '../components/ErrorModal'
 
-type CreateFormState = {
+type TeacherFormState = {
   firstName: string
   lastName: string
+  patronymic: string
   email: string
   password: string
 }
 
-type EditFormState = {
-  firstName: string
-  lastName: string
-  email: string
-}
-
-const emptyCreateForm: CreateFormState = {
+const emptyForm: TeacherFormState = {
   firstName: '',
   lastName: '',
+  patronymic: '',
   email: '',
   password: ''
 }
 
-const emptyEditForm: EditFormState = {
-  firstName: '',
-  lastName: '',
-  email: ''
-}
-
 export function TeachersPage() {
+  const { t } = useTranslation()
+  const errorMessage = useErrorMessage()
+  const toast = useToast()
+
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [modalMessage, setModalMessage] = useState('')
-  const [createForm, setCreateForm] = useState<CreateFormState>(emptyCreateForm)
-  const [isCreating, setIsCreating] = useState(false)
-  const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState<EditFormState>(emptyEditForm)
-  const [isSavingEdit, setIsSavingEdit] = useState(false)
-  const [deactivatingTeacherId, setDeactivatingTeacherId] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState('')
 
-  const sortedTeachers = useMemo(() => [...teachers].sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName)), [teachers])
+  const [isTeacherModalOpen, setIsTeacherModalOpen] = useState(false)
+  const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null)
+  const [teacherForm, setTeacherForm] = useState<TeacherFormState>(emptyForm)
+  const [passwordError, setPasswordError] = useState('')
+  const [isSavingTeacher, setIsSavingTeacher] = useState(false)
+
+  const [deactivatingTeacher, setDeactivatingTeacher] = useState<Teacher | null>(null)
+  const [isDeactivatingTeacher, setIsDeactivatingTeacher] = useState(false)
+
+  const [passwordTeacher, setPasswordTeacher] = useState<Teacher | null>(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [newPasswordError, setNewPasswordError] = useState('')
+  const [confirmPasswordError, setConfirmPasswordError] = useState('')
+  const [isSavingPassword, setIsSavingPassword] = useState(false)
+
+  const sortedTeachers = useMemo(
+    () => [...teachers].sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName)),
+    [teachers]
+  )
 
   const loadTeachers = async () => {
     setIsLoading(true)
-    setError('')
+    setLoadError('')
     try {
-      const data = await getTeachers()
-      setTeachers(data)
+      setTeachers(await getTeachers())
     } catch (err) {
-      setError((err as Error).message)
+      setLoadError(errorMessage(err))
     } finally {
       setIsLoading(false)
     }
   }
 
   useEffect(() => {
-    loadTeachers()
+    void loadTeachers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setIsCreating(true)
-    setError('')
-    try {
-      await createTeacher(createForm)
-      setCreateForm(emptyCreateForm)
-      await loadTeachers()
-    } catch (err) {
-      if (isApiConflict(err)) {
-        setModalMessage((err as ApiError).message)
-      } else {
-        setError((err as Error).message)
-      }
-    } finally {
-      setIsCreating(false)
-    }
+  const openCreateTeacher = () => {
+    setEditingTeacher(null)
+    setTeacherForm(emptyForm)
+    setPasswordError('')
+    setIsTeacherModalOpen(true)
   }
 
-  const startEdit = (teacher: Teacher) => {
-    setEditingTeacherId(teacher.id)
-    setEditForm({
+  const openEditTeacher = (teacher: Teacher) => {
+    setEditingTeacher(teacher)
+    setTeacherForm({
       firstName: teacher.firstName,
       lastName: teacher.lastName,
-      email: teacher.email
+      patronymic: teacher.patronymic ?? '',
+      email: teacher.email,
+      password: ''
     })
+    setPasswordError('')
+    setIsTeacherModalOpen(true)
   }
 
-  const cancelEdit = () => {
-    setEditingTeacherId(null)
-    setEditForm(emptyEditForm)
+  const closeTeacherModal = () => {
+    if (isSavingTeacher) return
+    setIsTeacherModalOpen(false)
   }
 
-  const handleSaveEdit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const submitTeacher = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!editingTeacherId) {
-      return
-    }
 
-    setIsSavingEdit(true)
-    setError('')
-    try {
-      await updateTeacher(editingTeacherId, editForm)
-      cancelEdit()
-      await loadTeachers()
-    } catch (err) {
-      if (isApiConflict(err)) {
-        setModalMessage((err as ApiError).message)
-      } else {
-        setError((err as Error).message)
+    if (!editingTeacher) {
+      if (!isPasswordLengthValid(teacherForm.password)) {
+        setPasswordError(t('validation.passwordLength'))
+        return
       }
+      setPasswordError('')
+    }
+
+    setIsSavingTeacher(true)
+    try {
+      if (editingTeacher) {
+        await updateTeacher(editingTeacher.id, {
+          firstName: teacherForm.firstName.trim(),
+          lastName: teacherForm.lastName.trim(),
+          patronymic: optional(teacherForm.patronymic),
+          email: teacherForm.email.trim()
+        })
+      } else {
+        await createTeacher({
+          firstName: teacherForm.firstName.trim(),
+          lastName: teacherForm.lastName.trim(),
+          patronymic: optional(teacherForm.patronymic),
+          email: teacherForm.email.trim(),
+          password: teacherForm.password
+        })
+      }
+      setIsTeacherModalOpen(false)
+      toast.success(t('common.savedToast'))
+      await loadTeachers()
+    } catch (err) {
+      toast.error(errorMessage(err))
     } finally {
-      setIsSavingEdit(false)
+      setIsSavingTeacher(false)
     }
   }
 
-  const handleDeactivate = async (teacherId: string) => {
-    if (!window.confirm('Are you sure you want to deactivate this teacher?')) {
+  const confirmDeactivate = async () => {
+    if (!deactivatingTeacher) return
+
+    setIsDeactivatingTeacher(true)
+    try {
+      await deactivateTeacher(deactivatingTeacher.id)
+      setDeactivatingTeacher(null)
+      toast.success(t('common.deletedToast'))
+      await loadTeachers()
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setIsDeactivatingTeacher(false)
+    }
+  }
+
+  const openPasswordModal = (teacher: Teacher) => {
+    setPasswordTeacher(teacher)
+    setNewPassword('')
+    setConfirmPassword('')
+    setNewPasswordError('')
+    setConfirmPasswordError('')
+  }
+
+  const closePasswordModal = () => {
+    if (isSavingPassword) return
+    setPasswordTeacher(null)
+  }
+
+  const submitPassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!passwordTeacher) return
+
+    const lengthInvalid = !isPasswordLengthValid(newPassword)
+    const mismatch = !lengthInvalid && newPassword !== confirmPassword
+    setNewPasswordError(lengthInvalid ? t('validation.passwordLength') : '')
+    setConfirmPasswordError(mismatch ? t('validation.passwordMismatch') : '')
+
+    if (lengthInvalid || mismatch) {
       return
     }
 
-    setDeactivatingTeacherId(teacherId)
-    setError('')
+    setIsSavingPassword(true)
     try {
-      await deactivateTeacher(teacherId)
-      await loadTeachers()
+      await setTeacherPassword(passwordTeacher.id, newPassword)
+      toast.success(t('teachers.passwordUpdated', { name: `${passwordTeacher.firstName} ${passwordTeacher.lastName}` }))
+      setPasswordTeacher(null)
     } catch (err) {
-      setError((err as Error).message)
+      toast.error(errorMessage(err))
     } finally {
-      setDeactivatingTeacherId(null)
+      setIsSavingPassword(false)
     }
   }
+
+  const teacherColumns: DataTableColumn<Teacher>[] = [
+    {
+      key: 'name',
+      header: t('teachers.lastName'),
+      render: (teacher) => `${teacher.lastName} ${teacher.firstName}${teacher.patronymic ? ` ${teacher.patronymic}` : ''}`
+    },
+    { key: 'email', header: t('teachers.email'), render: (teacher) => teacher.email },
+    {
+      key: 'active',
+      header: t('common.status'),
+      render: (teacher) => <Badge tone={teacher.isActive ? 'success' : 'neutral'}>{teacher.isActive ? t('common.active') : t('common.inactive')}</Badge>
+    },
+    {
+      key: 'actions',
+      header: t('common.actions'),
+      render: (teacher) => (
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" icon={Pencil} aria-label={t('common.edit')} onClick={() => openEditTeacher(teacher)} disabled={!teacher.isActive} />
+          <Button variant="ghost" size="sm" icon={KeyRound} aria-label={t('teachers.setPassword')} onClick={() => openPasswordModal(teacher)} disabled={!teacher.isActive} />
+          <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('teachers.deactivate')} onClick={() => setDeactivatingTeacher(teacher)} disabled={!teacher.isActive} />
+        </div>
+      )
+    }
+  ]
 
   return (
-    <div className="teachers-page">
-      {modalMessage && <ErrorModal message={modalMessage} onClose={() => setModalMessage('')} />}
+    <>
+      <PageHeader
+        title={t('teachers.title')}
+        actions={<Button icon={Plus} onClick={openCreateTeacher}>{t('teachers.addTeacher')}</Button>}
+      />
 
-      <section className="page-card">
-        <h1>Manage Teachers</h1>
-        <form className="teacher-form" onSubmit={handleCreate}>
-          <div className="teacher-form-grid">
-            <input className="field-input" placeholder="First name" value={createForm.firstName} onChange={(e) => setCreateForm((prev) => ({ ...prev, firstName: e.target.value }))} required />
-            <input className="field-input" placeholder="Last name" value={createForm.lastName} onChange={(e) => setCreateForm((prev) => ({ ...prev, lastName: e.target.value }))} required />
-            <input className="field-input" placeholder="Email" type="email" value={createForm.email} onChange={(e) => setCreateForm((prev) => ({ ...prev, email: e.target.value }))} required />
-            <input className="field-input" placeholder="Password" type="password" value={createForm.password} onChange={(e) => setCreateForm((prev) => ({ ...prev, password: e.target.value }))} required />
-          </div>
-          <button className="primary-button" type="submit" disabled={isCreating}>{isCreating ? 'Creating...' : 'Create Teacher'}</button>
-        </form>
-      </section>
-
-      {editingTeacherId && (
-        <section className="page-card">
-          <h2>Edit Teacher</h2>
-          <form className="teacher-form" onSubmit={handleSaveEdit}>
-            <div className="teacher-form-grid">
-              <input className="field-input" placeholder="First name" value={editForm.firstName} onChange={(e) => setEditForm((prev) => ({ ...prev, firstName: e.target.value }))} required />
-              <input className="field-input" placeholder="Last name" value={editForm.lastName} onChange={(e) => setEditForm((prev) => ({ ...prev, lastName: e.target.value }))} required />
-              <input className="field-input" placeholder="Email" type="email" value={editForm.email} onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))} required />
-            </div>
-            <div className="actions-row">
-              <button className="primary-button" type="submit" disabled={isSavingEdit}>{isSavingEdit ? 'Saving...' : 'Save Changes'}</button>
-              <button className="secondary-button" type="button" onClick={cancelEdit} disabled={isSavingEdit}>Cancel</button>
-            </div>
-          </form>
-        </section>
-      )}
-
-      <section className="page-card">
-        <h2>Teachers</h2>
-        {isLoading && <p>Loading teachers...</p>}
-        {!isLoading && error && <p className="error-text">{error}</p>}
-        {!isLoading && !error && sortedTeachers.length === 0 && <p>No teachers found.</p>}
-        {!isLoading && !error && sortedTeachers.length > 0 && (
-          <div className="list-grid">
-            {sortedTeachers.map((teacher) => (
-              <article className="entity-card" key={teacher.id}>
-                <h3>{teacher.firstName} {teacher.lastName}</h3>
-                <p>{teacher.email}</p>
-                <p><strong>Status:</strong> <span className={teacher.isActive ? 'status-active' : 'status-inactive'}>{teacher.isActive ? 'Active' : 'Inactive'}</span></p>
-                <div className="actions-row">
-                  <button className="secondary-button" onClick={() => startEdit(teacher)} disabled={!teacher.isActive}>Edit</button>
-                  <button className="secondary-button" onClick={() => handleDeactivate(teacher.id)} disabled={!teacher.isActive || deactivatingTeacherId === teacher.id}>{deactivatingTeacherId === teacher.id ? 'Deactivating...' : 'Deactivate'}</button>
-                </div>
-              </article>
-            ))}
-          </div>
+      <Card>
+        {loadError && <p className="text-sm text-danger">{loadError}</p>}
+        {!loadError && (
+          <DataTable
+            columns={teacherColumns}
+            rows={sortedTeachers}
+            getRowKey={(teacher) => teacher.id}
+            loading={isLoading}
+            emptyState={<EmptyState message={t('teachers.noTeachers')} />}
+          />
         )}
-      </section>
-    </div>
+      </Card>
+
+      <Modal
+        open={isTeacherModalOpen}
+        onClose={closeTeacherModal}
+        title={editingTeacher ? t('teachers.editTeacher') : t('teachers.addTeacher')}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeTeacherModal} disabled={isSavingTeacher}>{t('common.cancel')}</Button>
+            <Button form="teacher-form" type="submit" loading={isSavingTeacher}>{t('common.save')}</Button>
+          </>
+        }
+      >
+        <form id="teacher-form" onSubmit={submitTeacher} className="flex flex-col gap-4">
+          <TextField
+            label={t('teachers.lastName')}
+            maxLength={100}
+            value={teacherForm.lastName}
+            onChange={(e) => setTeacherForm((prev) => ({ ...prev, lastName: e.target.value }))}
+            required
+          />
+          <TextField
+            label={t('teachers.firstName')}
+            maxLength={100}
+            value={teacherForm.firstName}
+            onChange={(e) => setTeacherForm((prev) => ({ ...prev, firstName: e.target.value }))}
+            required
+          />
+          <TextField
+            label={t('teachers.patronymic')}
+            maxLength={100}
+            value={teacherForm.patronymic}
+            onChange={(e) => setTeacherForm((prev) => ({ ...prev, patronymic: e.target.value }))}
+          />
+          <TextField
+            label={t('teachers.email')}
+            type="email"
+            maxLength={256}
+            value={teacherForm.email}
+            onChange={(e) => setTeacherForm((prev) => ({ ...prev, email: e.target.value }))}
+            required
+          />
+          {!editingTeacher && (
+            <TextField
+              label={t('teachers.password')}
+              type="password"
+              maxLength={PASSWORD_MAX}
+              value={teacherForm.password}
+              onChange={(e) => setTeacherForm((prev) => ({ ...prev, password: e.target.value }))}
+              error={passwordError}
+              required
+            />
+          )}
+        </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(passwordTeacher)}
+        onClose={closePasswordModal}
+        title={passwordTeacher ? t('teachers.setPasswordFor', { name: `${passwordTeacher.lastName} ${passwordTeacher.firstName}` }) : ''}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closePasswordModal} disabled={isSavingPassword}>{t('common.cancel')}</Button>
+            <Button form="teacher-password-form" type="submit" loading={isSavingPassword}>{t('teachers.setPassword')}</Button>
+          </>
+        }
+      >
+        <form id="teacher-password-form" onSubmit={submitPassword} className="flex flex-col gap-4">
+          <TextField
+            label={t('account.newPassword')}
+            type="password"
+            maxLength={PASSWORD_MAX}
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            error={newPasswordError}
+            required
+            autoFocus
+          />
+          <TextField
+            label={t('account.confirmPassword')}
+            type="password"
+            maxLength={PASSWORD_MAX}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            error={confirmPasswordError}
+            required
+          />
+        </form>
+      </Modal>
+
+      <ConfirmDialog
+        open={Boolean(deactivatingTeacher)}
+        title={t('teachers.deactivate')}
+        message={deactivatingTeacher ? t('teachers.deactivateConfirm', { name: `${deactivatingTeacher.firstName} ${deactivatingTeacher.lastName}` }) : ''}
+        loading={isDeactivatingTeacher}
+        onConfirm={() => void confirmDeactivate()}
+        onCancel={() => setDeactivatingTeacher(null)}
+      />
+    </>
   )
 }

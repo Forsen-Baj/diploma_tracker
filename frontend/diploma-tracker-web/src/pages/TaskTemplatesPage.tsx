@@ -1,225 +1,453 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ApiError, isApiConflict } from '../api/apiClient'
-import { activateTaskTemplate, createTaskTemplate, deactivateTaskTemplate, getTaskTemplates, updateTaskTemplate } from '../api/taskTemplatesApi'
-import type { TaskTemplate } from '../api/types'
-import { ErrorModal } from '../components/ErrorModal'
+import { GripVertical, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type HTMLAttributes } from 'react'
+import { useTranslation } from 'react-i18next'
+import { getFaculties } from '../api/facultiesApi'
+import { activateTaskTemplate, createTaskTemplate, deactivateTaskTemplate, getTaskTemplates, reorderTaskTemplates, updateTaskTemplate } from '../api/taskTemplatesApi'
+import { useErrorMessage } from '../api/useErrorMessage'
+import { useAuth } from '../auth/useAuth'
+import { Badge } from '../components/ui/Badge'
+import { Button } from '../components/ui/Button'
+import { Card } from '../components/ui/Card'
+import { Checkbox } from '../components/ui/Checkbox'
+import { cn } from '../components/ui/cn'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
+import { DataTable, type DataTableColumn } from '../components/ui/DataTable'
+import { EmptyState } from '../components/ui/EmptyState'
+import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
+import { Select, type SelectOption } from '../components/ui/Select'
+import { Textarea } from '../components/ui/Textarea'
+import { TextField } from '../components/ui/TextField'
+import { useToast } from '../components/ui/useToast'
+import type { Faculty, TaskTemplate } from '../api/types'
 
-type CreateFormState = {
-  title: string
-  description: string
-  order: string
-}
-
-type EditFormState = {
+type TemplateFormState = {
   title: string
   description: string
   order: string
   isActive: boolean
 }
 
-const emptyCreateForm: CreateFormState = {
-  title: '',
-  description: '',
-  order: ''
-}
-
-const emptyEditForm: EditFormState = {
-  title: '',
-  description: '',
-  order: '',
-  isActive: true
-}
+const emptyForm: TemplateFormState = { title: '', description: '', order: '', isActive: true }
 
 export function TaskTemplatesPage() {
+  const { t } = useTranslation()
+  const errorMessage = useErrorMessage()
+  const toast = useToast()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'Admin'
+
+  const [faculties, setFaculties] = useState<Faculty[]>([])
+  const [isLoadingFaculties, setIsLoadingFaculties] = useState(true)
+  const [facultiesLoadError, setFacultiesLoadError] = useState('')
+  const [selectedFacultyId, setSelectedFacultyId] = useState('')
+
   const [templates, setTemplates] = useState<TaskTemplate[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [modalMessage, setModalMessage] = useState('')
-  const [createForm, setCreateForm] = useState<CreateFormState>(emptyCreateForm)
-  const [isCreating, setIsCreating] = useState(false)
-  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState<EditFormState>(emptyEditForm)
-  const [isSavingEdit, setIsSavingEdit] = useState(false)
-  const [isChangingStateId, setIsChangingStateId] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [loadError, setLoadError] = useState('')
 
-  const sortedTemplates = useMemo(() => [...templates].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title)), [templates])
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null)
+  const [templateForm, setTemplateForm] = useState<TemplateFormState>(emptyForm)
+  const [titleError, setTitleError] = useState('')
+  const [orderError, setOrderError] = useState('')
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false)
 
-  const loadTemplates = async () => {
-    setIsLoading(true)
-    setError('')
+  const [deactivatingTemplate, setDeactivatingTemplate] = useState<TaskTemplate | null>(null)
+  const [isDeactivating, setIsDeactivating] = useState(false)
+  const [activatingTemplateId, setActivatingTemplateId] = useState<string | null>(null)
+
+  const facultyOptions: SelectOption[] = useMemo(
+    () => faculties.map((faculty) => ({ value: faculty.id, label: faculty.name })),
+    [faculties]
+  )
+
+  const sortedTemplates = useMemo(
+    () => [...templates].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title)),
+    [templates]
+  )
+
+  const loadFaculties = useCallback(async () => {
+    setIsLoadingFaculties(true)
+    setFacultiesLoadError('')
     try {
-      const data = await getTaskTemplates()
-      setTemplates(data)
+      const data = await getFaculties()
+      setFaculties(data)
+      setSelectedFacultyId((current) => (data.some((faculty) => faculty.id === current) ? current : (data[0]?.id ?? '')))
     } catch (err) {
-      setError((err as Error).message)
+      setFacultiesLoadError(errorMessage(err))
+    } finally {
+      setIsLoadingFaculties(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const loadTemplates = useCallback(async (facultyId: string) => {
+    if (!facultyId) {
+      setTemplates([])
+      return
+    }
+
+    setIsLoading(true)
+    setLoadError('')
+    try {
+      setTemplates(await getTaskTemplates(facultyId))
+    } catch (err) {
+      setLoadError(errorMessage(err))
     } finally {
       setIsLoading(false)
     }
-  }
-
-  useEffect(() => {
-    loadTemplates()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setIsCreating(true)
-    setError('')
+  useEffect(() => {
+    void loadFaculties()
+  }, [loadFaculties])
+
+  useEffect(() => {
+    void loadTemplates(selectedFacultyId)
+  }, [loadTemplates, selectedFacultyId])
+
+  // The order is unique per faculty, so reordering only makes sense once a single faculty is
+  // selected; it is also an administrator-only action.
+  const canReorder = isAdmin && Boolean(selectedFacultyId)
+  const [isReordering, setIsReordering] = useState(false)
+  const dragIndexRef = useRef<number | null>(null)
+
+  // Tracks the faculty currently selected so a reorder response (or its rollback) that arrives
+  // after the admin switched faculty can be told apart from one that still applies.
+  const selectedFacultyIdRef = useRef(selectedFacultyId)
+  useEffect(() => {
+    selectedFacultyIdRef.current = selectedFacultyId
+  }, [selectedFacultyId])
+
+  const applyReorder = async (reordered: TaskTemplate[]) => {
+    const requestFacultyId = selectedFacultyId
+    const previous = templates
+    const renumbered = reordered.map((template, index) => ({ ...template, order: index + 1 }))
+    setTemplates(renumbered)
+    setIsReordering(true)
     try {
-      await createTaskTemplate({
-        title: createForm.title,
-        description: createForm.description,
-        order: Number(createForm.order)
-      })
-      setCreateForm(emptyCreateForm)
-      await loadTemplates()
+      const response = await reorderTaskTemplates(requestFacultyId, renumbered.map((template) => template.id))
+      if (selectedFacultyIdRef.current !== requestFacultyId) return
+      setTemplates(response)
+      toast.success(t('taskTemplates.reordered'))
     } catch (err) {
-      if (isApiConflict(err)) {
-        setModalMessage((err as ApiError).message)
-      } else {
-        setError((err as Error).message)
-      }
+      if (selectedFacultyIdRef.current !== requestFacultyId) return
+      setTemplates(previous)
+      toast.error(errorMessage(err))
     } finally {
-      setIsCreating(false)
+      setIsReordering(false)
     }
   }
 
-  const startEdit = (template: TaskTemplate) => {
-    setEditingTemplateId(template.id)
-    setEditForm({
+  const moveTemplate = (fromIndex: number, toIndex: number) => {
+    if (!canReorder || isReordering) return
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || toIndex >= sortedTemplates.length) return
+
+    const reordered = [...sortedTemplates]
+    const [moved] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, moved)
+    void applyReorder(reordered)
+  }
+
+  const handleDragStart = (event: DragEvent<HTMLTableRowElement>, index: number) => {
+    dragIndexRef.current = index
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', sortedTemplates[index].id)
+  }
+
+  const handleDrop = (event: DragEvent<HTMLTableRowElement>, index: number) => {
+    event.preventDefault()
+    const fromIndex = dragIndexRef.current
+    dragIndexRef.current = null
+    if (fromIndex === null) return
+    moveTemplate(fromIndex, index)
+  }
+
+  const templateRowProps = (template: TaskTemplate): HTMLAttributes<HTMLTableRowElement> => {
+    if (!canReorder || isReordering) return {}
+
+    const index = sortedTemplates.findIndex((item) => item.id === template.id)
+    return {
+      draggable: true,
+      onDragStart: (event) => handleDragStart(event, index),
+      onDragOver: (event) => event.preventDefault(),
+      onDrop: (event) => handleDrop(event, index)
+    }
+  }
+
+  const openCreateTemplate = () => {
+    setEditingTemplate(null)
+    setTemplateForm(emptyForm)
+    setTitleError('')
+    setOrderError('')
+    setIsTemplateModalOpen(true)
+  }
+
+  const openEditTemplate = (template: TaskTemplate) => {
+    setEditingTemplate(template)
+    setTemplateForm({
       title: template.title,
       description: template.description ?? '',
       order: String(template.order),
       isActive: template.isActive
     })
+    setTitleError('')
+    setOrderError('')
+    setIsTemplateModalOpen(true)
   }
 
-  const cancelEdit = () => {
-    setEditingTemplateId(null)
-    setEditForm(emptyEditForm)
+  const closeTemplateModal = () => {
+    if (isSavingTemplate) return
+    setIsTemplateModalOpen(false)
   }
 
-  const handleSaveEdit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const submitTemplate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!editingTemplateId) {
+    const trimmedTitle = templateForm.title.trim()
+    const order = Number(templateForm.order)
+    const titleMissing = !trimmedTitle
+    const orderMissing = !templateForm.order
+    const orderOutOfRange = !orderMissing && (!Number.isInteger(order) || order < 1)
+    setTitleError(titleMissing ? t('validation.required') : '')
+    setOrderError(orderMissing ? t('validation.required') : orderOutOfRange ? t('errors.taskTemplate.orderInvalid') : '')
+
+    if (titleMissing || orderMissing || orderOutOfRange || !selectedFacultyId) {
       return
     }
 
-    setIsSavingEdit(true)
-    setError('')
+    setIsSavingTemplate(true)
     try {
-      await updateTaskTemplate(editingTemplateId, {
-        title: editForm.title,
-        description: editForm.description,
-        order: Number(editForm.order),
-        isActive: editForm.isActive
-      })
-      cancelEdit()
-      await loadTemplates()
-    } catch (err) {
-      if (isApiConflict(err)) {
-        setModalMessage((err as ApiError).message)
+      if (editingTemplate) {
+        await updateTaskTemplate(editingTemplate.id, {
+          facultyId: editingTemplate.facultyId,
+          title: trimmedTitle,
+          description: templateForm.description.trim(),
+          order,
+          isActive: templateForm.isActive
+        })
       } else {
-        setError((err as Error).message)
+        await createTaskTemplate({
+          facultyId: selectedFacultyId,
+          title: trimmedTitle,
+          description: templateForm.description.trim(),
+          order
+        })
       }
-    } finally {
-      setIsSavingEdit(false)
-    }
-  }
-
-  const handleDeactivate = async (id: string) => {
-    if (!window.confirm('Are you sure you want to deactivate this task template?')) {
-      return
-    }
-
-    setIsChangingStateId(id)
-    setError('')
-    try {
-      await deactivateTaskTemplate(id)
-      await loadTemplates()
+      setIsTemplateModalOpen(false)
+      toast.success(t('common.savedToast'))
+      await loadTemplates(selectedFacultyId)
     } catch (err) {
-      setError((err as Error).message)
+      toast.error(errorMessage(err))
     } finally {
-      setIsChangingStateId(null)
+      setIsSavingTemplate(false)
     }
   }
 
-  const handleActivate = async (id: string) => {
-    setIsChangingStateId(id)
-    setError('')
+  const confirmDeactivate = async () => {
+    if (!deactivatingTemplate) return
+
+    setIsDeactivating(true)
     try {
-      await activateTaskTemplate(id)
-      await loadTemplates()
+      await deactivateTaskTemplate(deactivatingTemplate.id)
+      setDeactivatingTemplate(null)
+      toast.success(t('common.savedToast'))
+      await loadTemplates(selectedFacultyId)
     } catch (err) {
-      if (isApiConflict(err)) {
-        setModalMessage((err as ApiError).message)
-      } else {
-        setError((err as Error).message)
-      }
+      toast.error(errorMessage(err))
     } finally {
-      setIsChangingStateId(null)
+      setIsDeactivating(false)
     }
   }
+
+  const handleActivate = async (template: TaskTemplate) => {
+    setActivatingTemplateId(template.id)
+    try {
+      await activateTaskTemplate(template.id)
+      toast.success(t('common.savedToast'))
+      await loadTemplates(selectedFacultyId)
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setActivatingTemplateId(null)
+    }
+  }
+
+  const reorderColumn: DataTableColumn<TaskTemplate> = {
+    key: 'reorder',
+    header: <span className="sr-only">{t('taskTemplates.dragHandle')}</span>,
+    render: (template) => {
+      const index = sortedTemplates.findIndex((item) => item.id === template.id)
+      return (
+        <div className="flex items-center gap-1">
+          <span
+            className={cn('inline-flex items-center text-text-muted', canReorder ? 'cursor-grab' : 'cursor-not-allowed opacity-50')}
+            aria-label={t('taskTemplates.dragHandle')}
+          >
+            <GripVertical className="size-4" aria-hidden />
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={t('taskTemplates.moveUp')}
+            disabled={!canReorder || isReordering || index <= 0}
+            onClick={() => moveTemplate(index, index - 1)}
+          >
+            ↑
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={t('taskTemplates.moveDown')}
+            disabled={!canReorder || isReordering || index >= sortedTemplates.length - 1}
+            onClick={() => moveTemplate(index, index + 1)}
+          >
+            ↓
+          </Button>
+        </div>
+      )
+    }
+  }
+
+  const templateColumns: DataTableColumn<TaskTemplate>[] = [
+    ...(isAdmin ? [reorderColumn] : []),
+    { key: 'order', header: t('taskTemplates.order'), render: (template) => template.order },
+    {
+      key: 'title',
+      header: t('taskTemplates.titleField'),
+      render: (template) => (
+        <div>
+          <div>{template.title}</div>
+          <div className="text-xs text-text-muted">{template.description || t('common.noDescription')}</div>
+        </div>
+      )
+    },
+    {
+      key: 'active',
+      header: t('common.status'),
+      render: (template) => <Badge tone={template.isActive ? 'success' : 'neutral'}>{template.isActive ? t('common.active') : t('common.inactive')}</Badge>
+    },
+    {
+      key: 'actions',
+      header: t('common.actions'),
+      render: (template) => (
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" icon={Pencil} aria-label={t('common.edit')} onClick={() => openEditTemplate(template)} />
+          {template.isActive ? (
+            <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('taskTemplates.deactivate')} onClick={() => setDeactivatingTemplate(template)} />
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={RotateCcw}
+              aria-label={t('taskTemplates.activate')}
+              loading={activatingTemplateId === template.id}
+              onClick={() => void handleActivate(template)}
+            />
+          )}
+        </div>
+      )
+    }
+  ]
 
   return (
-    <div className="groups-page">
-      {modalMessage && <ErrorModal message={modalMessage} onClose={() => setModalMessage('')} />}
+    <>
+      <PageHeader
+        title={t('taskTemplates.title')}
+        actions={<Button icon={Plus} onClick={openCreateTemplate} disabled={!selectedFacultyId}>{t('taskTemplates.add')}</Button>}
+      />
 
-      <section className="page-card">
-        <h1>Task Templates</h1>
-        <form className="group-form" onSubmit={handleCreate}>
-          <div className="group-form-grid">
-            <input className="field-input" placeholder="Title" value={createForm.title} onChange={(e) => setCreateForm((prev) => ({ ...prev, title: e.target.value }))} required />
-            <input className="field-input" placeholder="Order" type="number" min={1} value={createForm.order} onChange={(e) => setCreateForm((prev) => ({ ...prev, order: e.target.value }))} required />
-            <input className="field-input" placeholder="Description" value={createForm.description} onChange={(e) => setCreateForm((prev) => ({ ...prev, description: e.target.value }))} />
-          </div>
-          <button className="primary-button" type="submit" disabled={isCreating}>{isCreating ? 'Creating...' : 'Create Template'}</button>
-        </form>
-      </section>
-
-      {editingTemplateId && (
-        <section className="page-card">
-          <h2>Edit Task Template</h2>
-          <form className="group-form" onSubmit={handleSaveEdit}>
-            <div className="group-form-grid">
-              <input className="field-input" placeholder="Title" value={editForm.title} onChange={(e) => setEditForm((prev) => ({ ...prev, title: e.target.value }))} required />
-              <input className="field-input" placeholder="Order" type="number" min={1} value={editForm.order} onChange={(e) => setEditForm((prev) => ({ ...prev, order: e.target.value }))} required />
-              <input className="field-input" placeholder="Description" value={editForm.description} onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))} />
-              <label className="field-label"><input type="checkbox" checked={editForm.isActive} onChange={(e) => setEditForm((prev) => ({ ...prev, isActive: e.target.checked }))} /> Active</label>
-            </div>
-            <div className="actions-row">
-              <button className="primary-button" type="submit" disabled={isSavingEdit}>{isSavingEdit ? 'Saving...' : 'Save Changes'}</button>
-              <button className="secondary-button" type="button" onClick={cancelEdit} disabled={isSavingEdit}>Cancel</button>
-            </div>
-          </form>
-        </section>
-      )}
-
-      <section className="page-card">
-        <h2>Templates</h2>
-        {isLoading && <p>Loading templates...</p>}
-        {!isLoading && error && <p className="error-text">{error}</p>}
-        {!isLoading && !error && sortedTemplates.length === 0 && <p>No task templates found.</p>}
-        {!isLoading && !error && sortedTemplates.length > 0 && (
-          <div className="list-grid">
-            {sortedTemplates.map((template) => (
-              <article className="entity-card" key={template.id}>
-                <h3>{template.order}. {template.title}</h3>
-                <p>{template.description || 'No description'}</p>
-                <p><strong>Status:</strong> <span className={template.isActive ? 'status-active' : 'status-inactive'}>{template.isActive ? 'Active' : 'Inactive'}</span></p>
-                <div className="actions-row">
-                  <button className="secondary-button" onClick={() => startEdit(template)}>Edit</button>
-                  {template.isActive ? (
-                    <button className="secondary-button" onClick={() => handleDeactivate(template.id)} disabled={isChangingStateId === template.id}>{isChangingStateId === template.id ? 'Updating...' : 'Deactivate'}</button>
-                  ) : (
-                    <button className="secondary-button" onClick={() => handleActivate(template.id)} disabled={isChangingStateId === template.id}>{isChangingStateId === template.id ? 'Updating...' : 'Activate'}</button>
-                  )}
-                </div>
-              </article>
-            ))}
+      <Card className="mb-6">
+        {facultiesLoadError && <p className="text-sm text-danger">{facultiesLoadError}</p>}
+        {!facultiesLoadError && (
+          <div className="max-w-sm">
+            <Select
+              label={t('taskTemplates.faculty')}
+              value={selectedFacultyId}
+              onChange={setSelectedFacultyId}
+              options={facultyOptions}
+              placeholder={t('common.select')}
+              disabled={isLoadingFaculties}
+            />
           </div>
         )}
-      </section>
-    </div>
+      </Card>
+
+      <Card>
+        {loadError && <p className="text-sm text-danger">{loadError}</p>}
+        {!loadError && !selectedFacultyId && !isLoadingFaculties && (
+          <EmptyState message={t('taskTemplates.selectFaculty')} />
+        )}
+        {!loadError && selectedFacultyId && (
+          <>
+            {canReorder && <p className="mb-3 text-xs text-text-muted">{t('taskTemplates.reorderHint')}</p>}
+            <DataTable
+              columns={templateColumns}
+              rows={sortedTemplates}
+              getRowKey={(template) => template.id}
+              loading={isLoading}
+              emptyState={<EmptyState message={t('taskTemplates.noTemplates')} />}
+              rowProps={isAdmin ? templateRowProps : undefined}
+            />
+          </>
+        )}
+      </Card>
+
+      <Modal
+        open={isTemplateModalOpen}
+        onClose={closeTemplateModal}
+        title={editingTemplate ? t('taskTemplates.edit') : t('taskTemplates.add')}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeTemplateModal} disabled={isSavingTemplate}>{t('common.cancel')}</Button>
+            <Button form="task-template-form" type="submit" loading={isSavingTemplate}>{t('common.save')}</Button>
+          </>
+        }
+      >
+        <form id="task-template-form" onSubmit={submitTemplate} className="flex flex-col gap-4">
+          {editingTemplate && (
+            <TextField label={t('taskTemplates.faculty')} value={editingTemplate.facultyName} disabled readOnly />
+          )}
+          <TextField
+            label={t('taskTemplates.titleField')}
+            maxLength={200}
+            value={templateForm.title}
+            onChange={(e) => setTemplateForm((prev) => ({ ...prev, title: e.target.value }))}
+            error={titleError}
+          />
+          <Textarea
+            label={t('taskTemplates.description')}
+            maxLength={1000}
+            value={templateForm.description}
+            onChange={(e) => setTemplateForm((prev) => ({ ...prev, description: e.target.value }))}
+          />
+          <TextField
+            label={t('taskTemplates.order')}
+            type="number"
+            min={1}
+            value={templateForm.order}
+            onChange={(e) => setTemplateForm((prev) => ({ ...prev, order: e.target.value }))}
+            error={orderError}
+          />
+          {editingTemplate && (
+            <Checkbox
+              label={t('taskTemplates.active')}
+              checked={templateForm.isActive}
+              onChange={(checked) => setTemplateForm((prev) => ({ ...prev, isActive: checked }))}
+            />
+          )}
+        </form>
+      </Modal>
+
+      <ConfirmDialog
+        open={Boolean(deactivatingTemplate)}
+        title={t('taskTemplates.deactivate')}
+        message={deactivatingTemplate ? t('taskTemplates.deactivateConfirm', { title: deactivatingTemplate.title }) : ''}
+        loading={isDeactivating}
+        onConfirm={() => void confirmDeactivate()}
+        onCancel={() => setDeactivatingTemplate(null)}
+      />
+    </>
   )
 }

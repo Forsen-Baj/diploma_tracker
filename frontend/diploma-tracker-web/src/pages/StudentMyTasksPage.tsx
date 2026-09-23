@@ -1,76 +1,96 @@
+import { ArrowRight } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { getMyStudentTasks } from '../api/groupTasksApi'
-import type { MyStudentTask } from '../api/types'
-
-const filters = ['All', 'Pending', 'Submitted', 'SubmittedLate', 'NeedsRevision', 'Completed', 'MissedDeadline'] as const
+import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
+import { getMyProgress, getMySteps } from '../api/workflowApi'
+import { useErrorMessage } from '../api/useErrorMessage'
+import { Button } from '../components/ui/Button'
+import { Card } from '../components/ui/Card'
+import { cn } from '../components/ui/cn'
+import { DataTable, type DataTableColumn } from '../components/ui/DataTable'
+import { EmptyState } from '../components/ui/EmptyState'
+import { PageHeader } from '../components/ui/PageHeader'
+import { ProgressSummary } from '../components/workflow/ProgressSummary'
+import { StepStatusBadge } from '../components/workflow/StepStatusBadge'
+import type { StudentProgress, StudentStep } from '../api/types'
 
 export function StudentMyTasksPage() {
-  const [tasks, setTasks] = useState<MyStudentTask[]>([])
+  const { t, i18n } = useTranslation()
+  const errorMessage = useErrorMessage()
+  const navigate = useNavigate()
+
+  const [steps, setSteps] = useState<StudentStep[]>([])
+  const [progress, setProgress] = useState<StudentProgress | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [filter, setFilter] = useState<(typeof filters)[number]>('All')
+  const [loadError, setLoadError] = useState('')
+
+  const dateFormat = useMemo(
+    () => new Intl.DateTimeFormat(i18n.language === 'en' ? 'en-GB' : 'uk-UA', { dateStyle: 'medium' }),
+    [i18n.language]
+  )
+
+  const sortedSteps = useMemo(() => [...steps].sort((a, b) => a.order - b.order), [steps])
 
   useEffect(() => {
     const load = async () => {
       setIsLoading(true)
-      setError('')
+      setLoadError('')
       try {
-        setTasks(await getMyStudentTasks())
+        const [stepsData, progressData] = await Promise.all([getMySteps(), getMyProgress()])
+        setSteps(stepsData)
+        setProgress(progressData)
       } catch (err) {
-        setError((err as Error).message)
+        setLoadError(errorMessage(err))
       } finally {
         setIsLoading(false)
       }
     }
-    load()
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const filteredTasks = useMemo(() => {
-    if (filter === 'All') {
-      return tasks
+  const openStep = (step: StudentStep) => navigate(`/student/tasks/${step.id}`)
+
+  const columns: DataTableColumn<StudentStep>[] = [
+    { key: 'order', header: t('steps.order'), render: (step) => step.order },
+    { key: 'title', header: t('steps.step'), render: (step) => step.title },
+    {
+      key: 'deadline',
+      header: t('steps.deadline'),
+      render: (step) => (
+        <span className={cn(new Date(step.deadline).getTime() < Date.now() && step.status !== 'Approved' && 'text-danger')}>
+          {dateFormat.format(new Date(step.deadline))}
+        </span>
+      )
+    },
+    { key: 'status', header: t('common.status'), render: (step) => <StepStatusBadge status={step.status} isLate={step.isLate} /> },
+    { key: 'mark', header: t('steps.mark'), render: (step) => step.mark ?? '—' },
+    {
+      key: 'actions',
+      header: <span className="sr-only">{t('common.actions')}</span>,
+      render: (step) => <Button variant="ghost" size="sm" icon={ArrowRight} aria-label={t('steps.open')} onClick={() => openStep(step)} />
     }
-    return tasks.filter((task) => task.displayStatus === filter || task.status === filter)
-  }, [tasks, filter])
+  ]
 
   return (
-    <div className="groups-page">
-      <section className="page-card">
-        <h1>My Tasks</h1>
-        <div className="actions-row">
-          {filters.map((item) => (
-            <button
-              key={item}
-              className="secondary-button"
-              onClick={() => setFilter(item)}
-              disabled={filter === item}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
-      </section>
+    <>
+      <PageHeader title={t('steps.myTitle')} />
 
-      <section className="page-card">
-        {isLoading && <p>Loading tasks...</p>}
-        {!isLoading && error && <p className="error-text">{error}</p>}
-        {!isLoading && !error && filteredTasks.length === 0 && <p>No tasks found.</p>}
-        {!isLoading && !error && filteredTasks.length > 0 && (
-          <div className="list-grid">
-            {filteredTasks.map((task) => (
-              <article className="entity-card" key={task.id}>
-                <h3>{task.order}. {task.title}</h3>
-                <p>{task.description || 'No description'}</p>
-                <p><strong>Deadline:</strong> {new Date(task.deadline).toLocaleString()}</p>
-                <p><strong>Status:</strong> {task.displayStatus}</p>
-                <p><strong>Mark:</strong> {task.currentMark ?? 'N/A'}</p>
-                <p><strong>Latest reviewer comment:</strong> {task.latestReviewerComment ?? 'No reviews yet'}</p>
-                <Link to={`/student/tasks/${task.id}`}>Open details</Link>
-              </article>
-            ))}
-          </div>
+      {!isLoading && !loadError && progress && <ProgressSummary progress={progress} />}
+
+      <Card>
+        {loadError && <p className="text-sm text-danger">{loadError}</p>}
+        {!loadError && (
+          <DataTable
+            columns={columns}
+            rows={sortedSteps}
+            getRowKey={(step) => step.id}
+            loading={isLoading}
+            emptyState={<EmptyState message={t('steps.noSteps')} />}
+            onRowClick={openStep}
+          />
         )}
-      </section>
-    </div>
+      </Card>
+    </>
   )
 }

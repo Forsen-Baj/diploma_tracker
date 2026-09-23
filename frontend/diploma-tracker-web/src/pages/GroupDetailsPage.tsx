@@ -1,58 +1,120 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { ApiError, isApiConflict } from '../api/apiClient'
+import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { assignAllTaskTemplates, createGroupTask, deleteGroupTask, getTasksForGroup, updateGroupTask } from '../api/groupTasksApi'
 import { addGroupReviewer, getGroupReviewers, getGroups, getGroupStudents, removeGroupReviewer } from '../api/groupsApi'
+import { archiveGroupStudents } from '../api/studentsApi'
 import { getTaskTemplates } from '../api/taskTemplatesApi'
 import { getTeachers } from '../api/teachersApi'
+import { getGroupProgress } from '../api/workflowApi'
+import { useErrorMessage } from '../api/useErrorMessage'
 import { useAuth } from '../auth/useAuth'
-import type { Group, GroupReviewer, GroupStudent, GroupTask, TaskTemplate, Teacher } from '../api/types'
-import { ErrorModal } from '../components/ErrorModal'
+import { Badge } from '../components/ui/Badge'
+import { Button } from '../components/ui/Button'
+import { Card } from '../components/ui/Card'
+import { Checkbox } from '../components/ui/Checkbox'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
+import { DataTable, type DataTableColumn } from '../components/ui/DataTable'
+import { EmptyState } from '../components/ui/EmptyState'
+import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
+import { Select, type SelectOption } from '../components/ui/Select'
+import { Spinner } from '../components/ui/Spinner'
+import { TextField } from '../components/ui/TextField'
+import { useToast } from '../components/ui/useToast'
+import { GroupProgressMatrix } from '../components/workflow/GroupProgressMatrix'
+import { fromDatetimeLocalValue, toDatetimeLocalValue } from '../utils/datetime'
+import { formatPeriod } from '../utils/period'
+import type { Group, GroupProgress, GroupReviewer, GroupStudent, GroupTask, TaskTemplate, Teacher } from '../api/types'
+
+type BulkSelection = {
+  startDate: string
+  deadline: string
+}
 
 export function GroupDetailsPage() {
+  const { t, i18n } = useTranslation()
+  const errorMessage = useErrorMessage()
+  const toast = useToast()
   const { groupId } = useParams<{ groupId: string }>()
   const { user } = useAuth()
+  const navigate = useNavigate()
+
   const [group, setGroup] = useState<Group | null>(null)
   const [reviewers, setReviewers] = useState<GroupReviewer[]>([])
   const [students, setStudents] = useState<GroupStudent[]>([])
   const [tasks, setTasks] = useState<GroupTask[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([])
-  const [selectedReviewerId, setSelectedReviewerId] = useState('')
-  const [newTaskTemplateId, setNewTaskTemplateId] = useState('')
-  const [newTaskDeadline, setNewTaskDeadline] = useState('')
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
-  const [editingTaskDeadline, setEditingTaskDeadline] = useState('')
+  const [progress, setProgress] = useState<GroupProgress | null>(null)
+  const [isProgressLoading, setIsProgressLoading] = useState(true)
+  const [progressError, setProgressError] = useState('')
   const [isLoading, setIsLoading] = useState(true)
-  const [isAssigning, setIsAssigning] = useState(false)
+  const [loadError, setLoadError] = useState('')
+
+  const [selectedReviewerId, setSelectedReviewerId] = useState('')
+  const [isAssigningReviewer, setIsAssigningReviewer] = useState(false)
+  const [removingReviewer, setRemovingReviewer] = useState<GroupReviewer | null>(null)
+  const [isRemovingReviewer, setIsRemovingReviewer] = useState(false)
+
+  const [newTaskTemplateId, setNewTaskTemplateId] = useState('')
+  const [newTaskStartDate, setNewTaskStartDate] = useState('')
+  const [newTaskDeadline, setNewTaskDeadline] = useState('')
   const [isCreatingTask, setIsCreatingTask] = useState(false)
+
+  const [bulkSelections, setBulkSelections] = useState<Record<string, BulkSelection>>({})
   const [isBulkAssigning, setIsBulkAssigning] = useState(false)
+
+  const [editingTask, setEditingTask] = useState<GroupTask | null>(null)
+  const [editingTaskStartDate, setEditingTaskStartDate] = useState('')
+  const [editingTaskDeadline, setEditingTaskDeadline] = useState('')
   const [isSavingTask, setIsSavingTask] = useState(false)
-  const [removingReviewerId, setRemovingReviewerId] = useState<string | null>(null)
-  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null)
-  const [error, setError] = useState('')
-  const [modalMessage, setModalMessage] = useState('')
-  const [bulkSelections, setBulkSelections] = useState<Record<string, string>>({})
-  const [bulkResultMessage, setBulkResultMessage] = useState('')
+  const [deletingTask, setDeletingTask] = useState<GroupTask | null>(null)
+  const [isDeletingTask, setIsDeletingTask] = useState(false)
+
+  const [isArchivingStudents, setIsArchivingStudents] = useState(false)
+  const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false)
+
+  const dateFormat = useMemo(
+    () => new Intl.DateTimeFormat(i18n.language === 'en' ? 'en-GB' : 'uk-UA', { dateStyle: 'medium', timeStyle: 'short' }),
+    [i18n.language]
+  )
 
   const availableTeachers = useMemo(
     () => teachers.filter((teacher) => teacher.isActive && !reviewers.some((reviewer) => reviewer.reviewerId === teacher.id)),
     [teachers, reviewers]
   )
 
+  const reviewerOptions: SelectOption[] = useMemo(
+    () => availableTeachers.map((teacher) => ({ value: teacher.id, label: `${teacher.firstName} ${teacher.lastName}` })),
+    [availableTeachers]
+  )
+
   const availableTemplates = useMemo(() => {
     const assigned = new Set(tasks.map((task) => task.taskTemplateId))
-    return taskTemplates.filter((template) => template.isActive && !assigned.has(template.id))
-  }, [taskTemplates, tasks])
+    return taskTemplates.filter((template) => template.isActive && !assigned.has(template.id) && template.facultyId === group?.facultyId)
+  }, [taskTemplates, tasks, group])
 
-  const sortedTasks = useMemo(() => [...tasks].sort((a, b) => a.taskOrder - b.taskOrder || a.deadline.localeCompare(b.deadline)), [tasks])
+  const templateOptions: SelectOption[] = useMemo(
+    () => availableTemplates.map((template) => ({ value: template.id, label: `${template.order}. ${template.title}` })),
+    [availableTemplates]
+  )
 
-  const bulkCandidates = useMemo(() => availableTemplates.sort((a, b) => a.order - b.order || a.title.localeCompare(b.title)), [availableTemplates])
+  const sortedTasks = useMemo(
+    () => [...tasks].sort((a, b) => a.taskOrder - b.taskOrder || a.deadline.localeCompare(b.deadline)),
+    [tasks]
+  )
+
+  const bulkCandidates = useMemo(
+    () => [...availableTemplates].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title)),
+    [availableTemplates]
+  )
 
   const loadDetails = async () => {
     if (!groupId) return
     setIsLoading(true)
-    setError('')
+    setLoadError('')
     try {
       const [groupsData, reviewersData, studentsData, teachersData, templatesData, tasksData] = await Promise.all([
         getGroups(),
@@ -69,78 +131,98 @@ export function GroupDetailsPage() {
       setTaskTemplates(templatesData)
       setTasks(tasksData)
     } catch (err) {
-      setError((err as Error).message)
+      setLoadError(errorMessage(err))
     } finally {
       setIsLoading(false)
+    }
+
+    // The progress matrix is a read-only, decorative projection: its failure must not take down
+    // group details, reviewers, students, templates or the step-assignment UI.
+    setIsProgressLoading(true)
+    setProgressError('')
+    try {
+      setProgress(await getGroupProgress(groupId))
+    } catch (err) {
+      setProgress(null)
+      setProgressError(errorMessage(err))
+    } finally {
+      setIsProgressLoading(false)
     }
   }
 
   useEffect(() => {
-    loadDetails()
+    void loadDetails()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId])
 
-  const handleAssignReviewer = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleAssignReviewer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!groupId || !selectedReviewerId) return
 
-    setIsAssigning(true)
-    setError('')
+    setIsAssigningReviewer(true)
     try {
       await addGroupReviewer(groupId, selectedReviewerId)
       setSelectedReviewerId('')
+      toast.success(t('common.savedToast'))
       await loadDetails()
     } catch (err) {
-      if (isApiConflict(err)) {
-        setModalMessage((err as ApiError).message)
-      } else {
-        setError((err as Error).message)
-      }
+      toast.error(errorMessage(err))
     } finally {
-      setIsAssigning(false)
+      setIsAssigningReviewer(false)
     }
   }
 
-  const handleRemoveReviewer = async (reviewerId: string) => {
-    if (!groupId || !window.confirm('Remove this reviewer from the group?')) return
+  const removeReviewer = async () => {
+    if (!groupId || !removingReviewer) return
 
-    setRemovingReviewerId(reviewerId)
-    setError('')
+    setIsRemovingReviewer(true)
     try {
-      await removeGroupReviewer(groupId, reviewerId)
+      await removeGroupReviewer(groupId, removingReviewer.reviewerId)
+      setRemovingReviewer(null)
+      toast.success(t('common.deletedToast'))
       await loadDetails()
     } catch (err) {
-      setError((err as Error).message)
+      toast.error(errorMessage(err))
     } finally {
-      setRemovingReviewerId(null)
+      setIsRemovingReviewer(false)
     }
   }
 
-  const handleCreateTask = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleCreateTask = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!groupId || !newTaskTemplateId || !newTaskDeadline) {
       return
     }
+    if (newTaskStartDate && newTaskStartDate > newTaskDeadline) {
+      toast.error(t('errors.groupTask.startAfterDeadline'))
+      return
+    }
 
     setIsCreatingTask(true)
-    setError('')
     try {
       await createGroupTask({
         groupId,
         taskTemplateId: newTaskTemplateId,
-        deadline: new Date(newTaskDeadline).toISOString()
+        startDate: newTaskStartDate ? fromDatetimeLocalValue(newTaskStartDate) : undefined,
+        deadline: fromDatetimeLocalValue(newTaskDeadline)
       })
       setNewTaskTemplateId('')
+      setNewTaskStartDate('')
       setNewTaskDeadline('')
+      toast.success(t('common.savedToast'))
       await loadDetails()
     } catch (err) {
-      if (isApiConflict(err)) {
-        setModalMessage((err as ApiError).message)
-      } else {
-        setError((err as Error).message)
-      }
+      toast.error(errorMessage(err))
     } finally {
       setIsCreatingTask(false)
     }
+  }
+
+  const handleBulkStartDateChange = (templateId: string, startDate: string) => {
+    setBulkSelections((prev) => {
+      if (!prev[templateId]) return prev
+      return { ...prev, [templateId]: { ...prev[templateId], startDate } }
+    })
   }
 
   const handleBulkDeadlineChange = (templateId: string, deadline: string) => {
@@ -150,7 +232,19 @@ export function GroupDetailsPage() {
         delete next[templateId]
         return next
       }
-      next[templateId] = deadline
+      next[templateId] = { startDate: prev[templateId]?.startDate ?? '', deadline }
+      return next
+    })
+  }
+
+  const handleBulkCheckedChange = (template: TaskTemplate, checked: boolean) => {
+    setBulkSelections((prev) => {
+      const next = { ...prev }
+      if (!checked) {
+        delete next[template.id]
+        return next
+      }
+      next[template.id] = prev[template.id] ?? { startDate: '', deadline: '' }
       return next
     })
   }
@@ -160,219 +254,399 @@ export function GroupDetailsPage() {
       return
     }
 
-    const items = Object.entries(bulkSelections).map(([taskTemplateId, deadline]) => ({
-      taskTemplateId,
-      deadline: new Date(deadline).toISOString()
-    }))
+    const selections = Object.entries(bulkSelections).filter(([, selection]) => Boolean(selection.deadline))
 
-    if (items.length === 0) {
-      setError('Select at least one template and deadline.')
+    if (selections.length === 0) {
+      toast.error(t('groupDetails.selectAtLeastOne'))
       return
     }
 
+    if (selections.some(([, selection]) => selection.startDate && selection.startDate > selection.deadline)) {
+      toast.error(t('errors.groupTask.startAfterDeadline'))
+      return
+    }
+
+    const items = selections.map(([taskTemplateId, selection]) => ({
+      taskTemplateId,
+      startDate: selection.startDate ? fromDatetimeLocalValue(selection.startDate) : undefined,
+      deadline: fromDatetimeLocalValue(selection.deadline)
+    }))
+
     setIsBulkAssigning(true)
-    setError('')
-    setBulkResultMessage('')
     try {
-      const result = await assignAllTaskTemplates(groupId, { items })
+      await assignAllTaskTemplates(groupId, { items })
       setBulkSelections({})
-      setBulkResultMessage(`Created ${result.createdGroupTaskCount} task(s), skipped ${result.skippedExistingGroupTaskCount}, created ${result.createdStudentTaskCount} student task(s).`)
+      toast.success(t('common.savedToast'))
       await loadDetails()
     } catch (err) {
-      setError((err as Error).message)
+      toast.error(errorMessage(err))
     } finally {
       setIsBulkAssigning(false)
     }
   }
 
   const startEditTask = (task: GroupTask) => {
-    setEditingTaskId(task.id)
-    setEditingTaskDeadline(new Date(task.deadline).toISOString().slice(0, 16))
+    setEditingTask(task)
+    setEditingTaskStartDate(task.startDate ? toDatetimeLocalValue(task.startDate) : '')
+    setEditingTaskDeadline(toDatetimeLocalValue(task.deadline))
   }
 
-  const cancelEditTask = () => {
-    setEditingTaskId(null)
-    setEditingTaskDeadline('')
+  const closeEditTask = () => {
+    if (isSavingTask) return
+    setEditingTask(null)
   }
 
-  const handleSaveTaskDeadline = async (taskId: string) => {
-    if (!editingTaskDeadline) {
+  const handleSaveTaskDeadline = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!editingTask || !editingTaskDeadline) {
+      return
+    }
+    if (editingTaskStartDate && editingTaskStartDate > editingTaskDeadline) {
+      toast.error(t('errors.groupTask.startAfterDeadline'))
       return
     }
 
     setIsSavingTask(true)
-    setError('')
     try {
-      await updateGroupTask(taskId, { deadline: new Date(editingTaskDeadline).toISOString() })
-      cancelEditTask()
+      await updateGroupTask(editingTask.id, {
+        startDate: editingTaskStartDate ? fromDatetimeLocalValue(editingTaskStartDate) : undefined,
+        deadline: fromDatetimeLocalValue(editingTaskDeadline)
+      })
+      setEditingTask(null)
+      toast.success(t('common.savedToast'))
       await loadDetails()
     } catch (err) {
-      setError((err as Error).message)
+      toast.error(errorMessage(err))
     } finally {
       setIsSavingTask(false)
     }
   }
 
-  const handleDeleteTask = async (taskId: string) => {
-    if (!window.confirm('Delete this group task and all pending student tasks?')) {
-      return
-    }
+  const removeTask = async () => {
+    if (!deletingTask) return
 
-    setDeletingTaskId(taskId)
-    setError('')
+    setIsDeletingTask(true)
     try {
-      await deleteGroupTask(taskId)
+      await deleteGroupTask(deletingTask.id)
+      setDeletingTask(null)
+      toast.success(t('common.deletedToast'))
       await loadDetails()
     } catch (err) {
-      if (isApiConflict(err)) {
-        setModalMessage((err as ApiError).message)
-      } else {
-        setError((err as Error).message)
-      }
+      toast.error(errorMessage(err))
     } finally {
-      setDeletingTaskId(null)
+      setIsDeletingTask(false)
     }
   }
 
+  const confirmArchiveStudents = async () => {
+    if (!groupId) return
+
+    setIsArchivingStudents(true)
+    try {
+      const result = await archiveGroupStudents(groupId)
+      setIsArchiveConfirmOpen(false)
+      toast.success(t('groupDetails.archivedToast', { count: result.archived }))
+      await loadDetails()
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setIsArchivingStudents(false)
+    }
+  }
+
+  const taskColumns: DataTableColumn<GroupTask>[] = [
+    { key: 'order', header: t('groupDetails.order'), render: (task) => task.taskOrder },
+    { key: 'title', header: t('groupDetails.template'), render: (task) => task.taskTitle },
+    { key: 'period', header: t('groupDetails.period'), render: (task) => formatPeriod(task.startDate, task.deadline, dateFormat) },
+    { key: 'studentTaskCount', header: t('groupDetails.studentTaskCount'), render: (task) => task.studentTaskCount },
+    {
+      key: 'actions',
+      header: t('common.actions'),
+      render: (task) => (
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" icon={Pencil} aria-label={t('groupDetails.editPeriod')} onClick={() => startEditTask(task)} />
+          {user?.role === 'Admin' && (
+            <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('common.delete')} onClick={() => setDeletingTask(task)} />
+          )}
+        </div>
+      )
+    }
+  ]
+
+  const bulkColumns: DataTableColumn<TaskTemplate>[] = [
+    {
+      key: 'select',
+      header: '',
+      render: (template) => (
+        <Checkbox
+          label=""
+          ariaLabel={t('groupDetails.selectTemplate', { title: template.title })}
+          checked={Boolean(bulkSelections[template.id] !== undefined)}
+          onChange={(checked) => handleBulkCheckedChange(template, checked)}
+        />
+      )
+    },
+    { key: 'title', header: t('groupDetails.template'), render: (template) => `${template.order}. ${template.title}` },
+    {
+      key: 'startDate',
+      header: t('groupDetails.startDate'),
+      render: (template) => (
+        <TextField
+          label={<span className="sr-only">{t('groupDetails.startDate')} — {template.title}</span>}
+          type="datetime-local"
+          value={bulkSelections[template.id]?.startDate ?? ''}
+          disabled={bulkSelections[template.id] === undefined}
+          onChange={(event) => handleBulkStartDateChange(template.id, event.target.value)}
+        />
+      )
+    },
+    {
+      key: 'deadline',
+      header: t('groupDetails.deadline'),
+      render: (template) => (
+        <TextField
+          label={<span className="sr-only">{t('groupDetails.deadline')} — {template.title}</span>}
+          type="datetime-local"
+          value={bulkSelections[template.id]?.deadline ?? ''}
+          onChange={(event) => handleBulkDeadlineChange(template.id, event.target.value)}
+        />
+      )
+    }
+  ]
+
+  const reviewerColumns: DataTableColumn<GroupReviewer>[] = [
+    { key: 'name', header: t('groups.reviewer'), render: (reviewer) => `${reviewer.firstName} ${reviewer.lastName}` },
+    { key: 'email', header: t('auth.email'), render: (reviewer) => reviewer.email },
+    {
+      key: 'actions',
+      header: t('common.actions'),
+      render: (reviewer) => (
+        <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('common.remove')} onClick={() => setRemovingReviewer(reviewer)} />
+      )
+    }
+  ]
+
+  const studentColumns: DataTableColumn<GroupStudent>[] = [
+    { key: 'name', header: t('students.lastName'), render: (student) => `${student.firstName} ${student.lastName}` },
+    { key: 'studentNumber', header: t('groups.studentNumber'), render: (student) => student.studentNumber },
+    { key: 'email', header: t('auth.email'), render: (student) => student.email },
+    { key: 'topic', header: t('groupDetails.topic'), render: (student) => student.topicTitle ?? t('common.notSet') },
+    {
+      key: 'supervisor',
+      header: t('groupDetails.supervisor'),
+      render: (student) => (student.supervisorFirstName && student.supervisorLastName ? `${student.supervisorFirstName} ${student.supervisorLastName}` : t('common.notAssigned'))
+    },
+    {
+      key: 'claimed',
+      header: t('common.status'),
+      render: (student) => (
+        <Badge tone={student.isClaimed ? 'success' : 'warning'}>{student.isClaimed ? t('groups.claimed') : t('groups.notClaimed')}</Badge>
+      )
+    }
+  ]
+
+  const groupTitle = group ? group.code : ''
+
   return (
-    <div className="groups-page">
-      {modalMessage && <ErrorModal message={modalMessage} onClose={() => setModalMessage('')} />}
+    <>
+      <Link to="/admin/groups" className="mb-4 inline-flex h-10 items-center gap-2 rounded-control bg-transparent px-4 text-sm font-medium text-accent hover:bg-surface">
+        <ArrowLeft className="size-4" aria-hidden />
+        {t('groups.backToGroups')}
+      </Link>
 
-      <section className="page-card">
-        <p><Link to="/admin/groups">Back to Groups</Link></p>
-        {isLoading && <p>Loading group details...</p>}
-        {!isLoading && error && <p className="error-text">{error}</p>}
-        {!isLoading && !error && !group && <p>Group not found.</p>}
-        {!isLoading && !error && group && (
-          <>
-            <h1>{group.name}</h1>
-            <p><strong>Academic year:</strong> {group.academicYear}</p>
-            <p>{group.description || 'No description'}</p>
-          </>
-        )}
-      </section>
+      {isLoading && (
+        <div className="flex justify-center py-10">
+          <Spinner />
+        </div>
+      )}
 
-      {group && (
+      {!isLoading && loadError && (
+        <Card>
+          <p className="text-sm text-danger">{loadError}</p>
+        </Card>
+      )}
+
+      {!isLoading && !loadError && !group && (
+        <Card>
+          <EmptyState message={t('groupDetails.notFound')} />
+        </Card>
+      )}
+
+      {!isLoading && !loadError && group && (
         <>
-          <section className="page-card">
-            <h2>Reviewers</h2>
-            <form className="group-form" onSubmit={handleAssignReviewer}>
-              <div className="group-form-grid">
-                <select className="field-input" value={selectedReviewerId} onChange={(e) => setSelectedReviewerId(e.target.value)}>
-                  <option value="">Select teacher reviewer</option>
-                  {availableTeachers.map((teacher) => (
-                    <option key={teacher.id} value={teacher.id}>{teacher.firstName} {teacher.lastName}</option>
-                  ))}
-                </select>
+          <PageHeader title={groupTitle} description={`${group.academicYear} · ${group.departmentName}`} />
+
+          <Card title={t('groupDetails.reviewers')} className="mb-6">
+            <form onSubmit={handleAssignReviewer} className="mb-4 flex items-end gap-3">
+              <div className="max-w-sm flex-1">
+                <Select
+                  label={t('groups.reviewer')}
+                  value={selectedReviewerId}
+                  onChange={setSelectedReviewerId}
+                  options={reviewerOptions}
+                  placeholder={t('common.select')}
+                />
               </div>
-              <button className="primary-button" type="submit" disabled={isAssigning || !selectedReviewerId}>{isAssigning ? 'Assigning...' : 'Assign Reviewer'}</button>
+              <Button type="submit" loading={isAssigningReviewer} disabled={!selectedReviewerId}>
+                {t('groups.assignReviewer')}
+              </Button>
             </form>
-            {reviewers.length === 0 && <p>No reviewers assigned.</p>}
-            {reviewers.length > 0 && (
-              <div className="list-grid">
-                {reviewers.map((reviewer) => (
-                  <article className="entity-card" key={reviewer.id}>
-                    <h3>{reviewer.firstName} {reviewer.lastName}</h3>
-                    <p>{reviewer.email}</p>
-                    <button className="secondary-button" onClick={() => handleRemoveReviewer(reviewer.reviewerId)} disabled={removingReviewerId === reviewer.reviewerId}>{removingReviewerId === reviewer.reviewerId ? 'Removing...' : 'Remove'}</button>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
+            <DataTable
+              columns={reviewerColumns}
+              rows={reviewers}
+              getRowKey={(reviewer) => reviewer.id}
+              emptyState={<EmptyState message={t('groups.noReviewers')} />}
+            />
+          </Card>
 
-          <section className="page-card">
-            <h2>Group Tasks</h2>
-            <form className="group-form" onSubmit={handleCreateTask}>
-              <div className="group-form-grid">
-                <select className="field-input" value={newTaskTemplateId} onChange={(e) => setNewTaskTemplateId(e.target.value)}>
-                  <option value="">Select active task template</option>
-                  {availableTemplates.map((template) => (
-                    <option key={template.id} value={template.id}>{template.order}. {template.title}</option>
-                  ))}
-                </select>
-                <input className="field-input" type="datetime-local" value={newTaskDeadline} onChange={(e) => setNewTaskDeadline(e.target.value)} />
+          <Card title={t('groupDetails.tasks')} className="mb-6">
+            <form onSubmit={handleCreateTask} className="mb-6 flex items-end gap-3">
+              <div className="max-w-sm flex-1">
+                <Select
+                  label={t('groupDetails.template')}
+                  value={newTaskTemplateId}
+                  onChange={setNewTaskTemplateId}
+                  options={templateOptions}
+                  placeholder={t('common.select')}
+                />
               </div>
-              <button className="primary-button" type="submit" disabled={isCreatingTask || !newTaskTemplateId || !newTaskDeadline}>{isCreatingTask ? 'Assigning...' : 'Assign Task'}</button>
+              <div className="max-w-xs flex-1">
+                <TextField
+                  label={t('groupDetails.startDate')}
+                  hint={t('common.optional')}
+                  type="datetime-local"
+                  value={newTaskStartDate}
+                  onChange={(e) => setNewTaskStartDate(e.target.value)}
+                />
+              </div>
+              <div className="max-w-xs flex-1">
+                <TextField
+                  label={t('groupDetails.deadline')}
+                  type="datetime-local"
+                  value={newTaskDeadline}
+                  onChange={(e) => setNewTaskDeadline(e.target.value)}
+                />
+              </div>
+              <Button type="submit" loading={isCreatingTask} disabled={!newTaskTemplateId || !newTaskDeadline}>
+                {t('groupDetails.assignTask')}
+              </Button>
             </form>
 
-            {sortedTasks.length === 0 && <p>No tasks assigned to this group.</p>}
-            {sortedTasks.length > 0 && (
-              <div className="list-grid">
-                {sortedTasks.map((task) => (
-                  <article className="entity-card" key={task.id}>
-                    <h3>{task.taskOrder}. {task.taskTitle}</h3>
-                    <p>{task.taskDescription || 'No description'}</p>
-                    <p><strong>Deadline:</strong> {new Date(task.deadline).toLocaleString()}</p>
-                    <p><strong>Student task count:</strong> {task.studentTaskCount}</p>
-                    {editingTaskId === task.id ? (
-                      <div className="actions-row">
-                        <input className="field-input" type="datetime-local" value={editingTaskDeadline} onChange={(e) => setEditingTaskDeadline(e.target.value)} />
-                        <button className="secondary-button" onClick={() => handleSaveTaskDeadline(task.id)} disabled={isSavingTask}>{isSavingTask ? 'Saving...' : 'Save'}</button>
-                        <button className="secondary-button" onClick={cancelEditTask} disabled={isSavingTask}>Cancel</button>
-                      </div>
-                    ) : (
-                      <div className="actions-row">
-                        <button className="secondary-button" onClick={() => startEditTask(task)}>Edit Deadline</button>
-                        {user?.role === 'Admin' && (
-                          <button className="secondary-button" onClick={() => handleDeleteTask(task.id)} disabled={deletingTaskId === task.id}>{deletingTaskId === task.id ? 'Deleting...' : 'Delete'}</button>
-                        )}
-                      </div>
-                    )}
-                  </article>
-                ))}
-              </div>
-            )}
+            <DataTable
+              columns={taskColumns}
+              rows={sortedTasks}
+              getRowKey={(task) => task.id}
+              emptyState={<EmptyState message={t('groupDetails.noTasks')} />}
+            />
 
-            <hr />
-            <h3>Assign Selected Active Templates</h3>
-            {bulkCandidates.length === 0 && <p>All active templates are already assigned.</p>}
-            {bulkCandidates.length > 0 && (
+            <h3 className="mb-3 mt-6 text-sm font-semibold text-heading">{t('groupDetails.bulkTitle')}</h3>
+            {bulkCandidates.length === 0 ? (
+              <EmptyState message={t('groupDetails.allAssigned')} />
+            ) : (
               <>
-                <div className="list-grid">
-                  {bulkCandidates.map((template) => (
-                    <article className="entity-card" key={template.id}>
-                      <h3>{template.order}. {template.title}</h3>
-                      <p>{template.description || 'No description'}</p>
-                      <input
-                        className="field-input"
-                        type="datetime-local"
-                        value={bulkSelections[template.id] ?? ''}
-                        onChange={(e) => handleBulkDeadlineChange(template.id, e.target.value)}
-                      />
-                    </article>
-                  ))}
+                <DataTable
+                  columns={bulkColumns}
+                  rows={bulkCandidates}
+                  getRowKey={(template) => template.id}
+                />
+                <div className="mt-4">
+                  <Button loading={isBulkAssigning} onClick={() => void handleAssignSelectedTasks()}>
+                    {t('groupDetails.assignSelected')}
+                  </Button>
                 </div>
-                <div className="actions-row" style={{ marginTop: '12px' }}>
-                  <button className="primary-button" onClick={handleAssignSelectedTasks} disabled={isBulkAssigning}>
-                    {isBulkAssigning ? 'Assigning selected...' : 'Assign Selected Tasks'}
-                  </button>
-                </div>
-                {bulkResultMessage && <p>{bulkResultMessage}</p>}
               </>
             )}
-          </section>
+          </Card>
 
-          <section className="page-card">
-            <h2>Students in Group</h2>
-            {students.length === 0 && <p>No students assigned to this group.</p>}
-            {students.length > 0 && (
-              <div className="list-grid">
-                {students.map((student) => (
-                  <article className="entity-card" key={student.studentProfileId}>
-                    <h3>{student.firstName} {student.lastName}</h3>
-                    <p>{student.email}</p>
-                    <p><strong>Status:</strong> <span className={student.isActive ? 'status-active' : 'status-inactive'}>{student.isActive ? 'Active' : 'Inactive'}</span></p>
-                    <p><strong>Diploma topic:</strong> {student.diplomaTopic}</p>
-                    <p><strong>Supervisor:</strong> {student.supervisorFirstName && student.supervisorLastName ? `${student.supervisorFirstName} ${student.supervisorLastName}` : 'Not assigned'}</p>
-                    <p><strong>Supervisor email:</strong> {student.supervisorEmail ?? 'Not assigned'}</p>
-                  </article>
-                ))}
+          <Card title={t('progress.title')} className="mb-6">
+            {isProgressLoading && (
+              <div className="flex justify-center py-6">
+                <Spinner />
               </div>
             )}
-          </section>
+            {!isProgressLoading && progressError && <p className="text-sm text-danger">{progressError}</p>}
+            {!isProgressLoading && !progressError && progress && (
+              <GroupProgressMatrix progress={progress} onOpenStep={(studentTaskId) => navigate(`/review/steps/${studentTaskId}`)} />
+            )}
+          </Card>
+
+          <Card
+            title={t('groupDetails.students')}
+            actions={
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setIsArchiveConfirmOpen(true)}
+                disabled={students.length === 0}
+              >
+                {t('groupDetails.archiveAllStudents')}
+              </Button>
+            }
+          >
+            <DataTable
+              columns={studentColumns}
+              rows={students}
+              getRowKey={(student) => student.studentProfileId}
+              emptyState={<EmptyState message={t('groupDetails.noStudents')} />}
+            />
+          </Card>
         </>
       )}
-    </div>
+
+      <Modal
+        open={Boolean(editingTask)}
+        onClose={closeEditTask}
+        title={t('groupDetails.editPeriod')}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeEditTask} disabled={isSavingTask}>{t('common.cancel')}</Button>
+            <Button form="edit-task-deadline-form" type="submit" loading={isSavingTask}>{t('common.save')}</Button>
+          </>
+        }
+      >
+        <form id="edit-task-deadline-form" onSubmit={handleSaveTaskDeadline} className="flex flex-col gap-4">
+          <TextField
+            label={t('groupDetails.startDate')}
+            hint={t('common.optional')}
+            type="datetime-local"
+            value={editingTaskStartDate}
+            onChange={(e) => setEditingTaskStartDate(e.target.value)}
+          />
+          <TextField
+            label={t('groupDetails.deadline')}
+            type="datetime-local"
+            value={editingTaskDeadline}
+            onChange={(e) => setEditingTaskDeadline(e.target.value)}
+          />
+        </form>
+      </Modal>
+
+      <ConfirmDialog
+        open={Boolean(deletingTask)}
+        title={t('common.delete')}
+        message={t('groupDetails.deleteTaskConfirm')}
+        loading={isDeletingTask}
+        onConfirm={() => void removeTask()}
+        onCancel={() => setDeletingTask(null)}
+      />
+
+      <ConfirmDialog
+        open={Boolean(removingReviewer)}
+        title={t('common.remove')}
+        message={t('groups.removeReviewerConfirm')}
+        loading={isRemovingReviewer}
+        onConfirm={() => void removeReviewer()}
+        onCancel={() => setRemovingReviewer(null)}
+      />
+
+      <ConfirmDialog
+        open={isArchiveConfirmOpen}
+        title={t('groupDetails.archiveAllStudents')}
+        message={group ? t('groupDetails.archiveAllStudentsConfirm', { code: group.code, count: students.length }) : ''}
+        loading={isArchivingStudents}
+        onConfirm={() => void confirmArchiveStudents()}
+        onCancel={() => setIsArchiveConfirmOpen(false)}
+      />
+    </>
   )
 }

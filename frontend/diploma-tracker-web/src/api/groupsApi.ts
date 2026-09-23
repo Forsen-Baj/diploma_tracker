@@ -1,5 +1,13 @@
 import { apiRequest } from './apiClient'
-import type { AddGroupReviewerRequest, CreateGroupRequest, Group, GroupReviewer, GroupStudent, UpdateGroupRequest } from './types'
+import type {
+  AddGroupReviewerRequest,
+  CreateGroupRequest,
+  Group,
+  GroupDeletionPreview,
+  GroupReviewer,
+  GroupStudent,
+  UpdateGroupRequest
+} from './types'
 
 export async function getGroups(): Promise<Group[]> {
   return apiRequest<Group[]>('/api/groups')
@@ -23,6 +31,10 @@ export async function deleteGroup(id: string): Promise<void> {
   await apiRequest<void>(`/api/groups/${id}`, {
     method: 'DELETE'
   })
+}
+
+export async function getGroupDeletionPreview(id: string): Promise<GroupDeletionPreview> {
+  return apiRequest<GroupDeletionPreview>(`/api/groups/${id}/deletion-preview`)
 }
 
 export async function getGroupReviewers(groupId: string): Promise<GroupReviewer[]> {

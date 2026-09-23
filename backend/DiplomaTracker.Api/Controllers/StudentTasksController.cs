@@ -1,77 +1,69 @@
+using DiplomaTracker.Api.Errors;
+using DiplomaTracker.Api.Filters;
 using DiplomaTracker.Api.Interfaces;
+using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 
 namespace DiplomaTracker.Api.Controllers;
 
-[ApiController]
-[Route("api/student")]
-[Authorize(Roles = "Student")]
-public class StudentTasksController : ControllerBase
+[Route("api/student-tasks")]
+[Authorize]
+public class StudentTasksController : ApiControllerBase
 {
-    private readonly IGroupTaskService _groupTaskService;
+    private readonly IStudentWorkflowService _workflow;
 
-    public StudentTasksController(IGroupTaskService groupTaskService)
+    public StudentTasksController(IStudentWorkflowService workflow)
     {
-        _groupTaskService = groupTaskService;
+        _workflow = workflow;
     }
 
-    [HttpGet("my-tasks")]
-    public async Task<IActionResult> GetMyTasks()
+    [Authorize(Roles = "Student")]
+    [HttpGet("mine")]
+    public async Task<IActionResult> Mine()
     {
-        var context = GetUserContext();
-        if (context is null)
+        if (!TryGetCurrentUser(out var user))
         {
-            return Forbid();
+            return ErrorResult(CommonErrors.Forbidden);
         }
 
-        var (tasks, error) = await _groupTaskService.GetMyTasksAsync(context.Value.UserId, context.Value.Role);
-        if (tasks is null)
-        {
-            if (error == "Forbidden.")
-            {
-                return Forbid();
-            }
-
-            return NotFound(new { message = error });
-        }
-
-        return Ok(tasks);
+        var (steps, error) = await _workflow.GetMyStepsAsync(user);
+        return steps is null ? ErrorResult(error) : Ok(steps);
     }
 
-    [HttpGet("my-tasks/{id:guid}")]
-    public async Task<IActionResult> GetMyTaskById(Guid id)
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> Get(Guid id)
     {
-        var context = GetUserContext();
-        if (context is null)
+        if (!TryGetCurrentUser(out var user))
         {
-            return Forbid();
+            return ErrorResult(CommonErrors.Forbidden);
         }
 
-        var (task, error) = await _groupTaskService.GetMyTaskByIdAsync(id, context.Value.UserId, context.Value.Role);
-        if (task is null)
-        {
-            if (error == "Forbidden.")
-            {
-                return Forbid();
-            }
-
-            return NotFound(new { message = error });
-        }
-
-        return Ok(task);
+        var (step, error) = await _workflow.GetStepAsync(user, id);
+        return step is null ? ErrorResult(error) : Ok(step);
     }
 
-    private (Guid UserId, string Role)? GetUserContext()
+    [Authorize(Roles = "Student")]
+    [HttpPost("{id:guid}/submissions")]
+    [ServiceFilter(typeof(StudentTaskOwnershipFilter))]
+    [RequestSizeLimit(SubmissionFileRules.MaxRequestBytes)]
+    [RequestFormLimits(
+        ValueCountLimit = 8,
+        MemoryBufferThreshold = 64 * 1024,
+        MultipartBodyLengthLimit = SubmissionFileRules.MaxRequestBytes)]
+    public async Task<IActionResult> Submit(
+        Guid id,
+        [FromForm] IFormFile? mainFile,
+        [FromForm] List<IFormFile>? supportingFiles,
+        [FromForm] string? message,
+        CancellationToken cancellationToken)
     {
-        var role = User.FindFirstValue(ClaimTypes.Role);
-        var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrWhiteSpace(role) || string.IsNullOrWhiteSpace(userIdValue) || !Guid.TryParse(userIdValue, out var userId))
+        if (!TryGetCurrentUser(out var user))
         {
-            return null;
+            return ErrorResult(CommonErrors.Forbidden);
         }
 
-        return (userId, role);
+        var (step, error) = await _workflow.SubmitAsync(user, id, mainFile, supportingFiles ?? [], message, cancellationToken);
+        return step is null ? ErrorResult(error) : Ok(step);
     }
 }

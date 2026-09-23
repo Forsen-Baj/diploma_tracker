@@ -1,4 +1,6 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { Spinner } from '../components/ui/Spinner'
 import { useAuth } from './useAuth'
 
 type ProtectedRouteProps = {
@@ -14,9 +16,15 @@ function routeByRole(role: 'Admin' | 'Teacher' | 'Student'): string {
 export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
   const { user, isInitializing } = useAuth()
   const location = useLocation()
+  const { t } = useTranslation()
 
   if (isInitializing) {
-    return <section className="page-card"><p>Loading session...</p></section>
+    return (
+      <div className="flex justify-center py-10">
+        <Spinner />
+        <span className="sr-only">{t('common.loading')}</span>
+      </div>
+    )
   }
 
   if (!user) {

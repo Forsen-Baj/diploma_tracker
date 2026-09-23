@@ -1,61 +1,91 @@
+using System.Linq.Expressions;
 using DiplomaTracker.Api.Data;
 using DiplomaTracker.Api.DTOs.Groups;
 using DiplomaTracker.Api.Entities;
+using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DiplomaTracker.Api.Services;
 
 public class GroupService : IGroupService
 {
-    private const string DuplicateGroup = "Group with the same name and academic year already exists.";
-
     private readonly AppDbContext _dbContext;
+    private readonly ILogger<GroupService> _logger;
+    private readonly IAccessScope _accessScope;
+    private readonly IArchiveService _archive;
+    private readonly IReservationService _reservationService;
 
-    public GroupService(AppDbContext dbContext)
+    public GroupService(
+        AppDbContext dbContext,
+        ILogger<GroupService> logger,
+        IAccessScope accessScope,
+        IArchiveService archive,
+        IReservationService reservationService)
     {
         _dbContext = dbContext;
+        _logger = logger;
+        _accessScope = accessScope;
+        _archive = archive;
+        _reservationService = reservationService;
     }
 
-    public async Task<IReadOnlyList<GroupResponse>> GetGroupsAsync()
+    /// Phase 8 §8: the API returns exactly the columns it sends. This used to materialise a
+    /// Group with its Department and Faculty and map afterwards.
+    private static readonly Expression<Func<Group, GroupResponse>> GroupProjection = g => new GroupResponse
     {
-        var groups = await _dbContext.Groups
+        Id = g.Id,
+        DepartmentId = g.DepartmentId,
+        DepartmentName = g.Department.Name,
+        FacultyId = g.Department.FacultyId,
+        FacultyName = g.Department.Faculty.Name,
+        Code = g.Code,
+        Description = g.Description,
+        AcademicYear = g.AcademicYear,
+        CreatedAt = g.CreatedAt,
+        UpdatedAt = g.UpdatedAt
+    };
+
+    public async Task<IReadOnlyList<GroupResponse>> GetGroupsAsync(UserContext user)
+    {
+        return await _accessScope.VisibleGroups(user)
             .AsNoTracking()
-            .Include(g => g.Department)
-            .ThenInclude(d => d.Faculty)
-            .OrderBy(g => g.Name)
+            .OrderBy(g => g.Code)
             .ThenBy(g => g.AcademicYear)
+            .Select(GroupProjection)
             .ToListAsync();
-
-        return groups.Select(MapGroup).ToList();
     }
 
-    public async Task<GroupResponse?> GetGroupByIdAsync(Guid id)
+    public async Task<GroupResponse?> GetGroupByIdAsync(UserContext user, Guid id)
     {
-        var group = await _dbContext.Groups
+        return await _accessScope.VisibleGroups(user)
             .AsNoTracking()
-            .Include(g => g.Department)
-            .ThenInclude(d => d.Faculty)
-            .FirstOrDefaultAsync(g => g.Id == id);
-
-        return group is null ? null : MapGroup(group);
+            .Where(g => g.Id == id)
+            .Select(GroupProjection)
+            .FirstOrDefaultAsync();
     }
 
-    public async Task<(GroupResponse? group, string? error)> CreateGroupAsync(CreateGroupRequest request)
+    public async Task<(GroupResponse? group, string? error)> CreateGroupAsync(CreateGroupRequest request, Guid administratorId)
     {
         var department = await FindDepartmentAsync(request.DepartmentId);
         if (department is null)
         {
-            return (null, AcademicStructureErrors.DepartmentNotFound);
+            return (null, GroupErrors.DepartmentNotFound);
         }
 
-        var normalizedName = request.Name.Trim();
+        var normalizedCode = request.Code.Trim();
         var normalizedAcademicYear = request.AcademicYear.Trim();
 
-        var exists = await _dbContext.Groups.AnyAsync(g => g.Name == normalizedName && g.AcademicYear == normalizedAcademicYear);
+        if (string.IsNullOrWhiteSpace(normalizedCode) || string.IsNullOrWhiteSpace(normalizedAcademicYear))
+        {
+            return (null, CommonErrors.ValidationFailed);
+        }
+
+        var exists = await _dbContext.Groups.AnyAsync(g => g.Code == normalizedCode && g.AcademicYear == normalizedAcademicYear);
         if (exists)
         {
-            return (null, DuplicateGroup);
+            return (null, GroupErrors.CodeTaken);
         }
 
         var now = DateTime.UtcNow;
@@ -64,7 +94,7 @@ public class GroupService : IGroupService
             Id = Guid.NewGuid(),
             DepartmentId = department.Id,
             Department = department,
-            Name = normalizedName,
+            Code = normalizedCode,
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
             AcademicYear = normalizedAcademicYear,
             CreatedAt = now,
@@ -72,99 +102,263 @@ public class GroupService : IGroupService
         };
 
         _dbContext.Groups.Add(group);
-        await _dbContext.SaveChangesAsync();
 
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.IsUniqueConstraintViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, GroupErrors.CodeTaken);
+        }
+        catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, GroupErrors.DepartmentNotFound);
+        }
+
+        SecurityLog.AdministratorAction(_logger, administratorId, "Created", "Group", group.Id);
         return (MapGroup(group), null);
     }
 
-    public async Task<(GroupResponse? group, string? error)> UpdateGroupAsync(Guid id, UpdateGroupRequest request)
+    public async Task<(GroupResponse? group, string? error)> UpdateGroupAsync(Guid id, UpdateGroupRequest request, Guid administratorId)
     {
         var group = await _dbContext.Groups.FirstOrDefaultAsync(g => g.Id == id);
         if (group is null)
         {
-            return (null, "Group not found.");
+            return (null, GroupErrors.NotFound);
         }
 
         var department = await FindDepartmentAsync(request.DepartmentId);
         if (department is null)
         {
-            return (null, AcademicStructureErrors.DepartmentNotFound);
+            return (null, GroupErrors.DepartmentNotFound);
         }
 
-        var normalizedName = request.Name.Trim();
+        var normalizedCode = request.Code.Trim();
         var normalizedAcademicYear = request.AcademicYear.Trim();
 
-        var exists = await _dbContext.Groups.AnyAsync(g => g.Id != id && g.Name == normalizedName && g.AcademicYear == normalizedAcademicYear);
+        if (string.IsNullOrWhiteSpace(normalizedCode) || string.IsNullOrWhiteSpace(normalizedAcademicYear))
+        {
+            return (null, CommonErrors.ValidationFailed);
+        }
+
+        var exists = await _dbContext.Groups.AnyAsync(g => g.Id != id && g.Code == normalizedCode && g.AcademicYear == normalizedAcademicYear);
         if (exists)
         {
-            return (null, DuplicateGroup);
+            return (null, GroupErrors.CodeTaken);
         }
 
         group.DepartmentId = department.Id;
         group.Department = department;
-        group.Name = normalizedName;
+        group.Code = normalizedCode;
         group.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
         group.AcademicYear = normalizedAcademicYear;
         group.UpdatedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync();
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.IsUniqueConstraintViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, GroupErrors.CodeTaken);
+        }
+        catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            return (null, GroupErrors.DepartmentNotFound);
+        }
 
+        SecurityLog.AdministratorAction(_logger, administratorId, "Updated", "Group", group.Id);
         return (MapGroup(group), null);
     }
 
-    public async Task<(bool success, string? error)> DeleteGroupAsync(Guid id)
+    public async Task<(bool success, string? error)> DeleteGroupAsync(Guid id, Guid administratorId, CancellationToken cancellationToken)
     {
-        var group = await _dbContext.Groups.FirstOrDefaultAsync(g => g.Id == id);
+        var group = await _dbContext.Groups.FirstOrDefaultAsync(g => g.Id == id, cancellationToken);
         if (group is null)
         {
-            return (false, "Group not found.");
+            return (false, GroupErrors.NotFound);
         }
 
-        var hasAssignedStudents = await _dbContext.StudentProfiles.AnyAsync(s => s.GroupId == id);
-        if (hasAssignedStudents)
+        // Phase 8 §4.7: an ACTIVE student still blocks deletion. Archived ones do not - their
+        // work and their record go to the archive, and the empty accounts go with the group.
+        var hasActiveStudents = await _dbContext.StudentProfiles
+            .AnyAsync(s => s.GroupId == id && s.ArchivedAt == null, cancellationToken);
+        if (hasActiveStudents)
         {
-            return (false, "Cannot delete group because students are assigned.");
+            return (false, GroupErrors.HasStudents);
         }
 
+        var groupCode = group.Code;
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        // Archive BEFORE anything is deleted: a failure here leaves the group intact.
+        var archivedFileCount = await _archive.ArchiveGroupAsync(id, cancellationToken);
+
+        // Phase 8 §M2: only archived profiles are loaded here, even though the check above
+        // already refused an active student. A student added or restored into the group between
+        // the two reads is not swept up into this delete - the Group->StudentProfile FK is
+        // Restrict, so their profile still pointing at this group makes the save below fail and
+        // the existing FK-violation handler answers group.hasStudents, never a deleted active
+        // account.
+        var profiles = await _dbContext.StudentProfiles
+            .Include(p => p.User)
+            .Where(p => p.GroupId == id && p.ArchivedAt != null)
+            .ToListAsync(cancellationToken);
+
+        var now = DateTime.UtcNow;
+
+        // Phase 8 §I2 safety net: settle each profile's reservations before their accounts go,
+        // exactly as StudentService.ArchiveStudentsAsync does - a pending catalogue reservation
+        // returns its topic to Available, a pending or approved StudentProposal topic is deleted,
+        // and an approved catalogue topic returns to Available. Without this a reservation
+        // cascade-deletes with the account and leaves its topic stranded (§4.7).
+        foreach (var profile in profiles)
+        {
+            await _reservationService.SettleReservationsForArchiveAsync(profile.Id, now);
+        }
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // Deleting the user cascades to the profile, its reservations and its student tasks;
+        // student tasks cascade to submissions and submission files. The group's own cascade
+        // takes its reviewers, group tasks and template links.
+        _dbContext.Users.RemoveRange(profiles.Select(p => p.User));
         _dbContext.Groups.Remove(group);
-        await _dbContext.SaveChangesAsync();
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (ex.IsForeignKeyViolation())
+        {
+            _dbContext.ChangeTracker.Clear();
+            await transaction.RollbackAsync(cancellationToken);
+            return (false, GroupErrors.HasStudents);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        SecurityLog.GroupDeleted(_logger, administratorId, id, groupCode, archivedFileCount, profiles.Count);
         return (true, null);
     }
 
-    public async Task<(IReadOnlyList<GroupStudentResponse>? students, string? error)> GetGroupStudentsAsync(Guid groupId, string role, Guid userId)
+    /// Phase 8 §4.7/I3: what the delete confirmation dialog names before the admin commits to an
+    /// irreversible, account-deleting operation. fileCount uses the same predicate the deletion
+    /// itself archives by (ArchiveService.CountFilesForGroupDeletionAsync), so the two can never
+    /// disagree.
+    public async Task<(GroupDeletionPreviewResponse? preview, string? error)> GetDeletionPreviewAsync(Guid groupId, CancellationToken cancellationToken)
     {
-        var groupExists = await _dbContext.Groups.AnyAsync(g => g.Id == groupId);
+        var groupExists = await _dbContext.Groups.AnyAsync(g => g.Id == groupId, cancellationToken);
         if (!groupExists)
         {
-            return (null, "Group not found.");
+            return (null, GroupErrors.NotFound);
         }
 
-        if (role == "Teacher")
-        {
-            var isReviewer = await _dbContext.GroupReviewers.AnyAsync(gr => gr.GroupId == groupId && gr.ReviewerId == userId);
-            if (!isReviewer)
+        var counts = await _dbContext.StudentProfiles.AsNoTracking()
+            .Where(p => p.GroupId == groupId)
+            .GroupBy(_ => 1)
+            .Select(g => new
             {
-                return (null, "Forbidden.");
-            }
+                Active = g.Count(p => p.ArchivedAt == null),
+                Archived = g.Count(p => p.ArchivedAt != null)
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var fileCount = await _archive.CountFilesForGroupDeletionAsync(groupId, cancellationToken);
+
+        return (new GroupDeletionPreviewResponse
+        {
+            ActiveStudentCount = counts?.Active ?? 0,
+            ArchivedStudentCount = counts?.Archived ?? 0,
+            FileCount = fileCount
+        }, null);
+    }
+
+    public async Task<(IReadOnlyList<GroupStudentResponse>? students, string? error)> GetGroupStudentsAsync(UserContext user, Guid groupId)
+    {
+        if (!await _accessScope.CanSeeGroupAsync(user, groupId))
+        {
+            SecurityLog.AccessRefused(_logger, user.UserId, user.Role, "Group", groupId);
+            return (null, GroupErrors.NotFound);
         }
+
+        var groupCode = await _dbContext.Groups
+            .Where(g => g.Id == groupId)
+            .Select(g => g.Code)
+            .FirstAsync();
 
         var students = await _dbContext.StudentProfiles
             .AsNoTracking()
-            .Include(s => s.User)
-            .Include(s => s.Supervisor)
-            .Where(s => s.GroupId == groupId && s.User.Role == "Student")
+            .Where(s => s.GroupId == groupId && s.User.Role == "Student" && s.ArchivedAt == null)
             .OrderBy(s => s.User.LastName)
             .ThenBy(s => s.User.FirstName)
+            .Select(s => new GroupStudentResponse
+            {
+                StudentProfileId = s.Id,
+                UserId = s.UserId,
+                GroupCode = groupCode,
+                FirstName = s.User.FirstName,
+                LastName = s.User.LastName,
+                Email = s.User.Email,
+                StudentNumber = s.StudentNumber,
+                IsActive = s.User.IsActive,
+                IsClaimed = s.User.PasswordHash != null,
+                TopicTitle = s.Topic != null ? s.Topic.Title : null,
+                SupervisorId = s.SupervisorId,
+                SupervisorFirstName = s.Supervisor != null ? s.Supervisor.FirstName : null,
+                SupervisorLastName = s.Supervisor != null ? s.Supervisor.LastName : null,
+                SupervisorEmail = s.Supervisor != null ? s.Supervisor.Email : null,
+                CreatedAt = s.CreatedAt,
+                UpdatedAt = s.UpdatedAt
+            })
             .ToListAsync();
 
-        return (students.Select(MapGroupStudent).ToList(), null);
+        return (students, null);
     }
 
-    public async Task<IReadOnlyList<GroupReviewerResponse>?> GetGroupReviewersAsync(Guid groupId)
+    public async Task<(int? archived, string? error)> ArchiveGroupStudentsAsync(Guid groupId, Guid administratorId)
     {
         var groupExists = await _dbContext.Groups.AnyAsync(g => g.Id == groupId);
         if (!groupExists)
         {
+            return (null, GroupErrors.NotFound);
+        }
+
+        var profiles = await _dbContext.StudentProfiles
+            .Include(s => s.User)
+            .Where(s => s.GroupId == groupId && s.User.Role == "Student" && s.ArchivedAt == null)
+            .ToListAsync();
+
+        var now = DateTime.UtcNow;
+        var archivedIds = StudentArchiver.Archive(profiles, now);
+
+        // Phase 8 §I2: as StudentService.ArchiveStudentsAsync does - an archived student's live
+        // reservations must not linger, or a topic's supervisor would still see and could approve
+        // a pending request, or hold a topic permanently approved for an account that can no
+        // longer act on it.
+        foreach (var archivedId in archivedIds)
+        {
+            await _reservationService.SettleReservationsForArchiveAsync(archivedId, now);
+        }
+
+        await _dbContext.SaveChangesAsync();
+        await _archive.ArchiveStudentsAsync(archivedIds, CancellationToken.None);
+
+        SecurityLog.StudentsArchived(_logger, administratorId, archivedIds.Count, archivedIds);
+
+        return (archivedIds.Count, null);
+    }
+
+    public async Task<IReadOnlyList<GroupReviewerResponse>?> GetGroupReviewersAsync(UserContext user, Guid groupId)
+    {
+        if (!await _accessScope.CanSeeGroupAsync(user, groupId))
+        {
+            SecurityLog.AccessRefused(_logger, user.UserId, user.Role, "Group", groupId);
             return null;
         }
 
@@ -179,35 +373,35 @@ public class GroupService : IGroupService
         return reviewers.Select(MapReviewer).ToList();
     }
 
-    public async Task<(GroupReviewerResponse? reviewer, string? error)> AddGroupReviewerAsync(Guid groupId, AddGroupReviewerRequest request)
+    public async Task<(GroupReviewerResponse? reviewer, string? error)> AddGroupReviewerAsync(Guid groupId, AddGroupReviewerRequest request, Guid administratorId)
     {
         var groupExists = await _dbContext.Groups.AnyAsync(g => g.Id == groupId);
         if (!groupExists)
         {
-            return (null, "Group not found.");
+            return (null, GroupErrors.NotFound);
         }
 
         var reviewer = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == request.ReviewerId);
         if (reviewer is null)
         {
-            return (null, "Reviewer not found.");
+            return (null, GroupErrors.ReviewerNotFound);
         }
 
         if (reviewer.Role != "Teacher")
         {
-            return (null, "Reviewer must be a teacher.");
+            return (null, GroupErrors.ReviewerMustBeActiveTeacher);
         }
 
         if (!reviewer.IsActive)
         {
-            return (null, "Reviewer must be active.");
+            return (null, GroupErrors.ReviewerMustBeActiveTeacher);
         }
 
         var alreadyAssigned = await _dbContext.GroupReviewers
             .AnyAsync(gr => gr.GroupId == groupId && gr.ReviewerId == request.ReviewerId);
         if (alreadyAssigned)
         {
-            return (null, "Reviewer is already assigned to this group.");
+            return (null, GroupErrors.ReviewerAlreadyAssigned);
         }
 
         var assignment = new GroupReviewer
@@ -222,26 +416,28 @@ public class GroupService : IGroupService
         await _dbContext.SaveChangesAsync();
 
         assignment.Reviewer = reviewer;
+        SecurityLog.AdministratorAction(_logger, administratorId, "Created", "Group", groupId);
         return (MapReviewer(assignment), null);
     }
 
-    public async Task<(bool success, string? error)> RemoveGroupReviewerAsync(Guid groupId, Guid reviewerId)
+    public async Task<(bool success, string? error)> RemoveGroupReviewerAsync(Guid groupId, Guid reviewerId, Guid administratorId)
     {
         var groupExists = await _dbContext.Groups.AnyAsync(g => g.Id == groupId);
         if (!groupExists)
         {
-            return (false, "Group not found.");
+            return (false, GroupErrors.NotFound);
         }
 
         var assignment = await _dbContext.GroupReviewers
             .FirstOrDefaultAsync(gr => gr.GroupId == groupId && gr.ReviewerId == reviewerId);
         if (assignment is null)
         {
-            return (false, "Reviewer assignment not found.");
+            return (false, GroupErrors.ReviewerAssignmentNotFound);
         }
 
         _dbContext.GroupReviewers.Remove(assignment);
         await _dbContext.SaveChangesAsync();
+        SecurityLog.AdministratorAction(_logger, administratorId, "Deleted", "Group", groupId);
         return (true, null);
     }
 
@@ -259,7 +455,7 @@ public class GroupService : IGroupService
         DepartmentName = group.Department.Name,
         FacultyId = group.Department.FacultyId,
         FacultyName = group.Department.Faculty.Name,
-        Name = group.Name,
+        Code = group.Code,
         Description = group.Description,
         AcademicYear = group.AcademicYear,
         CreatedAt = group.CreatedAt,
@@ -275,22 +471,5 @@ public class GroupService : IGroupService
         LastName = groupReviewer.Reviewer.LastName,
         Email = groupReviewer.Reviewer.Email,
         CreatedAt = groupReviewer.CreatedAt
-    };
-
-    private static GroupStudentResponse MapGroupStudent(StudentProfile profile) => new()
-    {
-        StudentProfileId = profile.Id,
-        UserId = profile.UserId,
-        FirstName = profile.User.FirstName,
-        LastName = profile.User.LastName,
-        Email = profile.User.Email,
-        IsActive = profile.User.IsActive,
-        DiplomaTopic = profile.DiplomaTopic,
-        SupervisorId = profile.SupervisorId,
-        SupervisorFirstName = profile.Supervisor?.FirstName,
-        SupervisorLastName = profile.Supervisor?.LastName,
-        SupervisorEmail = profile.Supervisor?.Email,
-        CreatedAt = profile.CreatedAt,
-        UpdatedAt = profile.UpdatedAt
     };
 }
