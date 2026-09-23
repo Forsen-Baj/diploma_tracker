@@ -2643,7 +2643,7 @@ git commit -m "Implement review panels"
 git log --oneline -3
 ```
 
-Expected: `Implement review panels`, then `Add review panels implementation plan`, then `Add review panels and document routing design`.
+Expected: `Implement review panels` on top, followed by the planning commits (`Add document routing implementation plan and handoff`, `Add review panels implementation plan`, `Add review panels and document routing design`, or later document commits).
 
 - [ ] **Step 9: Report and stop**
 
