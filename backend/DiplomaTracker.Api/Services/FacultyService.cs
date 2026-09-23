@@ -3,16 +3,19 @@ using DiplomaTracker.Api.DTOs.Faculties;
 using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DiplomaTracker.Api.Services;
 
 public class FacultyService : IFacultyService
 {
     private readonly AppDbContext _dbContext;
+    private readonly ILogger<FacultyService> _logger;
 
-    public FacultyService(AppDbContext dbContext)
+    public FacultyService(AppDbContext dbContext, ILogger<FacultyService> logger)
     {
         _dbContext = dbContext;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<FacultyResponse>> GetFacultiesAsync()
@@ -31,7 +34,7 @@ public class FacultyService : IFacultyService
         return faculty is null ? null : MapFaculty(faculty);
     }
 
-    public async Task<(FacultyResponse? faculty, string? error)> CreateFacultyAsync(CreateFacultyRequest request)
+    public async Task<(FacultyResponse? faculty, string? error)> CreateFacultyAsync(CreateFacultyRequest request, Guid administratorId)
     {
         var name = request.Name.Trim();
         var shortName = request.ShortName.Trim();
@@ -64,10 +67,11 @@ public class FacultyService : IFacultyService
             return (null, await FindConflictAsync(null, name, shortName) ?? AcademicStructureErrors.FacultyNameTaken);
         }
 
+        SecurityLog.AdministratorAction(_logger, administratorId, "Created", "Faculty", faculty.Id);
         return (MapFaculty(faculty), null);
     }
 
-    public async Task<(FacultyResponse? faculty, string? error)> UpdateFacultyAsync(Guid id, UpdateFacultyRequest request)
+    public async Task<(FacultyResponse? faculty, string? error)> UpdateFacultyAsync(Guid id, UpdateFacultyRequest request, Guid administratorId)
     {
         var faculty = await _dbContext.Faculties.FirstOrDefaultAsync(f => f.Id == id);
         if (faculty is null)
@@ -98,10 +102,11 @@ public class FacultyService : IFacultyService
             return (null, await FindConflictAsync(id, name, shortName) ?? AcademicStructureErrors.FacultyNameTaken);
         }
 
+        SecurityLog.AdministratorAction(_logger, administratorId, "Updated", "Faculty", faculty.Id);
         return (MapFaculty(faculty), null);
     }
 
-    public async Task<(bool success, string? error)> DeleteFacultyAsync(Guid id)
+    public async Task<(bool success, string? error)> DeleteFacultyAsync(Guid id, Guid administratorId)
     {
         var faculty = await _dbContext.Faculties.FirstOrDefaultAsync(f => f.Id == id);
         if (faculty is null)
@@ -132,23 +137,23 @@ public class FacultyService : IFacultyService
             return (false, hasDepartments ? AcademicStructureErrors.FacultyHasDepartments : AcademicStructureErrors.FacultyHasTaskTemplates);
         }
 
+        SecurityLog.AdministratorAction(_logger, administratorId, "Deleted", "Faculty", id);
         return (true, null);
     }
 
     private async Task<string?> FindConflictAsync(Guid? excludedId, string name, string shortName)
     {
-        var conflict = await _dbContext.Faculties
-            .AsNoTracking()
-            .Where(f => f.Id != excludedId && (f.Name == name || f.ShortName == shortName))
-            .Select(f => new { f.Name, f.ShortName })
-            .FirstOrDefaultAsync();
-
-        if (conflict is null)
+        if (await _dbContext.Faculties.AsNoTracking().AnyAsync(f => f.Id != excludedId && f.Name == name))
         {
-            return null;
+            return AcademicStructureErrors.FacultyNameTaken;
         }
 
-        return conflict.Name == name ? AcademicStructureErrors.FacultyNameTaken : AcademicStructureErrors.FacultyShortNameTaken;
+        if (await _dbContext.Faculties.AsNoTracking().AnyAsync(f => f.Id != excludedId && f.ShortName == shortName))
+        {
+            return AcademicStructureErrors.FacultyShortNameTaken;
+        }
+
+        return null;
     }
 
     private static FacultyResponse MapFaculty(Faculty faculty) => new()

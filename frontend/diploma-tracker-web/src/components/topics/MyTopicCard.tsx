@@ -1,5 +1,5 @@
 import { X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { cancelReservation, getMyReservations } from '../../api/reservationsApi'
@@ -47,10 +47,15 @@ type MyTopicCardProps = {
 }
 
 export function MyTopicCard({ reservations: controlledReservations, loading: controlledLoading, onChanged }: MyTopicCardProps = {}) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const errorMessage = useErrorMessage()
   const toast = useToast()
+
+  const dateFormat = useMemo(
+    () => new Intl.DateTimeFormat(i18n.language === 'en' ? 'en-GB' : 'uk-UA', { dateStyle: 'medium' }),
+    [i18n.language]
+  )
 
   const isControlled = controlledReservations !== undefined
 
@@ -128,7 +133,7 @@ export function MyTopicCard({ reservations: controlledReservations, loading: con
   const pending = reservations.find((reservation) => reservation.status === 'Pending') ?? null
   // The API already returns the student's reservations newest-first, so no re-sort is needed here.
   const latest = reservations[0] ?? null
-  const lastRejected = latest && latest.status === 'Rejected' && latest.decisionComment && latest.id !== dismissedRejectionId ? latest : null
+  const lastRejected = latest && latest.status === 'Rejected' && latest.id !== dismissedRejectionId ? latest : null
 
   const dismissRejection = (id: string) => {
     setDismissedRejectionId(id)
@@ -196,7 +201,14 @@ export function MyTopicCard({ reservations: controlledReservations, loading: con
             />
           </div>
           <p className="mt-1 text-sm text-text-strong">{lastRejected.topicTitle}</p>
-          <p className="mt-1 text-sm text-text-strong">{lastRejected.decisionComment}</p>
+          {lastRejected.decidedAt && (
+            <p className="mt-1 text-xs text-text-muted">
+              {t('topics.decidedAt')} {dateFormat.format(new Date(lastRejected.decidedAt))}
+            </p>
+          )}
+          <p className="mt-1 text-sm text-text-strong">
+            {lastRejected.decisionComment || t('topics.rejectedNoComment')}
+          </p>
         </div>
       )}
 

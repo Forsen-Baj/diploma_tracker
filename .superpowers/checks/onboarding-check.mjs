@@ -1,6 +1,9 @@
+import { createCleanup, removeGroup } from './checkCleanup.mjs'
+
 const API = 'http://localhost:5000'
 const stamp = Date.now().toString().slice(-6)
 const results = []
+const cleanup = createCleanup()
 
 function check(name, actual, expected) {
   const ok = actual === expected
@@ -33,11 +36,21 @@ function csvForm(content, name = 'students.csv') {
   return form
 }
 
+async function runChecks() {
 const admin = (await login('admin@diploma.local', 'Admin123!')).data.token
 const groups = (await call('GET', '/api/groups', { token: admin })).data
-const groupId = groups.find((g) => g.code === 'SEED-A').id
+const seedGroup = groups.find((g) => g.code === 'SEED-A')
+// Every student this script creates lands in a group of its own, removed with them at the end.
+const ownGroup = (await call('POST', '/api/groups', { token: admin, json: { departmentId: seedGroup.departmentId, code: `ON${stamp}`, academicYear: '2026/2027', description: '' } })).data
+cleanup.add(`group ${ownGroup.code}`, () => removeGroup(call, admin, ownGroup))
+const groupId = ownGroup.id
 const teachers = (await call('GET', '/api/teachers', { token: admin })).data
 const teacherId = teachers.find((t) => t.email === 'teacher@diploma.local').id
+
+// The registration switch is shared state: read the value this run found it in and restore
+// exactly that, rather than assuming a fixed end state.
+const originalRegistration = (await call('GET', '/api/registration')).data.open
+cleanup.add('registration switch', () => call('PUT', '/api/registration', { token: admin, json: { open: originalRegistration } }))
 
 // Registration switch
 await call('PUT', '/api/registration', { token: admin, json: { open: false } })
@@ -55,6 +68,7 @@ const validCsv = `﻿lastName;firstName;patronymic;email;studentNumber\r\nІва
 const firstImport = await call('POST', `/api/groups/${groupId}/students/import`, { token: admin, form: csvForm(validCsv) })
 check('05 import valid file', firstImport.status, 200)
 check('06 import created count', firstImport.data.created, 2)
+
 const secondImport = await call('POST', `/api/groups/${groupId}/students/import`, { token: admin, form: csvForm(validCsv) })
 check('07 re-import skipped count', secondImport.data.skipped.length, 2)
 check('08 re-import created count', secondImport.data.created, 0)
@@ -96,6 +110,7 @@ check('30 reset account claims again', (await call('POST', '/api/auth/claim', { 
 
 // Teachers and manual students
 check('31 teacher password too short', (await call('PUT', `/api/teachers/${teacherId}/password`, { token: admin, json: { password: 'short' } })).status, 400)
+cleanup.add('seed teacher password', () => call('PUT', `/api/teachers/${teacherId}/password`, { token: admin, json: { password: 'Teacher123!' } }))
 check('32 teacher password set', (await call('PUT', `/api/teachers/${teacherId}/password`, { token: admin, json: { password: 'Teacher456!' } })).status, 204)
 check('33 teacher signs in with new password', (await login('teacher@diploma.local', 'Teacher456!')).status, 200)
 await call('PUT', `/api/teachers/${teacherId}/password`, { token: admin, json: { password: 'Teacher123!' } })
@@ -156,8 +171,14 @@ check('53 group student isClaimed', c1GroupEntry?.isClaimed, true)
 
 // (e) the registration switch is unchanged by the reset: still closed
 check('54 registration still closed after reset', (await call('GET', '/api/registration')).data.open, false)
+}
 
-await call('PUT', '/api/registration', { token: admin, json: { open: false } })
+try {
+  await runChecks()
+} finally {
+  await cleanup.run()
+}
+
 const failed = results.filter((r) => !r.ok)
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`)
 process.exit(failed.length ? 1 : 0)

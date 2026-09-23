@@ -1,9 +1,11 @@
 import { inflateRawSync } from 'node:zlib'
+import { createCleanup, removeGroup } from './checkCleanup.mjs'
 
 const API = 'http://localhost:5000'
 const stamp = Date.now().toString().slice(-6)
 const results = []
 const authCalls = []
+const cleanup = createCleanup()
 
 function check(name, actual, expected) {
   const ok = actual === expected
@@ -199,28 +201,33 @@ const groups = (await call('GET', '/api/groups', { token: admin })).body
 const seedGroup = groups.find((g) => g.code === 'SEED-A')
 const teacherId = (await call('GET', '/api/teachers', { token: admin })).body.find((t) => t.email === 'teacher@diploma.local').id
 
-// Pre-flight A11: only remove this assignment during cleanup if the seed teacher was not already
-// a reviewer of SEED-A before this run.
-const reviewersBefore = (await call('GET', `/api/groups/${seedGroup.id}/reviewers`, { token: admin })).body
-const teacherWasReviewer = reviewersBefore.some((r) => r.reviewerId === teacherId)
-if (!teacherWasReviewer) {
-  await call('POST', `/api/groups/${seedGroup.id}/reviewers`, { token: admin, json: { reviewerId: teacherId } })
-}
+// The students this script creates live in two groups of its own, removed with them at the end;
+// the seed teacher reviews the home group so it may share templates with it.
+const homeGroup = (await call('POST', '/api/groups', { token: admin, json: { departmentId: seedGroup.departmentId, code: `DOCA${stamp}`, academicYear: '2026/2027', description: '' } })).body
+cleanup.add(`group ${homeGroup.code}`, () => removeGroup(call, admin, homeGroup))
+await call('POST', `/api/groups/${homeGroup.id}/reviewers`, { token: admin, json: { reviewerId: teacherId } })
 
 const otherGroup = (await call('POST', '/api/groups', { token: admin, json: { departmentId: seedGroup.departmentId, code: `DOC${stamp}`, academicYear: '2026/2027', description: '' } })).body
+cleanup.add(`group ${otherGroup.code}`, () => removeGroup(call, admin, otherGroup))
 const otherTeacherEmail = `doc.teacher.${stamp}@diploma.local`
 const otherTeacherId = (await call('POST', '/api/teachers', { token: admin, json: { firstName: 'Олег', lastName: 'Іншенко', email: otherTeacherEmail, password: 'Teacher456!' } })).body.id
+// Fix wave M17: the teacher account this run creates was previously never deactivated, so it kept
+// piling up in the teacher multi-select, in /api/topics/supervisors and in every "all teachers"
+// audience across repeated runs.
+cleanup.add(`teacher ${otherTeacherEmail} -> deactivate`, () => call('PATCH', `/api/teachers/${otherTeacherId}/deactivate`, { token: admin }))
 const otherTeacher = await login(otherTeacherEmail, 'Teacher456!')
 
 const studentEmail = `doc.${stamp}@student.local`
-const student = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Іван', lastName: 'Документенко', patronymic: 'Петрович', email: studentEmail, studentNumber: `D${stamp}`, password: 'Password1!', groupId: seedGroup.id } })).body
+const student = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Іван', lastName: 'Документенко', patronymic: 'Петрович', email: studentEmail, studentNumber: `D${stamp}`, password: 'Password1!', groupId: homeGroup.id } })).body
 const studentToken = await login(studentEmail, 'Password1!')
 const outsiderEmail = `outsider.${stamp}@student.local`
 const outsider = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Out', lastName: 'Sider', email: outsiderEmail, studentNumber: `O${stamp}`, password: 'Password1!', groupId: otherGroup.id } })).body
 const outsiderToken = await login(outsiderEmail, 'Password1!')
 
 const topicA = (await call('POST', '/api/topics', { token: teacher, json: { title: `Тема A ${stamp}`, departmentId: seedGroup.departmentId } })).body
+cleanup.add(`topic ${topicA.title}`, () => call('DELETE', `/api/topics/${topicA.id}`, { token: teacher }))
 const topicB = (await call('POST', '/api/topics', { token: teacher, json: { title: `Тема B ${stamp}`, departmentId: seedGroup.departmentId } })).body
+cleanup.add(`topic ${topicB.title}`, () => call('DELETE', `/api/topics/${topicB.id}`, { token: teacher }))
 
 // Fix wave I2 / M17: topicA's description carries a manual line break (\v), a C0 control
 // character and a tab, set here while topicA is still Available - a teacher may only edit a
@@ -234,8 +241,13 @@ await call('PUT', `/api/topics/${topicA.id}`, { token: teacher, json: { title: t
 
 // The deadline is read before it is changed so cleanup can restore the exact original value.
 const originalDeadline = (await call('GET', '/api/settings/topic-selection', { token: admin })).body.deadline
+cleanup.add('topic-selection deadline', () => call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: originalDeadline } }))
 await call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: null } })
 const reservation = await call('POST', `/api/topics/${topicA.id}/reserve`, { token: studentToken })
+// Topics can only be deleted while Available, so the reservation is cancelled first (returning
+// topicA to Available); this undo is registered after the deadline's, so it runs first (LIFO) -
+// required, since a cancel is refused once the selection window is closed.
+cleanup.add('topicA reservation -> cancel', () => call('POST', `/api/reservations/${reservation.body.id}/cancel`, { token: studentToken }))
 
 // The remaining checks are wrapped in one function so a genuinely unexpected response (a 500, or
 // a shape the script did not plan for) is caught, reported as its own failing check with the
@@ -245,20 +257,20 @@ let templateId
 async function runChecks() {
 // ---------- upload rules ----------
 check('01 markers vocabulary size', (await call('GET', '/api/templates/markers', { token: teacher })).body.length, 20)
-const unknown = await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: docx(paragraph([['{{student.nickname}} {{topic.title}}', false]])), groupIds: [seedGroup.id] }) })
+const unknown = await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: docx(paragraph([['{{student.nickname}} {{topic.title}}', false]])), groupIds: [homeGroup.id] }) })
 check('02 unknown marker refused', unknown.body.code, 'template.unknownMarkers')
 check('03 unknown markers listed', JSON.stringify(unknown.body.errors), JSON.stringify(['student.nickname']))
 
 // Pre-flight A2: any {{ ... }} counts as a marker, including a non-ASCII key such as a Cyrillic
 // typo - it must be refused as unknown rather than silently passed through.
-const nonAscii = await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: docx(paragraph([['{{студент.імя}}', false]])), groupIds: [seedGroup.id] }) })
+const nonAscii = await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: docx(paragraph([['{{студент.імя}}', false]])), groupIds: [homeGroup.id] }) })
 check('03a non-ASCII marker refused and listed', JSON.stringify({ code: nonAscii.body.code, errors: nonAscii.body.errors }), JSON.stringify({ code: 'template.unknownMarkers', errors: ['студент.імя'] }))
 
-check('04 not a Word document', (await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: Buffer.from('plain text'), groupIds: [seedGroup.id] }) })).body.code, 'template.invalidFile')
+check('04 not a Word document', (await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: Buffer.from('plain text'), groupIds: [homeGroup.id] }) })).body.code, 'template.invalidFile')
 
 // Pre-flight A5: a zip with more entries than the zip-directory guard (1,000) is refused before
 // the package is ever opened as Word - kept small with 1,001 empty entries.
-const zipBomb = await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: manyEntriesZip(1001), groupIds: [seedGroup.id] }) })
+const zipBomb = await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: manyEntriesZip(1001), groupIds: [homeGroup.id] }) })
 check('04a zip with too many entries refused', zipBomb.body.code, 'template.invalidFile')
 
 check('05 teacher cannot target all students', (await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: docx(validBody), allStudents: true }) })).body.code, 'template.audienceNotAllowed')
@@ -267,14 +279,14 @@ check('06 teacher cannot target invisible group', (await call('POST', '/api/temp
 // Fix wave M1 (sec) / review M1: refused before any marker is ever read, each for its own reason -
 // a macro-enabled main part, an external relationship whose scheme is not http/https/mailto, and a
 // field code that fetches external content.
-check('06a macro-enabled main part refused', (await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: macroEnabledDocx(), groupIds: [seedGroup.id] }) })).body.code, 'template.invalidFile')
-check('06b external relationship refused', (await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: externalRelationshipDocx(), groupIds: [seedGroup.id] }) })).body.code, 'template.invalidFile')
-check('06c INCLUDEPICTURE field refused', (await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: includePictureDocx(), groupIds: [seedGroup.id] }) })).body.code, 'template.invalidFile')
+check('06a macro-enabled main part refused', (await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: macroEnabledDocx(), groupIds: [homeGroup.id] }) })).body.code, 'template.invalidFile')
+check('06b external relationship refused', (await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: externalRelationshipDocx(), groupIds: [homeGroup.id] }) })).body.code, 'template.invalidFile')
+check('06c INCLUDEPICTURE field refused', (await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: includePictureDocx(), groupIds: [homeGroup.id] }) })).body.code, 'template.invalidFile')
 
 // Re-review new defect 1: a legitimate HYPERLINK field code (a Table of Contents entry, or any
 // hyperlink Word serialised as a field rather than a relationship) must be accepted, not refused
 // as dangerous. Uploaded and immediately deleted so the script stays self-cleaning.
-const hyperlinkUpload = await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: `Hyperlink ${stamp}`, bytes: hyperlinkFieldDocx(), groupIds: [seedGroup.id] }) })
+const hyperlinkUpload = await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: `Hyperlink ${stamp}`, bytes: hyperlinkFieldDocx(), groupIds: [homeGroup.id] }) })
 check('06d ordinary HYPERLINK field code accepted', hyperlinkUpload.status, 201)
 if (hyperlinkUpload.status === 201) {
   await call('DELETE', `/api/templates/${hyperlinkUpload.body.id}`, { token: teacher })
@@ -283,11 +295,19 @@ if (hyperlinkUpload.status === 201) {
 // Re-review new defect 2: the same INCLUDEPICTURE instruction split across two <w:instrText> runs
 // inside one complex field must still be refused - checking each run in isolation would let it
 // through.
-check('06e split INCLUDEPICTURE field refused', (await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: splitIncludePictureDocx(), groupIds: [seedGroup.id] }) })).body.code, 'template.invalidFile')
+check('06e split INCLUDEPICTURE field refused', (await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: 'Bad', bytes: splitIncludePictureDocx(), groupIds: [homeGroup.id] }) })).body.code, 'template.invalidFile')
 
-const created = await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: `Заява ${stamp}`, bytes: docx(validBody), groupIds: [seedGroup.id], allTeachers: true }) })
+const created = await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: `Заява ${stamp}`, bytes: docx(validBody), groupIds: [homeGroup.id], allTeachers: true }) })
 check('07 teacher uploads template', created.status, 201)
 templateId = created.body.id
+// The template is deleted by the run itself at check 31 - this undo is a safety net for a run that
+// fails before reaching that check, so it checks the template still exists before deleting it.
+cleanup.add(`template ${templateId}`, async () => {
+  const stillThere = await call('GET', `/api/templates/${templateId}`, { token: admin })
+  if (stillThere.body?.code !== 'template.notFound') {
+    await call('DELETE', `/api/templates/${templateId}`, { token: teacher })
+  }
+})
 
 // ---------- visibility ----------
 check('08 student in group sees template', (await call('GET', '/api/templates', { token: studentToken })).body.some((t) => t.id === templateId), true)
@@ -312,14 +332,14 @@ check('15 split-run marker filled', ownText.includes('Student: Документ�
 const filledRun = ownDocXml.match(/<w:r>(?:(?!<\/w:r>)[\s\S])*?Документенко Іван Петрович[\s\S]*?<\/w:r>/)
 check('15a starting run formatting kept (fill is not bold)', filledRun ? /<w:b\s*\/>/.test(filledRun[0]) : 'no run matched', false)
 
-check('16 spaced marker and short name', ownText.includes(`Short: Документенко І. П.; group SEED-A; dept SE`), true)
+check('16 spaced marker and short name', ownText.includes(`Short: Документенко І. П.; group ${homeGroup.code}; dept SE`), true)
 check('17 table marker with pending topic', ownText.includes(`Topic: Тема A ${stamp}`), true)
 check('18 supervisor short name', ownText.includes('Supervisor: Teacher D.'), true)
 check('19 header year filled', textOf(ownParts.get('word/header1.xml')), String(new Date().getFullYear()))
 
 // Fix wave M2 (review) / M17: footnotes, endnotes and comments are scanned and filled too, not
 // just the body and header - and the footer marker added to docx() proves the same for footers.
-check('19a footer marker filled', textOf(ownParts.get('word/footer1.xml')), seedGroup.code)
+check('19a footer marker filled', textOf(ownParts.get('word/footer1.xml')), homeGroup.code)
 check('19b footnote marker filled', textOf(ownParts.get('word/footnotes.xml')).includes(`D${stamp}`), true)
 
 check('20 no markers left', /\{\{/.test(ownText), false)
@@ -353,10 +373,10 @@ const source = await call('GET', `/api/templates/${templateId}/source`, { token:
 check('27 owner downloads source with markers', textOf(unzip(source.bytes).get('word/document.xml')).includes('{{topic.title}}'), true)
 check('28 replace file with unknown marker refused', (await call('PUT', `/api/templates/${templateId}/file`, { token: teacher, form: (() => { const f = new FormData(); f.append('file', new Blob([docx(paragraph([['{{oops}}', false]]))]), 'v2.docx'); return f })() })).body.code, 'template.unknownMarkers')
 
-// Fix wave A3 / M17: an admin update that keeps the group the template already had (SEED-A) and
+// Fix wave A3 / M17: an admin update that keeps the group the template already had (homeGroup) and
 // adds another (otherGroup) in the same request must succeed and result in both being saved -
 // proving the audience is updated by difference rather than replaced wholesale.
-const keepAndAdd = await call('PUT', `/api/templates/${templateId}`, { token: admin, json: { name: `Заява ${stamp}`, visibleToAllStudents: false, visibleToAllTeachers: true, groupIds: [seedGroup.id, otherGroup.id], teacherIds: [] } })
+const keepAndAdd = await call('PUT', `/api/templates/${templateId}`, { token: admin, json: { name: `Заява ${stamp}`, visibleToAllStudents: false, visibleToAllTeachers: true, groupIds: [homeGroup.id, otherGroup.id], teacherIds: [] } })
 check('28a admin keeps one group and adds another (A3)', keepAndAdd.status === 200 && keepAndAdd.body.audience.groups.length === 2, true)
 
 // Fix wave M17: a successful file replacement, then generation from the new file, so a replace is
@@ -380,94 +400,13 @@ check('31 owner deletes', (await call('DELETE', `/api/templates/${templateId}`, 
 check('32 deleted template gone', (await call('GET', `/api/templates/${templateId}`, { token: admin })).body.code, 'template.notFound')
 }
 
-let unexpectedError = null
 try {
   await runChecks()
 } catch (error) {
-  unexpectedError = error
   console.log(`\nUnexpected script error (not a plain check failure): ${error.message}`)
   results.push(false)
-}
-
-// ---------------------------------------------------------------------------
-// Cleanup: leave no group, topic, template or reservation behind, and restore the deadline.
-//
-// Same shape as workflow-check's cleanup: a student cannot be deleted, and a group cannot be
-// deleted while any student points at it, so every student this script created is restored (no-op
-// unless already archived), moved into the seeded group and re-archived there before the created
-// group is deleted. Topics can only be deleted while Available, so the reservation on topicA is
-// cancelled first (which returns the topic to Available); this must happen before the deadline is
-// restored, since a cancel is refused once the selection window is closed. Run only if every check
-// above passed; otherwise leave everything in place for diagnosis.
-// ---------------------------------------------------------------------------
-
-async function cleanup() {
-  const cancel = await call('POST', `/api/reservations/${reservation.body.id}/cancel`, { token: studentToken })
-  check('33 cleanup: cancel reservation', cancel.status, 200)
-
-  const restoreDeadline = await call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: originalDeadline } })
-  check('34 cleanup: restore topic-selection deadline', restoreDeadline.status, 204)
-
-  const deleteTopicA = await call('DELETE', `/api/topics/${topicA.id}`, { token: teacher })
-  check('35 cleanup: delete topic A', deleteTopicA.status, 204)
-
-  const deleteTopicB = await call('DELETE', `/api/topics/${topicB.id}`, { token: teacher })
-  check('36 cleanup: delete topic B', deleteTopicB.status, 204)
-
-  const templateStillThere = await call('GET', `/api/templates/${templateId}`, { token: admin })
-  if (templateStillThere.body?.code !== 'template.notFound') {
-    await call('DELETE', `/api/templates/${templateId}`, { token: teacher })
-  }
-  const templateGone = await call('GET', `/api/templates/${templateId}`, { token: admin })
-  check('37 cleanup: template removed', templateGone.body.code, 'template.notFound')
-
-  const seedGroupId = seedGroup.id
-  const createdStudentIds = [student.id, outsider.id]
-
-  const restore = await call('POST', '/api/students/restore', { token: admin, json: { studentIds: createdStudentIds } })
-  check('38 cleanup: restore archived students', restore.status, 200)
-
-  const moveStudent = await call('PUT', `/api/students/${student.id}/group`, { token: admin, json: { groupId: seedGroupId } })
-  const moveOutsider = await call('PUT', `/api/students/${outsider.id}/group`, { token: admin, json: { groupId: seedGroupId } })
-  check('39 cleanup: move students to seeded group', moveStudent.status === 200 && moveOutsider.status === 200, true)
-
-  const archive = await call('POST', '/api/students/archive', { token: admin, json: { studentIds: createdStudentIds } })
-  check('40 cleanup: archive moved students', archive.status, 200)
-
-  if (!teacherWasReviewer) {
-    const removeReviewer = await call('DELETE', `/api/groups/${seedGroup.id}/reviewers/${teacherId}`, { token: admin })
-    check('41 cleanup: remove reviewer assignment added by this run', removeReviewer.status, 204)
-  }
-
-  const removeGroup = await call('DELETE', `/api/groups/${otherGroup.id}`, { token: admin })
-  check('42 cleanup: delete group', removeGroup.status, 204)
-
-  // Fix wave M17: the teacher account this run creates (:190) was previously never deactivated,
-  // so it kept piling up in the teacher multi-select, in /api/topics/supervisors and in every
-  // "all teachers" audience across repeated runs.
-  const deactivateTeacher = await call('PATCH', `/api/teachers/${otherTeacherId}/deactivate`, { token: admin })
-  check('43 cleanup: deactivate created teacher', deactivateTeacher.status, 204)
-}
-
-const failedBeforeCleanup = results.some((ok) => !ok)
-if (!failedBeforeCleanup) {
-  await cleanup()
-} else {
-  // Fix wave M17: cleanup's own restore-then-delete order cancels topicA's reservation (33)
-  // *before* restoring the deadline (34), because a cancel is refused once the selection window
-  // is closed - so those two steps cannot simply move into a try/finally around runChecks without
-  // reordering them ahead of that cancel. What must never be skipped, even when a check already
-  // failed and every other row is deliberately left in place for diagnosis, is the shared global
-  // state this run touched: the selection deadline and SEED-A's reviewer list. Restored here on
-  // the failure path only; the success path already restores both, in the required order, inside
-  // cleanup() above.
-  console.log(`\nSkipping row cleanup: some check(s) already failed; leaving created rows in place for diagnosis. Still restoring the shared selection deadline and SEED-A's reviewer list.`)
-  const restoreDeadline = await call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: originalDeadline } })
-  check('34 cleanup: restore topic-selection deadline (after failure)', restoreDeadline.status, 204)
-  if (!teacherWasReviewer) {
-    const removeReviewer = await call('DELETE', `/api/groups/${seedGroup.id}/reviewers/${teacherId}`, { token: admin })
-    check('41 cleanup: remove reviewer assignment added by this run (after failure)', removeReviewer.status, 204)
-  }
+} finally {
+  await cleanup.run()
 }
 
 const passed = results.filter(Boolean).length

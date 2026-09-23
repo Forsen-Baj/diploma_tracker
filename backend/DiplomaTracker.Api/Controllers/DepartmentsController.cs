@@ -39,7 +39,12 @@ public class DepartmentsController : ApiControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateDepartmentRequest request)
     {
-        var (department, error) = await _departmentService.CreateDepartmentAsync(request);
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (department, error) = await _departmentService.CreateDepartmentAsync(request, administratorId);
         return department is null
             ? ErrorResult(error)
             : CreatedAtAction(nameof(GetById), new { id = department.Id }, department);
@@ -49,7 +54,12 @@ public class DepartmentsController : ApiControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateDepartmentRequest request)
     {
-        var (department, error) = await _departmentService.UpdateDepartmentAsync(id, request);
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (department, error) = await _departmentService.UpdateDepartmentAsync(id, request, administratorId);
         return department is null ? ErrorResult(error) : Ok(department);
     }
 
@@ -57,7 +67,12 @@ public class DepartmentsController : ApiControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var (success, error) = await _departmentService.DeleteDepartmentAsync(id);
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (success, error) = await _departmentService.DeleteDepartmentAsync(id, administratorId);
         return success ? NoContent() : ErrorResult(error);
     }
 }

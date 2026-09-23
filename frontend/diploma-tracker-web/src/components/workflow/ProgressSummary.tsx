@@ -25,8 +25,8 @@ export function ProgressSummary({ progress }: ProgressSummaryProps) {
         <p className="mt-1 text-lg font-semibold text-heading">{progress.averageMark ?? '—'}</p>
       </div>
       <div className="rounded-card bg-surface p-4">
-        <p className="text-xs font-medium text-text-muted">{t('progress.late')}</p>
-        <p className="mt-1 text-lg font-semibold text-heading">{progress.lateSubmissions}</p>
+        <p className="text-xs font-medium text-text-muted">{t('progress.lateSteps')}</p>
+        <p className="mt-1 text-lg font-semibold text-heading">{progress.lateSteps}</p>
       </div>
       <div className="rounded-card bg-surface p-4">
         <p className="text-xs font-medium text-text-muted">{t('progress.nextDeadline')}</p>

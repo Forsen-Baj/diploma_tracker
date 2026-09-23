@@ -5,16 +5,19 @@ using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DiplomaTracker.Api.Services;
 
 public class TopicService : ITopicService
 {
     private readonly AppDbContext _dbContext;
+    private readonly ILogger<TopicService> _logger;
 
-    public TopicService(AppDbContext dbContext)
+    public TopicService(AppDbContext dbContext, ILogger<TopicService> logger)
     {
         _dbContext = dbContext;
+        _logger = logger;
     }
 
     public async Task<(IReadOnlyList<TopicResponse>? topics, string? error)> GetTopicsAsync(UserContext user, TopicQuery query)
@@ -29,15 +32,24 @@ public class TopicService : ITopicService
                 return (null, TopicErrors.StudentProfileRequired);
             }
 
-            // A student mid-change-request has TWO active reservations at once — Approved for
-            // the topic held and Pending for the one wanted — so both ids are needed here, not
-            // just one: with a single id (and no OrderBy to make the choice deterministic
-            // anyway) one of the two topics would arbitrarily vanish from the catalogue.
-            var ownTopicIds = await _dbContext.TopicReservations.AsNoTracking()
-                .Where(r => r.StudentProfileId == student.Id
-                    && (r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Approved))
+            // The topic the student HOLDS comes from their profile (§5.3); a topic they have
+            // REQUESTED is a pending reservation, which is what a request is. Both stay visible
+            // in the catalogue, because a student mid-change-request must see the one they hold
+            // and the one they want.
+            var requestedTopicId = await _dbContext.TopicReservations.AsNoTracking()
+                .Where(r => r.StudentProfileId == student.Id && r.Status == ReservationStatus.Pending)
                 .Select(r => r.TopicId)
-                .ToListAsync();
+                .FirstOrDefaultAsync();
+
+            var ownTopicIds = new List<Guid>();
+            if (student.TopicId is not null)
+            {
+                ownTopicIds.Add(student.TopicId.Value);
+            }
+            if (requestedTopicId is not null && requestedTopicId != student.TopicId)
+            {
+                ownTopicIds.Add(requestedTopicId.Value);
+            }
 
             topics = topics.Where(t =>
                 ownTopicIds.Contains(t.Id)
@@ -111,6 +123,7 @@ public class TopicService : ITopicService
 
         if (user.IsTeacher && row.SupervisorId != user.UserId)
         {
+            SecurityLog.AccessRefused(_logger, user.UserId, user.Role, "Topic", id);
             return (null, TopicErrors.TopicNotFound);
         }
 
@@ -122,7 +135,7 @@ public class TopicService : ITopicService
                 return (null, TopicErrors.StudentProfileRequired);
             }
 
-            var isOwn = row.StudentProfileId == student.Id;
+            var isOwn = row.Holder?.StudentProfileId == student.Id || row.Request?.StudentProfileId == student.Id;
             var isVisibleCatalogue = row.DepartmentId == student.DepartmentId
                 && row.Origin == TopicOrigin.Catalogue
                 && row.Status == TopicStatus.Available
@@ -130,6 +143,7 @@ public class TopicService : ITopicService
 
             if (!isOwn && !isVisibleCatalogue)
             {
+                SecurityLog.AccessRefused(_logger, user.UserId, user.Role, "Topic", id);
                 return (null, TopicErrors.TopicNotFound);
             }
         }
@@ -163,6 +177,7 @@ public class TopicService : ITopicService
         _dbContext.Topics.Add(topic);
         await _dbContext.SaveChangesAsync();
 
+        SecurityLog.AdministratorAction(_logger, user.UserId, "Created", "Topic", topic.Id);
         return await GetTopicAsync(user, topic.Id);
     }
 
@@ -224,6 +239,7 @@ public class TopicService : ITopicService
             return (null, TopicErrors.TopicNotAvailable);
         }
 
+        SecurityLog.AdministratorAction(_logger, user.UserId, "Updated", "Topic", editable.Id);
         return await GetTopicAsync(user, editable.Id);
     }
 
@@ -246,6 +262,7 @@ public class TopicService : ITopicService
             return (false, TopicErrors.TopicNotAvailable);
         }
 
+        SecurityLog.AdministratorAction(_logger, user.UserId, "Deleted", "Topic", id);
         return (true, null);
     }
 
@@ -330,13 +347,19 @@ public class TopicService : ITopicService
     {
         return await _dbContext.StudentProfiles.AsNoTracking()
             .Where(p => p.UserId == userId && p.User.IsActive)
-            .Select(p => new StudentScope(p.Id, p.Group.DepartmentId))
+            .Select(p => new StudentScope(p.Id, p.Group.DepartmentId, p.TopicId))
             .FirstOrDefaultAsync();
     }
 
     private static TopicResponse ToResponse(TopicRow row, UserContext user)
     {
         var showStudent = !user.IsStudent;
+
+        // The holder wins: a topic can be held by one student and requested by another only
+        // through an administrator's assignment, and the holder is the topic's real state.
+        var party = row.Holder ?? row.Request;
+        var partyStatus = row.Holder is not null ? ReservationStatus.Approved : ReservationStatus.Pending;
+
         return new TopicResponse
         {
             Id = row.Id,
@@ -349,16 +372,22 @@ public class TopicService : ITopicService
             FacultyName = row.FacultyName,
             Origin = row.Origin.ToString(),
             Status = row.Status.ToString(),
-            ActiveReservationId = row.ActiveReservationId,
-            ActiveReservationStatus = row.ActiveReservationStatus?.ToString(),
-            StudentProfileId = showStudent ? row.StudentProfileId : null,
-            StudentName = showStudent ? row.StudentName : null,
-            GroupCode = showStudent ? row.GroupCode : null,
+            ActiveReservationId = party?.ReservationId,
+            ActiveReservationStatus = party is null ? null : partyStatus.ToString(),
+            StudentProfileId = showStudent ? party?.StudentProfileId : null,
+            StudentName = showStudent ? party?.Name : null,
+            GroupCode = showStudent ? party?.GroupCode : null,
             CreatedAt = row.CreatedAt,
             UpdatedAt = row.UpdatedAt
         };
     }
 
+    /// Phase 8 §5.3 and §8. The holder comes from StudentProfile.TopicId - the source of truth -
+    /// and the pending request from TopicReservations, which is what a request actually is.
+    ///
+    /// Both are projected as one nested object each, so SQL Server plans two OUTER APPLYs rather
+    /// than the five correlated scalar subqueries this used to issue per topic row (reservation
+    /// id, status, student id, student name and group code, each its own scan).
     private static readonly Expression<Func<Topic, TopicRow>> Projection = t => new TopicRow
     {
         Id = t.Id,
@@ -374,31 +403,35 @@ public class TopicService : ITopicService
         FacultyName = t.Department.Faculty.Name,
         Origin = t.Origin,
         Status = t.Status,
-        ActiveReservationId = t.Reservations
-            .Where(r => r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Approved)
-            .Select(r => (Guid?)r.Id)
+        Holder = t.Holders
+            .Select(p => new TopicPartyRow
+            {
+                ReservationId = p.TopicReservations
+                    .Where(r => r.Status == ReservationStatus.Approved)
+                    .Select(r => (Guid?)r.Id)
+                    .FirstOrDefault(),
+                StudentProfileId = p.Id,
+                LastName = p.User.LastName,
+                FirstName = p.User.FirstName,
+                GroupCode = p.Group.Code
+            })
             .FirstOrDefault(),
-        ActiveReservationStatus = t.Reservations
-            .Where(r => r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Approved)
-            .Select(r => (ReservationStatus?)r.Status)
-            .FirstOrDefault(),
-        StudentProfileId = t.Reservations
-            .Where(r => r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Approved)
-            .Select(r => (Guid?)r.StudentProfileId)
-            .FirstOrDefault(),
-        StudentName = t.Reservations
-            .Where(r => r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Approved)
-            .Select(r => r.StudentProfile.User.LastName + " " + r.StudentProfile.User.FirstName)
-            .FirstOrDefault(),
-        GroupCode = t.Reservations
-            .Where(r => r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Approved)
-            .Select(r => r.StudentProfile.Group.Code)
+        Request = t.Reservations
+            .Where(r => r.Status == ReservationStatus.Pending)
+            .Select(r => new TopicPartyRow
+            {
+                ReservationId = r.Id,
+                StudentProfileId = r.StudentProfileId,
+                LastName = r.StudentProfile.User.LastName,
+                FirstName = r.StudentProfile.User.FirstName,
+                GroupCode = r.StudentProfile.Group.Code
+            })
             .FirstOrDefault(),
         CreatedAt = t.CreatedAt,
         UpdatedAt = t.UpdatedAt
     };
 
-    private sealed record StudentScope(Guid Id, Guid DepartmentId);
+    private sealed record StudentScope(Guid Id, Guid DepartmentId, Guid? TopicId);
 
     private sealed class TopicRow
     {
@@ -415,12 +448,21 @@ public class TopicService : ITopicService
         public string FacultyName { get; init; } = string.Empty;
         public TopicOrigin Origin { get; init; }
         public TopicStatus Status { get; init; }
-        public Guid? ActiveReservationId { get; init; }
-        public ReservationStatus? ActiveReservationStatus { get; init; }
-        public Guid? StudentProfileId { get; init; }
-        public string? StudentName { get; init; }
-        public string? GroupCode { get; init; }
+        public TopicPartyRow? Holder { get; init; }
+        public TopicPartyRow? Request { get; init; }
         public DateTime CreatedAt { get; init; }
         public DateTime UpdatedAt { get; init; }
+    }
+
+    /// One party on a topic: the student who holds it, or the student asking for it.
+    private sealed class TopicPartyRow
+    {
+        public Guid? ReservationId { get; init; }
+        public Guid StudentProfileId { get; init; }
+        public string LastName { get; init; } = string.Empty;
+        public string FirstName { get; init; } = string.Empty;
+        public string GroupCode { get; init; } = string.Empty;
+
+        public string Name => LastName + " " + FirstName;
     }
 }

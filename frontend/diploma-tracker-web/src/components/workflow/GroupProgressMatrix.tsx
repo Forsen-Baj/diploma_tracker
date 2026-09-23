@@ -1,8 +1,10 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Badge } from '../ui/Badge'
 import { cn } from '../ui/cn'
 import { EmptyState } from '../ui/EmptyState'
 import { StepStatusBadge } from './StepStatusBadge'
+import { stepStatusTone } from './stepTones'
 import type { GroupProgress } from '../../api/types'
 
 type GroupProgressMatrixProps = {
@@ -58,7 +60,7 @@ export function GroupProgressMatrix({ progress, onOpenStep }: GroupProgressMatri
                   >
                     {cell && (
                       <span className="inline-flex items-center gap-1.5">
-                        <StepStatusBadge status={cell.status} isLate={cell.isLate} />
+                        <StepStatusBadge status={cell.status} isLate={cell.isLate} isOverdue={cell.isOverdue} />
                         {cell.status === 'Approved' && cell.mark !== null && (
                           <span className="text-xs text-text-muted">{cell.mark}</span>
                         )}
@@ -81,6 +83,30 @@ export function GroupProgressMatrix({ progress, onOpenStep }: GroupProgressMatri
           </tr>
         </tfoot>
       </table>
+
+      <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-text-muted">
+        <span className="font-semibold text-heading">{t('steps.legend')}</span>
+        <span className="inline-flex items-center gap-1.5">
+          <Badge tone={stepStatusTone.Pending}>{t('steps.status.Pending')}</Badge>
+          {t('steps.legendPending')}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Badge tone="danger">{t('steps.overdue')}</Badge>
+          {t('steps.legendOverdue')}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Badge tone={stepStatusTone.Submitted}>{t('steps.status.Submitted')}</Badge>
+          {t('steps.legendSubmitted')}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Badge tone={stepStatusTone.Returned}>{t('steps.status.Returned')}</Badge>
+          {t('steps.legendReturned')}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Badge tone={stepStatusTone.Approved}>{t('steps.status.Approved')}</Badge>
+          {t('steps.legendApproved')}
+        </span>
+      </div>
     </div>
   )
 }

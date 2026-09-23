@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { getGroupStudents } from '../api/groupsApi'
 import { getGroupProgress } from '../api/workflowApi'
 import { useErrorMessage } from '../api/useErrorMessage'
+import { useAuth } from '../auth/useAuth'
 import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
 import { DataTable, type DataTableColumn } from '../components/ui/DataTable'
@@ -18,7 +19,15 @@ export function GroupProgressPage() {
   const { t } = useTranslation()
   const errorMessage = useErrorMessage()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const { groupId } = useParams<{ groupId: string }>()
+
+  // Reached both from the teacher's own group list and from the shared dashboard group table
+  // (task-15 brief, Step 5), so the back link has to return to whichever list the viewer owns.
+  const isAdmin = user?.role === 'Admin'
+  const backToGroupsPath = isAdmin ? '/admin/groups' : '/teacher/groups'
+  // The admin's groups list uses the wording "Back to groups"; teachers keep the "my groups" wording.
+  const backToGroupsLabel = isAdmin ? t('groups.backToGroups') : t('progress.backToGroups')
 
   const [progress, setProgress] = useState<GroupProgress | null>(null)
   const [students, setStudents] = useState<GroupStudent[]>([])
@@ -77,9 +86,9 @@ export function GroupProgressPage() {
 
   return (
     <>
-      <Link to="/teacher/groups" className="mb-4 inline-flex h-10 items-center gap-2 rounded-control bg-transparent px-4 text-sm font-medium text-accent hover:bg-surface">
+      <Link to={backToGroupsPath} className="mb-4 inline-flex h-10 items-center gap-2 rounded-control bg-transparent px-4 text-sm font-medium text-accent hover:bg-surface">
         <ArrowLeft className="size-4" aria-hidden />
-        {t('progress.backToGroups')}
+        {backToGroupsLabel}
       </Link>
 
       {isLoading && (

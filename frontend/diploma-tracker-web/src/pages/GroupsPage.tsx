@@ -4,7 +4,16 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/apiClient'
 import { getDepartments } from '../api/departmentsApi'
-import { addGroupReviewer, createGroup, deleteGroup, getGroupReviewers, getGroups, removeGroupReviewer, updateGroup } from '../api/groupsApi'
+import {
+  addGroupReviewer,
+  createGroup,
+  deleteGroup,
+  getGroupDeletionPreview,
+  getGroupReviewers,
+  getGroups,
+  removeGroupReviewer,
+  updateGroup
+} from '../api/groupsApi'
 import { getTeachers } from '../api/teachersApi'
 import { useErrorMessage } from '../api/useErrorMessage'
 import { Button } from '../components/ui/Button'
@@ -19,7 +28,7 @@ import { Textarea } from '../components/ui/Textarea'
 import { TextField } from '../components/ui/TextField'
 import { useToast } from '../components/ui/useToast'
 import { optional } from '../utils/optional'
-import type { Department, Group, GroupReviewer, Teacher } from '../api/types'
+import type { Department, Group, GroupDeletionPreview, GroupReviewer, Teacher } from '../api/types'
 
 type GroupFormState = {
   departmentId: string
@@ -51,7 +60,9 @@ export function GroupsPage() {
   const [academicYearError, setAcademicYearError] = useState('')
   const [isSavingGroup, setIsSavingGroup] = useState(false)
   const [deletingGroup, setDeletingGroup] = useState<Group | null>(null)
+  const [deletionPreview, setDeletionPreview] = useState<GroupDeletionPreview | null>(null)
   const [isDeletingGroup, setIsDeletingGroup] = useState(false)
+  const [previewLoadingGroupId, setPreviewLoadingGroupId] = useState<string | null>(null)
 
   const [selectedGroupId, setSelectedGroupId] = useState<string>('')
   const [selectedReviewerId, setSelectedReviewerId] = useState<string>('')
@@ -196,6 +207,25 @@ export function GroupsPage() {
     }
   }
 
+  const openDeleteGroup = async (group: Group) => {
+    setPreviewLoadingGroupId(group.id)
+    try {
+      const preview = await getGroupDeletionPreview(group.id)
+      setDeletionPreview(preview)
+      setDeletingGroup(group)
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setPreviewLoadingGroupId(null)
+    }
+  }
+
+  const closeDeleteGroup = () => {
+    if (isDeletingGroup) return
+    setDeletingGroup(null)
+    setDeletionPreview(null)
+  }
+
   const removeGroup = async () => {
     if (!deletingGroup) return
 
@@ -206,6 +236,7 @@ export function GroupsPage() {
         setSelectedGroupId('')
       }
       setDeletingGroup(null)
+      setDeletionPreview(null)
       toast.success(t('common.deletedToast'))
       await loadGroupsAndTeachers()
     } catch (err) {
@@ -250,6 +281,24 @@ export function GroupsPage() {
     }
   }
 
+  const deleteGroupBlocked = Boolean(deletionPreview && deletionPreview.activeStudentCount > 0)
+
+  const deleteGroupMessage = deletingGroup && deletionPreview && (
+    <>
+      <p>{t('groups.deleteConfirm', { code: deletingGroup.code })}</p>
+      {deleteGroupBlocked ? (
+        <p>{t('groups.deleteBlockedActiveStudents')}</p>
+      ) : (
+        <>
+          {deletionPreview.archivedStudentCount > 0 && (
+            <p>{t('groups.deleteAccounts', { count: deletionPreview.archivedStudentCount })}</p>
+          )}
+          {deletionPreview.fileCount > 0 && <p>{t('groups.deleteFiles', { count: deletionPreview.fileCount })}</p>}
+        </>
+      )}
+    </>
+  )
+
   const groupColumns: DataTableColumn<Group>[] = [
     {
       key: 'code',
@@ -274,7 +323,14 @@ export function GroupsPage() {
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" icon={ArrowRight} aria-label={t('groups.openDetails')} onClick={() => navigate(`/admin/groups/${group.id}`)} />
           <Button variant="ghost" size="sm" icon={Pencil} aria-label={t('common.edit')} onClick={() => openEditGroup(group)} />
-          <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('common.delete')} onClick={() => setDeletingGroup(group)} />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Trash2}
+            aria-label={t('common.delete')}
+            loading={previewLoadingGroupId === group.id}
+            onClick={() => void openDeleteGroup(group)}
+          />
         </div>
       )
     }
@@ -400,10 +456,11 @@ export function GroupsPage() {
       <ConfirmDialog
         open={Boolean(deletingGroup)}
         title={t('common.delete')}
-        message={deletingGroup ? t('groups.deleteConfirm', { code: deletingGroup.code }) : ''}
+        message={deleteGroupMessage}
+        hideConfirm={deleteGroupBlocked}
         loading={isDeletingGroup}
         onConfirm={() => void removeGroup()}
-        onCancel={() => setDeletingGroup(null)}
+        onCancel={closeDeleteGroup}
       />
 
       <ConfirmDialog

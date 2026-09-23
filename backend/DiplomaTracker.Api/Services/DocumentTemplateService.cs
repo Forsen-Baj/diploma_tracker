@@ -1,5 +1,3 @@
-using System.IO.Compression;
-using System.Xml;
 using DiplomaTracker.Api.Data;
 using DiplomaTracker.Api.DTOs.Templates;
 using DiplomaTracker.Api.Entities;
@@ -13,19 +11,6 @@ namespace DiplomaTracker.Api.Services;
 public class DocumentTemplateService : IDocumentTemplateService
 {
     public const long MaxTemplateBytes = 10L * 1024 * 1024;
-
-    // Zip-bomb guard (pre-flight A5): a template is fully parsed by the Open XML SDK, so a small
-    // .docx could otherwise inflate into an unbounded amount of work. Checked against the zip
-    // directory before the package is ever opened.
-    private const int MaxZipEntries = 1000;
-    private const long MaxZipUncompressedBytes = 100L * 1024 * 1024;
-
-    // Fix wave M2 (sec): the whole package may be up to 100 MB (mostly images), but only the
-    // word/*.xml parts are ever parsed as a DOM, so those get a much smaller budget, checked
-    // before the package is opened at all.
-    private const long MaxXmlUncompressedBytes = 20L * 1024 * 1024;
-    private const long MaxXmlCharactersPerEntry = 20_000_000;
-    private const int MaxXmlDepth = 128;
 
     // Fix wave L5: an upload with hundreds of stray "{{" can otherwise produce an unbounded
     // errors array.
@@ -174,6 +159,8 @@ public class DocumentTemplateService : IDocumentTemplateService
             throw;
         }
 
+        SecurityLog.TemplateAction(_logger, user.UserId, "Uploaded", template.Id);
+
         var (response, error) = await GetTemplateAsync(user, template.Id);
         return (response, error, null);
     }
@@ -199,7 +186,18 @@ public class DocumentTemplateService : IDocumentTemplateService
         template.UpdatedAt = DateTime.UtcNow;
         UpdateAudience(template, request.GroupIds, request.TeacherIds);
 
-        await _dbContext.SaveChangesAsync();
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // M3: DocumentTemplate carries a RowVersion, so a details edit that races a file
+            // replacement is now concurrency-checked too, the same as ReplaceFileAsync.
+            _dbContext.ChangeTracker.Clear();
+            return (null, TemplateErrors.Conflict);
+        }
+
         return await GetTemplateAsync(user, id);
     }
 
@@ -231,16 +229,23 @@ public class DocumentTemplateService : IDocumentTemplateService
         {
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
+        catch (DbUpdateConcurrencyException)
+        {
+            _dbContext.ChangeTracker.Clear();
+            // Someone else replaced the file first. The file just written is ours and nothing
+            // references it, so it goes - rather than being left behind as the orphan this whole
+            // change exists to prevent (§4.6).
+            await TryDeleteFileAsync(newKey, "rolling back a template file replacement that lost a concurrency race");
+            return (null, TemplateErrors.Conflict, null);
+        }
+        catch (DbUpdateException exception) when (exception.IsUniqueConstraintViolation())
+        {
+            await TryDeleteFileAsync(newKey, "rolling back a failed template file replacement");
+            _dbContext.ChangeTracker.Clear();
+            throw;
+        }
         catch (Exception exception)
         {
-            if (exception is DbUpdateConcurrencyException
-                || (exception is DbUpdateException update && update.IsUniqueConstraintViolation()))
-            {
-                await TryDeleteFileAsync(newKey, "rolling back a failed template file replacement");
-                _dbContext.ChangeTracker.Clear();
-                throw;
-            }
-
             _logger.LogWarning(exception,
                 "Template file replacement save failed with an indeterminate outcome for template {TemplateId}; leaving storage key {StorageKey} on disk rather than risk deleting a committed template's file.",
                 id, newKey);
@@ -250,6 +255,8 @@ public class DocumentTemplateService : IDocumentTemplateService
         // The save committed, so the old file is definitely no longer referenced; a failure to
         // remove it must not fail the request - the database already reflects the new file.
         await TryDeleteFileAsync(oldKey, "removing the replaced file after a successful template update");
+
+        SecurityLog.TemplateAction(_logger, user.UserId, "Replaced", id);
 
         var (response, error) = await GetTemplateAsync(user, id);
         return (response, error, null);
@@ -265,9 +272,21 @@ public class DocumentTemplateService : IDocumentTemplateService
 
         var key = template!.StorageKey;
         _dbContext.DocumentTemplates.Remove(template);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            _dbContext.ChangeTracker.Clear();
+            // The row was not removed - someone else changed it first - so its file is still the
+            // live template's file. It must not be touched here.
+            return (false, TemplateErrors.Conflict);
+        }
 
         await TryDeleteFileAsync(key, "removing the file after a successful template delete");
+        SecurityLog.TemplateAction(_logger, user.UserId, "Deleted", id);
         return (true, null);
     }
 
@@ -309,6 +328,7 @@ public class DocumentTemplateService : IDocumentTemplateService
 
         var bytes = DocxMarkerProcessor.Fill(source, context!);
         var baseName = lastName is null ? template.Name : $"{template.Name} — {lastName}";
+        SecurityLog.TemplateAction(_logger, user.UserId, "Generated", template.Id);
         return (new GeneratedDocument(bytes, SafeFileName(baseName) + ".docx"), null);
     }
 
@@ -379,6 +399,7 @@ public class DocumentTemplateService : IDocumentTemplateService
         }
 
         var visible = await (await VisibleTemplatesAsync(user)).AnyAsync(t => t.Id == id);
+        SecurityLog.AccessRefused(_logger, user.UserId, user.Role, "DocumentTemplate", id);
         return (null, visible ? TemplateErrors.NotOwner : TemplateErrors.NotFound);
     }
 
@@ -533,9 +554,12 @@ public class DocumentTemplateService : IDocumentTemplateService
 
         var content = buffer.ToArray();
 
-        if (!IsSafeZipArchive(content))
+        using (var inspection = new MemoryStream(content))
         {
-            return (TemplateErrors.InvalidFile, null, null, null);
+            if (!OfficePackageInspector.Inspect(inspection, OfficePackageKind.Word))
+            {
+                return (TemplateErrors.InvalidFile, null, null, null);
+            }
         }
 
         using var scan = new MemoryStream(content);
@@ -550,95 +574,6 @@ public class DocumentTemplateService : IDocumentTemplateService
             .Select(m => m.Length > MaxUnknownMarkerLength ? m[..MaxUnknownMarkerLength] : m)
             .ToList();
         return unknown.Count > 0 ? (TemplateErrors.UnknownMarkers, unknown, null, null) : (null, null, content, safeName);
-    }
-
-    /// Pre-flight A5: a template is fully parsed by the Open XML SDK, so a small .docx could
-    /// otherwise inflate into an unbounded amount of work. Refuses anything that is not a zip,
-    /// has an implausible number of entries, or would expand past a fixed budget - checked
-    /// against the zip directory alone, before the package is ever opened.
-    private static bool IsSafeZipArchive(byte[] content)
-    {
-        using var stream = new MemoryStream(content);
-        try
-        {
-            using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
-            if (archive.Entries.Count > MaxZipEntries)
-            {
-                return false;
-            }
-
-            long uncompressedTotal = 0;
-            long xmlTotal = 0;
-            foreach (var entry in archive.Entries)
-            {
-                uncompressedTotal += entry.Length;
-                if (uncompressedTotal > MaxZipUncompressedBytes)
-                {
-                    return false;
-                }
-
-                if (!IsWordXmlEntry(entry.FullName))
-                {
-                    continue;
-                }
-
-                // Fix wave M2 (sec): the SDK fully parses every word/*.xml part into a DOM, so
-                // that subset gets a much smaller budget than the whole package, checked against
-                // the zip directory (and, per entry, with a depth-limited XmlReader) before the
-                // package is ever opened as Word.
-                xmlTotal += entry.Length;
-                if (xmlTotal > MaxXmlUncompressedBytes || !IsSafeXmlEntry(entry))
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-        catch (Exception exception) when (exception is InvalidDataException or IOException or ArgumentException)
-        {
-            return false;
-        }
-    }
-
-    private static bool IsWordXmlEntry(string entryName)
-    {
-        var normalized = entryName.Replace('\\', '/');
-        if (!normalized.StartsWith("word/", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var rest = normalized["word/".Length..];
-        return rest.Length > 0 && !rest.Contains('/') && rest.EndsWith(".xml", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsSafeXmlEntry(ZipArchiveEntry entry)
-    {
-        var settings = new XmlReaderSettings
-        {
-            DtdProcessing = DtdProcessing.Prohibit,
-            MaxCharactersInDocument = MaxXmlCharactersPerEntry
-        };
-
-        try
-        {
-            using var entryStream = entry.Open();
-            using var reader = XmlReader.Create(entryStream, settings);
-            while (reader.Read())
-            {
-                if (reader.NodeType == XmlNodeType.Element && reader.Depth > MaxXmlDepth)
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-        catch (Exception exception) when (exception is XmlException or InvalidDataException or IOException)
-        {
-            return false;
-        }
     }
 
     private async Task TryDeleteFileAsync(string key, string action)
@@ -676,13 +611,15 @@ public class DocumentTemplateService : IDocumentTemplateService
 
             if (request.TopicId is not null)
             {
-                // A student may only name their own topic: one they hold a pending or approved
-                // reservation on. Any other id — even a catalogue topic that is otherwise fully
-                // visible — is treated as not found, same as an unknown id.
+                // A student may only name their own topic: one they hold (StudentProfile.TopicId,
+                // the source of truth per §5.3) or one they have a pending request on. Any other
+                // id — even a catalogue topic that is otherwise fully visible — is treated as not
+                // found, same as an unknown id.
                 topic = await _dbContext.Topics.AsNoTracking()
                     .Include(t => t.Supervisor)
                     .FirstOrDefaultAsync(t => t.Id == request.TopicId
-                        && t.Reservations.Any(r => r.StudentProfileId == student.Id && (r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Approved)),
+                        && (t.Id == student.TopicId
+                            || t.Reservations.Any(r => r.StudentProfileId == student.Id && r.Status == ReservationStatus.Pending)),
                         cancellationToken);
 
                 if (topic is null)

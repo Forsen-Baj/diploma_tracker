@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using DiplomaTracker.Api.Data;
 using DiplomaTracker.Api.DTOs.Students;
 using DiplomaTracker.Api.Entities;
+using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -13,17 +14,20 @@ public class StudentService : IStudentService
     private readonly AppDbContext _dbContext;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IReservationService _reservationService;
+    private readonly IArchiveService _archive;
     private readonly ILogger<StudentService> _logger;
 
     public StudentService(
         AppDbContext dbContext,
         IPasswordHasher passwordHasher,
         IReservationService reservationService,
+        IArchiveService archive,
         ILogger<StudentService> logger)
     {
         _dbContext = dbContext;
         _passwordHasher = passwordHasher;
         _reservationService = reservationService;
+        _archive = archive;
         _logger = logger;
     }
 
@@ -45,17 +49,23 @@ public class StudentService : IStudentService
             .FirstOrDefaultAsync();
     }
 
-    public async Task<(StudentResponse? student, string? error)> CreateStudentAsync(CreateStudentRequest request)
+    public async Task<(StudentResponse? student, string? error)> CreateStudentAsync(CreateStudentRequest request, Guid administratorId)
     {
         var email = IdentityNormalizer.Email(request.Email);
         var studentNumber = IdentityNormalizer.StudentNumber(request.StudentNumber);
+        var canonicalNumber = IdentityNormalizer.StudentNumberCanonical(request.StudentNumber);
+
+        if (canonicalNumber.Length == 0)
+        {
+            return (null, CommonErrors.ValidationFailed);
+        }
 
         if (await _dbContext.Users.AnyAsync(u => u.Email == email))
         {
             return (null, OnboardingErrors.EmailTaken);
         }
 
-        if (await _dbContext.StudentProfiles.AnyAsync(p => p.StudentNumber == studentNumber))
+        if (await _dbContext.StudentProfiles.AnyAsync(p => p.StudentNumberCanonical == canonicalNumber))
         {
             return (null, OnboardingErrors.StudentNumberTaken);
         }
@@ -92,6 +102,7 @@ public class StudentService : IStudentService
             Id = Guid.NewGuid(),
             UserId = user.Id,
             StudentNumber = studentNumber,
+            StudentNumberCanonical = canonicalNumber,
             GroupId = assignment.group!.Id,
             SupervisorId = assignment.supervisor?.Id,
             CreatedAt = now,
@@ -112,10 +123,11 @@ public class StudentService : IStudentService
         profile.User = user;
         profile.Group = assignment.group;
         profile.Supervisor = assignment.supervisor;
+        SecurityLog.AdministratorAction(_logger, administratorId, "Created", "Student", profile.Id);
         return (MapStudent(profile), null);
     }
 
-    public async Task<(StudentResponse? student, string? error)> UpdateStudentAsync(Guid id, UpdateStudentRequest request)
+    public async Task<(StudentResponse? student, string? error)> UpdateStudentAsync(Guid id, UpdateStudentRequest request, Guid administratorId)
     {
         var profile = await LoadStudentProfileAsync(id);
         if (profile is null)
@@ -130,13 +142,19 @@ public class StudentService : IStudentService
 
         var email = IdentityNormalizer.Email(request.Email);
         var studentNumber = IdentityNormalizer.StudentNumber(request.StudentNumber);
+        var canonicalNumber = IdentityNormalizer.StudentNumberCanonical(request.StudentNumber);
+
+        if (canonicalNumber.Length == 0)
+        {
+            return (null, CommonErrors.ValidationFailed);
+        }
 
         if (await _dbContext.Users.AnyAsync(u => u.Email == email && u.Id != profile.UserId))
         {
             return (null, OnboardingErrors.EmailTaken);
         }
 
-        if (await _dbContext.StudentProfiles.AnyAsync(p => p.StudentNumber == studentNumber && p.Id != profile.Id))
+        if (await _dbContext.StudentProfiles.AnyAsync(p => p.StudentNumberCanonical == canonicalNumber && p.Id != profile.Id))
         {
             return (null, OnboardingErrors.StudentNumberTaken);
         }
@@ -164,6 +182,7 @@ public class StudentService : IStudentService
         profile.User.Email = email;
         profile.User.UpdatedAt = now;
         profile.StudentNumber = studentNumber;
+        profile.StudentNumberCanonical = canonicalNumber;
         profile.GroupId = assignment.group.Id;
         profile.SupervisorId = assignment.supervisor?.Id;
         profile.UpdatedAt = now;
@@ -181,6 +200,7 @@ public class StudentService : IStudentService
 
         profile.Group = assignment.group;
         profile.Supervisor = assignment.supervisor;
+        SecurityLog.AdministratorAction(_logger, administratorId, "Updated", "Student", profile.Id);
         return (MapStudent(profile), null);
     }
 
@@ -279,10 +299,7 @@ public class StudentService : IStudentService
         profile.User.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync();
 
-        _logger.LogInformation(
-            "Access reset: StudentUserId={StudentUserId}, AdministratorId={AdministratorId}",
-            profile.UserId,
-            administratorId);
+        SecurityLog.AccessReset(_logger, profile.UserId, administratorId);
 
         return (true, null);
     }
@@ -312,12 +329,9 @@ public class StudentService : IStudentService
         }
 
         await _dbContext.SaveChangesAsync();
+        await _archive.ArchiveStudentsAsync(archivedIds, CancellationToken.None);
 
-        _logger.LogInformation(
-            "Students archived: Count={Count}, StudentProfileIds={StudentProfileIds}, AdministratorId={AdministratorId}",
-            archivedIds.Count,
-            archivedIds,
-            administratorId);
+        SecurityLog.StudentsArchived(_logger, administratorId, archivedIds.Count, archivedIds);
 
         return (archivedIds.Count, null);
     }
@@ -347,11 +361,7 @@ public class StudentService : IStudentService
         var restoredIds = StudentArchiver.Restore(toRestore, now);
         await _dbContext.SaveChangesAsync();
 
-        _logger.LogInformation(
-            "Students restored: Count={Count}, StudentProfileIds={StudentProfileIds}, AdministratorId={AdministratorId}",
-            restoredIds.Count,
-            restoredIds,
-            administratorId);
+        SecurityLog.StudentsRestored(_logger, administratorId, restoredIds.Count, restoredIds);
 
         return (restoredIds.Count, null);
     }

@@ -9,20 +9,29 @@ public static class SubmissionFileRules
     public const int MaxSupportingFiles = 3;
     private const int MaxOriginalNameLength = 255;
 
-    private static readonly Dictionary<string, string> MainContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, string> AllowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         [".docx"] = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         [".pptx"] = "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         [".pdf"] = "application/pdf"
     };
 
-    private static readonly HashSet<string> BlockedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    /// Phase 8 §3: supporting files are an allowlist too. A file is accepted because it is
+    /// recognised, not because it failed to match a list of things known to be bad. Images are
+    /// here because a scan or a screenshot is the common reason for a supporting file.
+    private static readonly Dictionary<string, string> SupportingContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".exe", ".dll", ".msi", ".bat", ".cmd", ".ps1", ".sh", ".js", ".vbs", ".jar", ".com", ".scr"
+        [".docx"] = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        [".pptx"] = "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        [".pdf"] = "application/pdf",
+        [".png"] = "image/png",
+        [".jpg"] = "image/jpeg",
+        [".jpeg"] = "image/jpeg"
     };
 
-    private static readonly byte[] ZipSignature = [0x50, 0x4B, 0x03, 0x04];
     private static readonly byte[] PdfSignature = [0x25, 0x50, 0x44, 0x46];
+    private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    private static readonly byte[] JpegSignature = [0xFF, 0xD8, 0xFF];
 
     public static async Task<string?> ValidateMainAsync(IFormFile? file)
     {
@@ -32,7 +41,7 @@ public static class SubmissionFileRules
         }
 
         var (name, extension) = Normalize(file.FileName);
-        if (name.Length == 0 || !MainContentTypes.ContainsKey(extension))
+        if (name.Length == 0 || !AllowedContentTypes.ContainsKey(extension))
         {
             return WorkflowErrors.FileTypeNotAllowed;
         }
@@ -42,14 +51,10 @@ public static class SubmissionFileRules
             return WorkflowErrors.FileTooLarge;
         }
 
-        var header = new byte[4];
-        await using var stream = file.OpenReadStream();
-        var read = await stream.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false);
-        var expected = extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase) ? PdfSignature : ZipSignature;
-        return read == header.Length && header.AsSpan().SequenceEqual(expected) ? null : WorkflowErrors.FileContentMismatch;
+        return await MatchesExtensionAsync(file, extension) ? null : WorkflowErrors.FileContentMismatch;
     }
 
-    public static string? ValidateSupporting(IReadOnlyList<IFormFile> files)
+    public static async Task<string?> ValidateSupportingAsync(IReadOnlyList<IFormFile> files)
     {
         if (files.Count > MaxSupportingFiles)
         {
@@ -59,24 +64,71 @@ public static class SubmissionFileRules
         foreach (var file in files)
         {
             var (name, extension) = Normalize(file.FileName);
-            if (name.Length == 0 || BlockedExtensions.Contains(extension))
+            if (name.Length == 0 || !SupportingContentTypes.ContainsKey(extension))
             {
                 return WorkflowErrors.FileTypeNotAllowed;
             }
 
-            if (file.Length > MaxFileBytes)
+            if (file.Length == 0 || file.Length > MaxFileBytes)
             {
-                return WorkflowErrors.FileTooLarge;
+                return file.Length == 0 ? WorkflowErrors.FileContentMismatch : WorkflowErrors.FileTooLarge;
+            }
+
+            if (!await MatchesExtensionAsync(file, extension))
+            {
+                return WorkflowErrors.FileContentMismatch;
             }
         }
 
         return null;
     }
 
+    /// A package is opened; a PDF and an image are matched against their signature. The stream is
+    /// buffered because IFormFile's stream is forward-only and the inspector must read it whole.
+    private static async Task<bool> MatchesExtensionAsync(IFormFile file, string extension)
+    {
+        await using var stream = file.OpenReadStream();
+
+        switch (extension.ToLowerInvariant())
+        {
+            case ".docx":
+            case ".pptx":
+            {
+                using var buffer = new MemoryStream();
+                await stream.CopyToAsync(buffer);
+                buffer.Position = 0;
+                var kind = extension.Equals(".docx", StringComparison.OrdinalIgnoreCase)
+                    ? OfficePackageKind.Word
+                    : OfficePackageKind.Presentation;
+                return OfficePackageInspector.Inspect(buffer, kind);
+            }
+            case ".pdf":
+                return await StartsWithAsync(stream, PdfSignature);
+            case ".png":
+                return await StartsWithAsync(stream, PngSignature);
+            case ".jpg":
+            case ".jpeg":
+                return await StartsWithAsync(stream, JpegSignature);
+            default:
+                return false;
+        }
+    }
+
+    private static async Task<bool> StartsWithAsync(Stream stream, byte[] signature)
+    {
+        var header = new byte[signature.Length];
+        var read = await stream.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false);
+        return read == header.Length && header.AsSpan().SequenceEqual(signature);
+    }
+
     public static string ContentTypeFor(IFormFile file, SubmissionFileKind kind)
     {
         var (_, extension) = Normalize(file.FileName);
-        return kind == SubmissionFileKind.Main && MainContentTypes.TryGetValue(extension, out var contentType)
+
+        // A supporting file is still served as application/octet-stream on download, whatever it
+        // is: being a real PNG does not make it safe to render in place. This value is what is
+        // stored, and the download endpoint overrides it for supporting files as it already does.
+        return kind == SubmissionFileKind.Main && AllowedContentTypes.TryGetValue(extension, out var contentType)
             ? contentType
             : "application/octet-stream";
     }

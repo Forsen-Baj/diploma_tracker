@@ -13,7 +13,7 @@ public static partial class DocxMarkerProcessor
     private const int MaxParagraphTextLength = 100_000;
 
     // Fix wave M2 (sec): caps the DOM a single part can grow to when the SDK loads it, mirroring
-    // the zip pre-check's per-entry XML budget (DocumentTemplateService.IsSafeZipArchive).
+    // the zip pre-check's per-entry XML budget (OfficePackageInspector.Inspect).
     private const int MaxCharactersInPart = 20_000_000;
 
     private static readonly OpenSettings PartSizeLimit = new() { MaxCharactersInPart = MaxCharactersInPart };

@@ -4,6 +4,7 @@ using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DiplomaTracker.Api.Services;
 
@@ -11,11 +12,13 @@ public class GroupTaskService : IGroupTaskService
 {
     private readonly AppDbContext _dbContext;
     private readonly IAccessScope _accessScope;
+    private readonly ILogger<GroupTaskService> _logger;
 
-    public GroupTaskService(AppDbContext dbContext, IAccessScope accessScope)
+    public GroupTaskService(AppDbContext dbContext, IAccessScope accessScope, ILogger<GroupTaskService> logger)
     {
         _dbContext = dbContext;
         _accessScope = accessScope;
+        _logger = logger;
     }
 
     public async Task<(IReadOnlyList<GroupTaskResponse>? tasks, string? error)> GetGroupTasksAsync(string role, Guid userId)
@@ -163,6 +166,7 @@ public class GroupTaskService : IGroupTaskService
         groupTask.Group = group;
         groupTask.DiplomaTaskTemplate = template;
         groupTask.StudentTasks = await _dbContext.StudentTasks.Where(st => st.GroupTaskId == groupTask.Id).ToListAsync();
+        SecurityLog.AdministratorAction(_logger, userId, "Created", "GroupTask", groupTask.Id);
         return (MapGroupTask(groupTask), null);
     }
 
@@ -277,6 +281,13 @@ public class GroupTaskService : IGroupTaskService
 
         await _dbContext.SaveChangesAsync();
 
+        // D2: the single-create path logs one AdministratorAction per group task it creates;
+        // this bulk path skipped it entirely.
+        foreach (var created in createdGroupTasks)
+        {
+            SecurityLog.AdministratorAction(_logger, userId, "Created", "GroupTask", created.Id);
+        }
+
         if (createdGroupTasks.Count > 0)
         {
             var createdIds = createdGroupTasks.Select(x => x.Id).ToList();
@@ -337,10 +348,11 @@ public class GroupTaskService : IGroupTaskService
         var updated = await ProjectGroupTasks(_dbContext.GroupTasks.AsNoTracking().Where(x => x.Id == id))
             .FirstAsync();
 
+        SecurityLog.AdministratorAction(_logger, userId, "Updated", "GroupTask", id);
         return (updated, null);
     }
 
-    public async Task<(bool success, string? error)> DeleteGroupTaskAsync(Guid id)
+    public async Task<(bool success, string? error)> DeleteGroupTaskAsync(Guid id, Guid administratorId)
     {
         var groupTask = await _dbContext.GroupTasks
             .Include(x => x.StudentTasks)
@@ -361,6 +373,7 @@ public class GroupTaskService : IGroupTaskService
         _dbContext.GroupTasks.Remove(groupTask);
         await _dbContext.SaveChangesAsync();
 
+        SecurityLog.AdministratorAction(_logger, administratorId, "Deleted", "GroupTask", id);
         return (true, null);
     }
 

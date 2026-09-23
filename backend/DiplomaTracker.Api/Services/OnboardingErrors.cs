@@ -66,7 +66,8 @@ public static class OnboardingErrors
         new(ImportHeaderInvalid, StatusCodes.Status400BadRequest, "The first line must name the columns lastName, firstName, email and studentNumber."),
         new(ImportHasRowErrors, StatusCodes.Status400BadRequest, "The file contains errors. Nothing was imported."),
         new(ImportConflict, StatusCodes.Status409Conflict, "The student list changed during import; upload the file again."),
-        new(PasswordPolicy.Violation, StatusCodes.Status400BadRequest, "Password must be between 8 and 128 characters.")
+        new(PasswordPolicy.Violation, StatusCodes.Status400BadRequest, "Password must be between 8 and 128 characters."),
+        new(PasswordPolicy.ElevatedViolation, StatusCodes.Status400BadRequest, "An administrator password must be between 12 and 128 characters.")
     ];
 
     public static readonly IReadOnlyDictionary<string, string> RowMessages = new Dictionary<string, string>
@@ -79,7 +80,7 @@ public static class OnboardingErrors
         [RowDuplicateNumber] = "Student number {number} already appears on line {line}.",
         [RowStaffEmail] = "Email belongs to a teacher or an administrator.",
         [RowEmailNumberMismatch] = "Email belongs to an existing student with a different student number.",
-        [RowNumberEmailMismatch] = "Student number belongs to an existing student with a different email.",
+        [RowNumberEmailMismatch] = "Student number {number} already belongs to an existing student with a different email.",
         [RowMalformedQuote] = "The file has a misplaced or unclosed quote."
     };
 }

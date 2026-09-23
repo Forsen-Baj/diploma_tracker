@@ -36,7 +36,12 @@ public class TeachersController : ApiControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateTeacherRequest request)
     {
-        var (teacher, error) = await _teacherService.CreateTeacherAsync(request);
+        if (!TryGetUserId(out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (teacher, error) = await _teacherService.CreateTeacherAsync(request, administratorId);
         return teacher is null
             ? ErrorResult(error)
             : CreatedAtAction(nameof(GetById), new { id = teacher.Id }, teacher);
@@ -45,14 +50,24 @@ public class TeachersController : ApiControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateTeacherRequest request)
     {
-        var (teacher, error) = await _teacherService.UpdateTeacherAsync(id, request);
+        if (!TryGetUserId(out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (teacher, error) = await _teacherService.UpdateTeacherAsync(id, request, administratorId);
         return teacher is null ? ErrorResult(error) : Ok(teacher);
     }
 
     [HttpPatch("{id:guid}/deactivate")]
     public async Task<IActionResult> Deactivate(Guid id)
     {
-        var (success, error) = await _teacherService.DeactivateTeacherAsync(id);
+        if (!TryGetUserId(out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (success, error) = await _teacherService.DeactivateTeacherAsync(id, administratorId);
         return success ? NoContent() : ErrorResult(error);
     }
 

@@ -37,17 +37,40 @@ public class TaskTemplatesController : ApiControllerBase
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Create([FromBody] CreateTaskTemplateRequest request)
     {
-        var (template, error) = await _taskTemplateService.CreateTaskTemplateAsync(request);
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (template, error) = await _taskTemplateService.CreateTaskTemplateAsync(request, administratorId);
         return template is null
             ? ErrorResult(error)
             : CreatedAtAction(nameof(GetById), new { id = template.Id }, template);
+    }
+
+    [HttpPut("order")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Reorder([FromBody] ReorderTaskTemplatesRequest request)
+    {
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (templates, error) = await _taskTemplateService.ReorderAsync(request, administratorId);
+        return templates is null ? ErrorResult(error) : Ok(templates);
     }
 
     [HttpPut("{id:guid}")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateTaskTemplateRequest request)
     {
-        var (template, error) = await _taskTemplateService.UpdateTaskTemplateAsync(id, request);
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (template, error) = await _taskTemplateService.UpdateTaskTemplateAsync(id, request, administratorId);
         return template is null ? ErrorResult(error) : Ok(template);
     }
 
@@ -55,15 +78,38 @@ public class TaskTemplatesController : ApiControllerBase
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Activate(Guid id)
     {
-        var (template, error) = await _taskTemplateService.ActivateTaskTemplateAsync(id);
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (template, error) = await _taskTemplateService.ActivateTaskTemplateAsync(id, administratorId);
         return template is null ? ErrorResult(error) : Ok(template);
+    }
+
+    [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (success, error) = await _taskTemplateService.DeleteTaskTemplateAsync(id, administratorId);
+        return success ? NoContent() : ErrorResult(error);
     }
 
     [HttpPatch("{id:guid}/deactivate")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Deactivate(Guid id)
     {
-        var (template, error) = await _taskTemplateService.DeactivateTaskTemplateAsync(id);
+        if (!TryGetUserContext(out _, out var administratorId))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (template, error) = await _taskTemplateService.DeactivateTaskTemplateAsync(id, administratorId);
         return template is null ? ErrorResult(error) : Ok(template);
     }
 }

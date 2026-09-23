@@ -1,8 +1,12 @@
 // Extra regression check for the fix-wave-backend fixes not covered by onboarding-check.mjs:
 // 1. A stray/unterminated quote in a CSV import is rejected with a single 400 file-level error.
 // 2. PUT /api/registration with an empty body ({}) is rejected with 400.
+import { createCleanup, removeGroup } from './checkCleanup.mjs'
+
 const API = 'http://localhost:5000'
+const stamp = Date.now().toString().slice(-6)
 const results = []
+const cleanup = createCleanup()
 
 function check(name, actual, expected) {
   const ok = JSON.stringify(actual) === JSON.stringify(expected)
@@ -41,9 +45,14 @@ async function loginAdmin() {
   return res.data.token
 }
 
+async function runChecks() {
 const admin = await loginAdmin()
 const groups = (await call('GET', '/api/groups', { token: admin })).data
-const groupId = groups.find((g) => g.code === 'SEED-A').id
+const seedGroup = groups.find((g) => g.code === 'SEED-A')
+// Imported students land in a group of this script's own, removed with them at the end.
+const ownGroup = (await call('POST', '/api/groups', { token: admin, json: { departmentId: seedGroup.departmentId, code: `FW${stamp}`, academicYear: '2026/2027', description: '' } })).data
+cleanup.add(`group ${ownGroup.code}`, () => removeGroup(call, admin, ownGroup))
+const groupId = ownGroup.id
 
 // 1a. Stray quote mid-file (matches the review's R1 example).
 const strayQuoteCsv =
@@ -78,7 +87,6 @@ check('unterminated-quote CSV rejected: row-level error names the line the quote
 })
 
 // 1c. Quoted line breaks and doubled quotes still work (regression guard for the tokenizer rewrite).
-const stamp = Date.now().toString().slice(-6)
 const stillWorksCsv =
   'lastName;firstName;email;studentNumber\r\n' +
   `"Коваль\r\nмолодша";Олена;olena.quoted.${stamp}@x.local;NQ${stamp}1\r\n` +
@@ -90,6 +98,13 @@ check('quoted line break + doubled quote still import: created', stillWorksResul
 // 2. PUT /api/registration with {} -> 400.
 const emptyPut = await call('PUT', '/api/registration', { token: admin, json: {} })
 check('PUT /api/registration with {} -> 400', emptyPut.status, 400)
+}
+
+try {
+  await runChecks()
+} finally {
+  await cleanup.run()
+}
 
 const failed = results.filter((r) => !r.ok)
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`)

@@ -5,6 +5,7 @@ namespace DiplomaTracker.Api.Services;
 public static class WorkflowErrors
 {
     public const string StudentTaskNotYours = "studentTask.notYours";
+    public const string TopicRequired = "step.topicRequired";
     public const string PreviousNotApproved = "step.previousNotApproved";
     public const string AwaitingReview = "step.awaitingReview";
     public const string AlreadyApproved = "step.alreadyApproved";
@@ -24,6 +25,7 @@ public static class WorkflowErrors
     public static readonly ErrorDefinition[] All =
     [
         new(StudentTaskNotYours, StatusCodes.Status403Forbidden, "This step belongs to another student."),
+        new(TopicRequired, StatusCodes.Status409Conflict, "Choose a topic first: work on the steps starts once your topic is approved."),
         new(PreviousNotApproved, StatusCodes.Status409Conflict, "The previous step must be approved first."),
         new(AwaitingReview, StatusCodes.Status409Conflict, "The latest submission is awaiting review."),
         new(AlreadyApproved, StatusCodes.Status409Conflict, "This step is already approved."),

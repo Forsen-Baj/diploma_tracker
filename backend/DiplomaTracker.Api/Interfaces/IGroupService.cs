@@ -7,12 +7,13 @@ public interface IGroupService
 {
     Task<IReadOnlyList<GroupResponse>> GetGroupsAsync(UserContext user);
     Task<GroupResponse?> GetGroupByIdAsync(UserContext user, Guid id);
-    Task<(GroupResponse? group, string? error)> CreateGroupAsync(CreateGroupRequest request);
-    Task<(GroupResponse? group, string? error)> UpdateGroupAsync(Guid id, UpdateGroupRequest request);
-    Task<(bool success, string? error)> DeleteGroupAsync(Guid id);
+    Task<(GroupResponse? group, string? error)> CreateGroupAsync(CreateGroupRequest request, Guid administratorId);
+    Task<(GroupResponse? group, string? error)> UpdateGroupAsync(Guid id, UpdateGroupRequest request, Guid administratorId);
+    Task<(bool success, string? error)> DeleteGroupAsync(Guid id, Guid administratorId, CancellationToken cancellationToken);
+    Task<(GroupDeletionPreviewResponse? preview, string? error)> GetDeletionPreviewAsync(Guid groupId, CancellationToken cancellationToken);
     Task<(IReadOnlyList<GroupStudentResponse>? students, string? error)> GetGroupStudentsAsync(UserContext user, Guid groupId);
     Task<IReadOnlyList<GroupReviewerResponse>?> GetGroupReviewersAsync(UserContext user, Guid groupId);
-    Task<(GroupReviewerResponse? reviewer, string? error)> AddGroupReviewerAsync(Guid groupId, AddGroupReviewerRequest request);
-    Task<(bool success, string? error)> RemoveGroupReviewerAsync(Guid groupId, Guid reviewerId);
+    Task<(GroupReviewerResponse? reviewer, string? error)> AddGroupReviewerAsync(Guid groupId, AddGroupReviewerRequest request, Guid administratorId);
+    Task<(bool success, string? error)> RemoveGroupReviewerAsync(Guid groupId, Guid reviewerId, Guid administratorId);
     Task<(int? archived, string? error)> ArchiveGroupStudentsAsync(Guid groupId, Guid administratorId);
 }

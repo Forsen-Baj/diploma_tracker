@@ -2,18 +2,21 @@ using DiplomaTracker.Api.DTOs.Departments;
 using DiplomaTracker.Api.Services;
 using DiplomaTracker.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DiplomaTracker.Api.Tests.Services;
 
 public class DepartmentServiceTests
 {
+    private static readonly Guid AdministratorId = Guid.NewGuid();
+
     [Fact]
     public async Task CreateDepartmentAsync_ForUnknownFaculty_ReturnsFacultyNotFound()
     {
         await using var context = TestDbContextFactory.Create();
 
-        var (department, error) = await new DepartmentService(context).CreateDepartmentAsync(
-            new CreateDepartmentRequest { FacultyId = Guid.NewGuid(), Name = "Department of Software Engineering", ShortName = "SE" });
+        var (department, error) = await new DepartmentService(context, NullLogger<DepartmentService>.Instance).CreateDepartmentAsync(
+            new CreateDepartmentRequest { FacultyId = Guid.NewGuid(), Name = "Department of Software Engineering", ShortName = "SE" }, AdministratorId);
 
         Assert.Null(department);
         Assert.Equal(AcademicStructureErrors.DepartmentFacultyNotFound, error);
@@ -25,8 +28,8 @@ public class DepartmentServiceTests
         await using var context = TestDbContextFactory.Create();
         var faculty = TestData.AddFaculty(context, "Faculty of Informatics", "FI");
 
-        var (department, error) = await new DepartmentService(context).CreateDepartmentAsync(
-            new CreateDepartmentRequest { FacultyId = faculty.Id, Name = " Department of Software Engineering ", ShortName = " SE " });
+        var (department, error) = await new DepartmentService(context, NullLogger<DepartmentService>.Instance).CreateDepartmentAsync(
+            new CreateDepartmentRequest { FacultyId = faculty.Id, Name = " Department of Software Engineering ", ShortName = " SE " }, AdministratorId);
 
         Assert.Null(error);
         Assert.Equal("Department of Software Engineering", department!.Name);
@@ -42,8 +45,8 @@ public class DepartmentServiceTests
         var faculty = TestData.AddFaculty(context);
         TestData.AddDepartment(context, faculty.Id, "Department of Software Engineering", "SE");
 
-        var (department, error) = await new DepartmentService(context).CreateDepartmentAsync(
-            new CreateDepartmentRequest { FacultyId = faculty.Id, Name = "Department of Software Engineering", ShortName = "OTHER" });
+        var (department, error) = await new DepartmentService(context, NullLogger<DepartmentService>.Instance).CreateDepartmentAsync(
+            new CreateDepartmentRequest { FacultyId = faculty.Id, Name = "Department of Software Engineering", ShortName = "OTHER" }, AdministratorId);
 
         Assert.Null(department);
         Assert.Equal(AcademicStructureErrors.DepartmentNameTaken, error);
@@ -56,8 +59,8 @@ public class DepartmentServiceTests
         var faculty = TestData.AddFaculty(context);
         TestData.AddDepartment(context, faculty.Id, "Department of Software Engineering", "SE");
 
-        var (department, error) = await new DepartmentService(context).CreateDepartmentAsync(
-            new CreateDepartmentRequest { FacultyId = faculty.Id, Name = "Department of Systems Engineering", ShortName = "SE" });
+        var (department, error) = await new DepartmentService(context, NullLogger<DepartmentService>.Instance).CreateDepartmentAsync(
+            new CreateDepartmentRequest { FacultyId = faculty.Id, Name = "Department of Systems Engineering", ShortName = "SE" }, AdministratorId);
 
         Assert.Null(department);
         Assert.Equal(AcademicStructureErrors.DepartmentShortNameTaken, error);
@@ -71,8 +74,8 @@ public class DepartmentServiceTests
         var physics = TestData.AddFaculty(context, "Faculty of Physics", "FP");
         TestData.AddDepartment(context, informatics.Id, "Department of Mathematics", "DM");
 
-        var (department, error) = await new DepartmentService(context).CreateDepartmentAsync(
-            new CreateDepartmentRequest { FacultyId = physics.Id, Name = "Department of Mathematics", ShortName = "DM" });
+        var (department, error) = await new DepartmentService(context, NullLogger<DepartmentService>.Instance).CreateDepartmentAsync(
+            new CreateDepartmentRequest { FacultyId = physics.Id, Name = "Department of Mathematics", ShortName = "DM" }, AdministratorId);
 
         Assert.Null(error);
         Assert.Equal(physics.Id, department!.FacultyId);
@@ -88,7 +91,7 @@ public class DepartmentServiceTests
         TestData.AddDepartment(context, informatics.Id, "Department of Computer Engineering", "CE");
         TestData.AddDepartment(context, physics.Id, "Department of Optics", "DO");
 
-        var departments = await new DepartmentService(context).GetDepartmentsAsync(informatics.Id);
+        var departments = await new DepartmentService(context, NullLogger<DepartmentService>.Instance).GetDepartmentsAsync(informatics.Id);
 
         Assert.Equal(new[] { "Department of Computer Engineering", "Department of Software Engineering" }, departments!.Select(d => d.Name));
     }
@@ -98,7 +101,7 @@ public class DepartmentServiceTests
     {
         await using var context = TestDbContextFactory.Create();
 
-        var departments = await new DepartmentService(context).GetDepartmentsAsync(Guid.NewGuid());
+        var departments = await new DepartmentService(context, NullLogger<DepartmentService>.Instance).GetDepartmentsAsync(Guid.NewGuid());
 
         Assert.Null(departments);
     }
@@ -109,8 +112,8 @@ public class DepartmentServiceTests
         await using var context = TestDbContextFactory.Create();
         var faculty = TestData.AddFaculty(context);
 
-        var (department, error) = await new DepartmentService(context).UpdateDepartmentAsync(
-            Guid.NewGuid(), new UpdateDepartmentRequest { FacultyId = faculty.Id, Name = "Any", ShortName = "A" });
+        var (department, error) = await new DepartmentService(context, NullLogger<DepartmentService>.Instance).UpdateDepartmentAsync(
+            Guid.NewGuid(), new UpdateDepartmentRequest { FacultyId = faculty.Id, Name = "Any", ShortName = "A" }, AdministratorId);
 
         Assert.Null(department);
         Assert.Equal(AcademicStructureErrors.DepartmentNotFound, error);
@@ -123,8 +126,8 @@ public class DepartmentServiceTests
         var faculty = TestData.AddFaculty(context);
         var existing = TestData.AddDepartment(context, faculty.Id);
 
-        var (department, error) = await new DepartmentService(context).UpdateDepartmentAsync(
-            existing.Id, new UpdateDepartmentRequest { FacultyId = Guid.NewGuid(), Name = existing.Name, ShortName = existing.ShortName });
+        var (department, error) = await new DepartmentService(context, NullLogger<DepartmentService>.Instance).UpdateDepartmentAsync(
+            existing.Id, new UpdateDepartmentRequest { FacultyId = Guid.NewGuid(), Name = existing.Name, ShortName = existing.ShortName }, AdministratorId);
 
         Assert.Null(department);
         Assert.Equal(AcademicStructureErrors.DepartmentFacultyNotFound, error);
@@ -137,8 +140,8 @@ public class DepartmentServiceTests
         var faculty = TestData.AddFaculty(context, "Faculty of Informatics", "FI");
         var existing = TestData.AddDepartment(context, faculty.Id, "Department of Software Engineering", "SE");
 
-        var (department, error) = await new DepartmentService(context).UpdateDepartmentAsync(
-            existing.Id, new UpdateDepartmentRequest { FacultyId = faculty.Id, Name = "Department of Software Engineering", ShortName = "SE" });
+        var (department, error) = await new DepartmentService(context, NullLogger<DepartmentService>.Instance).UpdateDepartmentAsync(
+            existing.Id, new UpdateDepartmentRequest { FacultyId = faculty.Id, Name = "Department of Software Engineering", ShortName = "SE" }, AdministratorId);
 
         Assert.Null(error);
         Assert.Equal("Department of Software Engineering", department!.Name);
@@ -154,8 +157,8 @@ public class DepartmentServiceTests
         var faculty = TestData.AddFaculty(context, "Faculty of Informatics", "FI");
         var department = TestData.AddDepartment(context, faculty.Id, "Department of Software Engineering", "SE");
 
-        var found = await new DepartmentService(context).GetDepartmentByIdAsync(department.Id);
-        var notFound = await new DepartmentService(context).GetDepartmentByIdAsync(Guid.NewGuid());
+        var found = await new DepartmentService(context, NullLogger<DepartmentService>.Instance).GetDepartmentByIdAsync(department.Id);
+        var notFound = await new DepartmentService(context, NullLogger<DepartmentService>.Instance).GetDepartmentByIdAsync(Guid.NewGuid());
 
         Assert.NotNull(found);
         Assert.Equal("Department of Software Engineering", found!.Name);
@@ -172,7 +175,7 @@ public class DepartmentServiceTests
         TestData.AddDepartment(context, informatics.Id, "Department of Software Engineering", "SE");
         TestData.AddDepartment(context, physics.Id, "Department of Optics", "DO");
 
-        var departments = await new DepartmentService(context).GetDepartmentsAsync(null);
+        var departments = await new DepartmentService(context, NullLogger<DepartmentService>.Instance).GetDepartmentsAsync(null);
 
         Assert.NotNull(departments);
         Assert.Equal(2, departments!.Count);
@@ -188,7 +191,7 @@ public class DepartmentServiceTests
         var department = TestData.AddDepartment(context, faculty.Id);
         TestData.AddGroup(context, department.Id);
 
-        var (success, error) = await new DepartmentService(context).DeleteDepartmentAsync(department.Id);
+        var (success, error) = await new DepartmentService(context, NullLogger<DepartmentService>.Instance).DeleteDepartmentAsync(department.Id, AdministratorId);
 
         Assert.False(success);
         Assert.Equal(AcademicStructureErrors.DepartmentHasGroups, error);
@@ -202,7 +205,7 @@ public class DepartmentServiceTests
         var faculty = TestData.AddFaculty(context);
         var department = TestData.AddDepartment(context, faculty.Id);
 
-        var (success, error) = await new DepartmentService(context).DeleteDepartmentAsync(department.Id);
+        var (success, error) = await new DepartmentService(context, NullLogger<DepartmentService>.Instance).DeleteDepartmentAsync(department.Id, AdministratorId);
 
         Assert.True(success);
         Assert.Null(error);

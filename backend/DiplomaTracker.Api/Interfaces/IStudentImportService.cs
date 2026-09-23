@@ -4,5 +4,5 @@ namespace DiplomaTracker.Api.Interfaces;
 
 public interface IStudentImportService
 {
-    Task<StudentImportOutcome> ImportAsync(Guid groupId, IFormFile? file);
+    Task<StudentImportOutcome> ImportAsync(Guid groupId, IFormFile? file, Guid administratorId);
 }

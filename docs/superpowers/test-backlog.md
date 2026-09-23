@@ -292,3 +292,151 @@ its review completes.
 - Marker list copy to clipboard, including the fallback when `navigator.clipboard` is unavailable.
 - `MultiSelect`: `aria-invalid`/`aria-describedby`, the no-options row, values not present in the options.
 - `DocumentsPage` request sequencing.
+
+## Phase 8
+
+### Sessions and passwords
+- `SessionStateValidator` returns false for: missing user, `IsActive = false`, `PasswordHash = null`, role differing from the token claim; true for a healthy account.
+- A token issued before an archive stops working on the next request (integration, needs an HTTP host).
+- `AuthService.LoginAsync` returns null and logs the right reason for unknown, inactive, unclaimed and wrong-password, and verifies a hash in every branch.
+- `PasswordPolicy.IsSatisfiedByElevated` boundaries at 11/12/128/129.
+- `AdminService` create and set-password refuse an 11-character password with `password.policyElevated`.
+- `AuthService.ChangePasswordAsync` picks the elevated rule for an Admin and the standard rule for a Teacher and a Student.
+- `AdminBootstrapper` throws when `Bootstrap:AdminPassword` is shorter than 12, and does not throw when an administrator already exists.
+
+### Security logging
+- Every method on `SecurityLog` writes at the documented level with the documented field names.
+- No `SecurityLog` call site passes a password, hash, token or file content (review-level check, not a unit test).
+- An access refusal logs exactly once and does not change the status, code or message returned.
+
+### Uploads
+- `OfficePackageInspector.Inspect` rejects: a non-ZIP, a ZIP without `[Content_Types].xml`, a ZIP with `[Content_Types].xml` but no `word/` part when Word is expected, a .jar, more than 1,000 entries, expansion past 100 MB, `word/*.xml` past 20 MB, XML nested past 128 levels. Accepts a real .docx and a real .pptx (with the right kind).
+- A .jar renamed .docx is refused as `file.contentMismatch` on both the main and the supporting path.
+- Supporting files: .png/.jpg/.jpeg/.pdf/.docx/.pptx accepted when genuine; .txt, .zip, .xlsx refused as `file.typeNotAllowed`; a .png whose bytes are not PNG refused as `file.contentMismatch`; a fourth file refused as `file.tooMany`.
+- `ContentTypeFor` returns octet-stream for every supporting file including a genuine PNG.
+- A request over the route's size limit answers 413 `request.tooLarge`, and a 1.5 MB CSV import still answers `import.tooLarge`.
+
+### Identity and structure
+- `StudentNumberCanonical`: "KB 123", "kb-123", "КВ123" (Cyrillic К and В) and "K B 1 2 3" all fold to "KB123"; "SEED-0001" folds to "SEED0001"; an empty or whitespace-only value folds to "".
+- Creating a second student with a lookalike number answers `student.numberTaken`.
+- Claiming with a spaced or Cyrillic spelling of the stored number succeeds.
+- An import file with two rows whose numbers differ only by alphabet fails the second row and names the first row's number as entered.
+- A faculty colliding on name with one row and on short name with another answers `faculty.nameTaken`; colliding on short name only answers `faculty.shortNameTaken`. Same for departments, scoped per faculty.
+
+### Topic source of truth
+- A student holding topic A with a pending request for topic B sees both in the catalogue and neither disappears.
+- An administrator's topic list shows the holder for an approved topic and the requester for a pending one.
+- A student never sees `studentProfileId`, `studentName` or `groupCode` on any topic.
+- `GetTopicAsync` treats a student's held topic and their requested topic as their own, and refuses a catalogue topic from another department.
+- The topic list issues two OUTER APPLYs, not five correlated subqueries (verify by reading the generated SQL with EF logging, not by asserting on it).
+
+### Archive (writing)
+- Archiving a student copies their files into their group's archive and leaves every live row in place; restoring them afterwards still shows their whole history.
+- Archiving the same student twice adds no second copy (the (ArchivedGroupId, StorageKey) index).
+- Deleting a group with one active student is refused with `group.hasStudents`.
+- Deleting a group whose students are all archived: archive rows exist for every file before any delete runs; the group, its students' profiles and their user accounts are gone; a catalogue topic they held is `Available` again; a StudentProposal topic they held is deleted.
+- A failure during the delete leaves the group, its students and the archive exactly as they were.
+- `ArchivedGroup.Reviewers` holds every reviewer the group had, by id and name.
+
+### Archive (reading) and templates
+- A teacher sees only archives whose stored reviewers include them; an archive they may not see answers 404 `archive.notFound`, identical to a missing id.
+- A student receives 403 from every `/api/archive/*` route.
+- Purging deletes the rows; a blob still named by a live SubmissionFile or another archived group survives; an unreferenced blob is gone.
+- A blob that cannot be deleted logs a warning and does not fail the purge.
+- Replacing a template's file with a stale row version answers `template.conflict` and leaves exactly one file on disk.
+- A successful replacement deletes the file it replaced.
+
+### Reads
+- `GetDeadlineAsync` issues one query when called repeatedly within a request, and a fresh instance reads the database again.
+- `SetDeadlineAsync` followed by `GetDeadlineAsync` on the same instance returns the new value.
+- Group, group-student and department list responses are byte-identical to the pre-change responses for the same data.
+
+### Frontend shared infrastructure (Task 13)
+- `Pagination` renders nothing when `total <= pageSize` (single page: no controls, no "Showing…"
+  text); once `total` exceeds `pageSize` it shows the range and page count and disables
+  First/Previous on page 1 and Next/Last on the last page.
+- `ProportionBar` with every segment's `value` at 0 renders the empty-state bar (a plain neutral
+  track) instead of dividing by a zero total; with a mix of zero and non-zero segments, only the
+  non-zero ones get a visible slice but every segment still appears in the legend below it.
+- A teacher's group list still contains only groups they review or supervise in.
+
+### The three dashboards (Task 15)
+- `GroupProgressCard`: a single group auto-selects; two or more groups start with nothing
+  selected and show `dashboard.noGroupSelected`; picking a group loads and renders the matrix;
+  a slow response for a previously selected group does not overwrite the currently selected
+  group's result (the `isCurrent` guard).
+- `sortGroupRows`/`nextGroupSort`: every `GroupSortKey` sorts ascending and descending correctly
+  (including the two-part `code` sort by code then academic year); clicking the same header
+  twice reverses direction, clicking a different header resets to ascending.
+- `GroupTable` row click navigates to `/groups/{groupId}/progress` for both an Admin and a
+  Teacher viewer, and the resulting page's "back to groups" link returns to `/admin/groups` or
+  `/teacher/groups` respectively.
+- `TeacherDashboardPage`: the "open review queue" button beneath `latestForReview` appears only
+  when `waitingReviews > latestForReview.length`, not merely when the list is non-empty.
+- `AdminDashboardPage`: the topic-selection deadline line renders `dashboard.noDeadline` when
+  `deadline` is null and `dashboard.deadlineOn` plus the correct open/closed badge when it is
+  set, for both `isOpen` values.
+- `StudentDashboardPage`: `latestDecision === null` renders `dashboard.noDecisionYet`; an
+  `Approved` decision shows the mark, a `Returned` one does not; the "open the step" button
+  navigates to the right `studentTaskId`.
+
+### Archive, queue paging and step reordering (Task 16)
+- Review queue: page controls move through a 60-item queue, filters reset to page 1, and a
+  stale response cannot overwrite a newer page.
+- Reordering: dropping a row and pressing the arrows produce the same request; a failed
+  request restores the previous order.
+- Reordering is unavailable when the faculty filter is "all" and for teachers.
+- Archive: a teacher sees only their groups; the purge button is absent for a teacher.
+- The matrix legend names five states and a cell past its deadline with nothing submitted
+  shows the overdue badge.
+- A rejection without a comment still renders the block on My topic.
+- The topic page stops offering Reserve when the deadline passes with the page open.
+
+### Whole-plan review (2026-09-23)
+
+- **Group deletion with moved students** (after the I1 fix), in both directions:
+  - a student who moved out of the deleted group;
+  - an archived student with submissions in an earlier group.
+  In each case assert that the `ArchivedFile` rows exist and no blob is orphaned.
+- **Archive then delete with a pending reservation** (after the I2 fix): the catalogue topic returns to `Available`, and a pending proposal topic is deleted.
+- **`SessionStateValidator`**: each branch (Missing, Inactive, Unclaimed, RoleChanged, Malformed) returns false. A valid account returns true.
+- **`OfficePackageInspector`**:
+  - missing `[Content_Types].xml`;
+  - missing `word/` or `ppt/` part;
+  - a `.docx` with only `xl/`;
+  - more than 1,000 entries;
+  - past 100 MB total, or past 20 MB of XML;
+  - depth over 128;
+  - a JAR renamed `.docx`.
+- **`SubmissionFileRules`**: allowlist per path; PNG/JPEG/PDF signature mismatch; zero-length supporting file.
+- **`IdentityNormalizer.StudentNumberCanonical`**:
+  - each of the 13 Cyrillic folds;
+  - separators and whitespace stripped;
+  - lowercase Cyrillic;
+  - a separators-only input that folds to empty, which should be refused as `validation.failed`.
+- **`ArchiveService.PurgeGroupAsync`**:
+  - a key still live in `SubmissionFiles` is kept;
+  - a key held by another archived group is kept;
+  - an unreferenced key is deleted;
+  - a failing delete does not fail the purge.
+- **`ArchiveService.ArchiveAsync` called twice for one reviewed group** (regression for the second commit's `DbUpdateConcurrencyException`), on SQL Server. The InMemory provider cannot show it.
+- **Archive visibility**:
+  - a teacher sees an archive only via a stored reviewer id;
+  - a hidden archive answers `archive.notFound` on the list, the details and the file download.
+- **Template row version**:
+  - a concurrent replace yields `template.conflict` and the losing new blob is deleted;
+  - after the M3 fix, a concurrent details edit yields `template.conflict`.
+- **Reorder**: `orderMismatch` for a missing, extra or duplicate id; orders rewritten `1..n`; the unique index is never violated across the two saves (SQL Server).
+- **`DeleteTaskTemplateAsync`**: `taskTemplate.assigned` when a group holds the step; 204 otherwise.
+- **Queue paging**:
+  - clamp of `page < 1` and `pageSize` outside 1-100;
+  - a stable order across pages when `SubmittedAt` ties;
+  - after the M4 fix, a huge `page`.
+- **Overdue rule parity**: `IsOverdue` and the three `DashboardService` predicates agree for every status × (deadline past / future).
+- **`lateSteps`**: two late versions of one step count once.
+- **Admin dashboard**: `withApprovedTopic + withPendingRequest + withoutTopic == totalStudents`.
+- **Faculty and department conflicts**: a name/short-name collision against two different rows reports the name first.
+- **Password policy**: an admin's own password change at 11 vs 12 characters; admin creation; the bootstrap refusal. A teacher's or student's 8-character minimum is unaffected.
+- **`TopicSettingsService`**: one query per scope when read repeatedly; the cache is reset after `SetDeadlineAsync`.
+- **Last-active-administrator guard**: after refinements checks 28/29 were rewritten, nothing reaches it through the API. It needs a unit test at the service level.
+- **`request.tooLarge`**: confirm that a body over the limit on a multipart form actually reaches the exception handler as a 413. `BadHttpRequestException` derives from `IOException`, and form model binding may turn it into a 400 `validation.failed`. No check script covers it.

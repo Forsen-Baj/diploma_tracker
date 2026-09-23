@@ -9,6 +9,7 @@ public static class CommonErrors
     public const string NotFound = "request.notFound";
     public const string MethodNotAllowed = "request.methodNotAllowed";
     public const string UnsupportedMediaType = "request.unsupportedMediaType";
+    public const string RequestTooLarge = "request.tooLarge";
 
     public static readonly ErrorDefinition[] All =
     [
@@ -18,6 +19,7 @@ public static class CommonErrors
         new(Unexpected, StatusCodes.Status500InternalServerError, "An unexpected error occurred."),
         new(NotFound, StatusCodes.Status404NotFound, "The requested resource was not found."),
         new(MethodNotAllowed, StatusCodes.Status405MethodNotAllowed, "This method is not allowed for the requested resource."),
-        new(UnsupportedMediaType, StatusCodes.Status415UnsupportedMediaType, "The request content type is not supported.")
+        new(UnsupportedMediaType, StatusCodes.Status415UnsupportedMediaType, "The request content type is not supported."),
+        new(RequestTooLarge, StatusCodes.Status413PayloadTooLarge, "The upload is larger than this form allows.")
     ];
 }

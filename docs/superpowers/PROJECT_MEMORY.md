@@ -11,7 +11,7 @@ Newest status first; keep entries short.
 | System design (binding authority) | `docs/superpowers/specs/2026-09-15-diploma-tracker-system-design.md` |
 | Increment designs | `docs/superpowers/specs/<date>-<topic>-design.md` |
 | Implementation plans | `docs/superpowers/plans/` |
-| Session handoffs (latest: `2026-09-20-phase-6-complete.md`) | `docs/superpowers/handoffs/` |
+| Session handoffs (latest: `2026-09-23-phase-8-closed.md`) | `docs/superpowers/handoffs/` |
 | Tests to write at the end of the project | `docs/superpowers/test-backlog.md` |
 | Per-plan execution ledger, briefs, reports, review packages (git-ignored, local only — does **not** travel between machines, so a handoff must be self-contained) | `.superpowers/sdd/<plan-name>/` |
 | End-to-end check scripts (committed since 2026-09-18) | `.superpowers/checks/` |
@@ -36,7 +36,7 @@ management) sits between 2 and 3.
 | 5 Submission and review | Done — commits `Added basic submission workflow`, `Complete submission and review` | `2026-09-17-submission-and-review-design.md` | `2026-09-17-submission-and-review.md` |
 | 6 Document templates | Done — commit `Implement document templates` | `2026-09-17-document-templates-design.md` (amended 2026-09-19) | `2026-09-17-document-templates.md` |
 | 7 Document preview and commenting | Deferred by the owner; revisit after phase 6 | — | — |
-| 8 Hardening and polish | Scope settled by the owner 2026-09-19; design not yet written — prompt in `handoffs/2026-09-19-phase-8-design-prompt.md`. Built after phase 6 | — | — |
+| 8 Hardening and polish | Done — commit `Implement hardening and polish` (line endings pinned separately in `Normalise line endings`), follow-ups `Fix test project and check scripts`, `Apply whole-plan review fixes` | `2026-09-21-hardening-and-polish-design.md` | `2026-09-21-hardening-and-polish.md` |
 
 Build order: onboarding → 3 → 4 → 5 → 6 → 8. Specs live in `docs/superpowers/specs/`, plans in
 `docs/superpowers/plans/`. Each plan assumes the previous ones are implemented; execute them
@@ -73,15 +73,13 @@ teachers see only relevant groups (phase 5).
 Parked for later (not blocking):
 - Tests to write in the end-of-project testing pass are collected in
   `docs/superpowers/test-backlog.md`, one section per phase.
-- Phase 8 "Hardening and polish" holds everything else the reviews parked; its settled scope
-  and the design prompt are in `docs/superpowers/handoffs/2026-09-19-phase-8-design-prompt.md`.
-- Parked from phase 6, for phase 8: two concurrent template file replacements orphan the losing
-  file (no concurrency token on `DocumentTemplate`) — goes with the orphaned-upload archive; an
-  upload over the 12 MB request limit is refused by the global 413 mapping, whose message talks
-  about a student import rather than a template; template generation and upload have **no
-  concurrency cap** (owner accepted the risk 2026-09-19 — both are CPU-bound and any signed-in
-  user can call generate); `{{supervisor.email}}` shows a student the supervisor of any catalogue
-  topic they pick, although the topic list hides it (owner: intended, staff emails are public).
+- Closed by phase 8: the parked phase 8 scope itself, the template-replacement race (now a
+  `RowVersion` on `DocumentTemplate`) and the 413 message that talked about student imports (now
+  the neutral `request.tooLarge`).
+- Still open from phase 6, deliberately: template generation and upload have **no concurrency
+  cap** (owner accepted the risk 2026-09-19 — both are CPU-bound and any signed-in user can call
+  generate); `{{supervisor.email}}` shows a student the supervisor of any catalogue topic they
+  pick, although the topic list hides it (owner: intended, staff emails are public).
 - Accessibility pass (request sequencing, modal initial focus, segmented-control keyboard
   behaviour, loading states announced, progress-matrix keyboard access): parked until the owner
   has consulted on it; not in phase 8.
@@ -185,6 +183,8 @@ Parked for later (not blocking):
   `TypeError` that looks like "no connection to the server" while the server never sees the
   request. Snapshot the bytes at submit (`await file.arrayBuffer()`, upload a fresh `File`) and
   map a read failure to "the file changed on disk, choose it again".
+- **A new child row with a preset `Guid` key must be added through its `DbSet`, never only through a tracked parent's collection.** Reached through the navigation, EF takes it for an existing row and sends an `UPDATE` that affects nothing (`DbUpdateConcurrencyException`, a 500). This broke a second archiving of a reviewed group until 2026-09-22.
+- **A step template can be deleted only while no group has it** (`DELETE /api/task-templates/{id}`, `taskTemplate.assigned` 409 otherwise); a faculty holding any step template still cannot be deleted.
 - **Template markers** are matched per paragraph after joining its runs, in body, tables,
   headers, footers, footnotes, endnotes and comments; anything between `{{` and `}}` counts, so
   an unknown key is refused at upload. A new key needs an entry in `MarkerVocabulary` **and** in
@@ -205,8 +205,18 @@ Parked for later (not blocking):
 - **Rate limiter is off by configuration.** With `RateLimiting:Enabled` = `true`, `login` and `claim` allow 10 requests per minute per IP; scripted checks must then pace their calls or they receive 429.
 - **Seed student number** is `SEED-0001`; imported and claimable test students need their own unique numbers.
 - **`.superpowers/sdd/` is never committed** (it has its own ignore file, and it does not travel between machines — a handoff must be self-contained). `.superpowers/checks/` **is** committed, despite the stale-looking `.gitignore` entry: the scripts were added with `git add -f` on 2026-09-18 and tracked files stay tracked.
+- **A bearer token is re-checked against the account on every request.** `SessionStateValidator` re-reads the user behind the token; an archived, deactivated, role-changed or access-reset account is refused at once with 401 rather than staying valid until the token expires. Never add a path that trusts the claims alone.
+- **Uploads are an allowlist, inspected as packages.** One `OfficePackageInspector` serves every upload path: the file is opened and must carry the parts its extension claims. Supporting files are `.pdf`, `.docx`, `.pptx`, `.png`, `.jpg`/`.jpeg` and nothing else. A test fixture that is a few bytes of ZIP header is no longer a valid `.docx` — build genuine packages, as `hardening-check.mjs` does.
+- **A student submits work only while holding a topic** (`StudentProfile.TopicId` set), refused with `step.topicRequired` otherwise. A check script whose students submit gives each one a topic first, via `giveTopic` in `checkCleanup.mjs`.
+- **Demo data** for walkthroughs and the defence: `.superpowers/demo/seed-demo.mjs` (Ukrainian faculty ФІОТ beside the seed, every demo password `Demo2026!`, accounts and a walkthrough in `.superpowers/demo/README.md`). Run it on a freshly seeded database; after a check-script run, drop and re-seed first if the demo should not show the deactivated test accounts.
+- **`StudentProfile.TopicId` is the single source of truth for a student's topic**; `TopicReservations` is history plus any pending change request. Never decide "this student holds this topic" from an `Approved` reservation.
+- **The archive shares storage keys with live files** — it copies rows, never bytes. **A stored file is deleted only when nothing points at it any more**: `ArchiveService.PurgeGroupAsync` checks both `SubmissionFiles` and other groups' `ArchivedFiles` first. Deleting a still-referenced blob would destroy a live student's submitted work.
+- **Group deletion deletes student accounts** — the only place in the system that does. A group with an active student is still refused; a group whose remaining students are all archived deletes their profiles and accounts after the archive has their full record. Irreversible by design.
+- **Student identity is canonical, not literal.** `StudentProfile.StudentNumberCanonical` carries the uniqueness: whitespace and `-_/.` stripped, upper-cased, Cyrillic lookalikes folded to Latin. `KB 123` and Cyrillic `КВ123` are one student. The entered spelling is still what is displayed.
+- **Check scripts clean up in a `finally`.** Every script registers each undo as it creates the thing, and `checkCleanup.mjs` drains the registry newest-first whether the run passed or failed. Never add a "skip cleanup when something failed" branch — a failed run is exactly when leftovers accumulate. **An undo must return its final API response**: the registry reports any error status except 404 by name, and an undo that returns nothing is counted as done whatever happened — that is how every script printed "nothing left behind" while leaking.
+- **`.gitattributes` pins line endings**: LF in the repository, CRLF on checkout. Do not add editor settings that fight it.
 - **Error contract:** every API error is `{ code, message }` (`fields` for `validation.failed`, `errors` for import rows); codes live in per-area catalogues and are translated in `src/i18n/{uk,en}.json`. Never compare message text.
-- **Check scripts** (`.superpowers/checks/`) run against the live local database. They are committed (they were git-ignored until 2026-09-18). Uniqueness across runs is carried by **codes, emails and student numbers**, never by the academic year — the year is a realistic `2026/2027` and the format rule now rejects stamped values. A script that creates groups deletes them at the end of a successful run; because a group cannot be deleted while any student points at it and students cannot be deleted at all, the script first restores, moves them into the seeded group and archives them there.
+- **Check scripts** (`.superpowers/checks/`) run against the live local database. They are committed (they were git-ignored until 2026-09-18). Uniqueness across runs is carried by **codes, emails and student numbers**, never by the academic year — the year is a realistic `2026/2027` and the format rule now rejects stamped values. Every student a script creates lives in a group the script created; `removeGroup` in `checkCleanup.mjs` archives them in place, deletes the group (which deletes their accounts, §4.7) and purges the archive entry. Faculties, departments and step templates go through `cleanup.addLast`, which runs after every other undo. Only deactivated staff accounts remain after a run — there is no staff deletion.
 - **i18n:** `npm run i18n:check` validates that uk and en have the same keys and each language's own plural categories (uk one/few/many, en one/other).
 
 ## Decisions (do not reopen)
@@ -228,6 +238,9 @@ Parked for later (not blocking):
 
 ## Log
 
+- 2026-09-23 — Phase 8 closed out. The test project compiles again (56/56), and all eight check scripts pass (347 checks, 358 with the review's additions) and leave the seeded data exactly as they found it: students live in per-script groups removed through `removeGroup`, step templates are deleted (new `DELETE /api/task-templates/{id}`), and only deactivated staff accounts remain. The scripts exposed a real 500 when a reviewed group was archived twice (fixed). Whole-plan review: 0 Critical, 3 Important, 14 Minor. All three Important findings were fixed in one wave: group deletion archives every file it removes, including work that crossed groups; archiving a whole group's students settles their reservations; and the delete dialog names the accounts and files involved (`GET /api/groups/{id}/deletion-preview`). Nine Minors were fixed too. The scoped re-review found every item resolved and nothing new. `InitialCreate` was regenerated for wider archive name columns, so **every machine must drop its database again**. Deferred by the owner: M6 (dashboards count moved students' old steps), M7 (Cancel at the deadline), M11, M12, and deferred minors 4, 5 and 7. The review report's test list is in `test-backlog.md`.
+- 2026-09-23 — The owner's walkthrough with Ukrainian demo data (`.superpowers/demo/`) led to two changes. First, a student can start work on the steps only once they hold a topic (`step.topicRequired`). Second, the teacher dashboard's group table lists only the groups the teacher reviews (§7.4), so its figures agree with the overdue list. All eight check scripts pass: 362 checks.
+- 2026-09-21 — Phase 8 implemented: per-request session validation and a 12-character administrator password, a security-event vocabulary applied across 14 services, one Office-package inspector for every upload with an allowlist for supporting files, a canonical student number that folds Cyrillic lookalikes, `StudentProfile.TopicId` as the single source of truth for a topic, the archive (three self-contained entities, shared storage keys, purge that deletes a blob only when nothing points at it), group deletion that deletes archived students' accounts, a row version on `DocumentTemplate`, projection-based reads, a paged review queue, overdue steps and lateness counted in steps, three real dashboards, step-template reordering, the archive pages, and check scripts that clean up in a `finally`. `InitialCreate` regenerated and the local database dropped with the owner's permission. **Every other machine must drop its own database when it next pulls** — the migration has a new id. Not done in this session and outstanding: the whole-plan review, the test project (202 mechanical compile errors from the signature changes in tasks 2 and 6), and four check-script defects — see `handoffs/2026-09-21-phase-8-complete.md`.
 - 2026-09-16 — Phase 2 committed (`65f190d`); branches reorganised to
   `master` ← `dev` ← `phase1-2`; this file created.
 - 2026-09-17 — Designs for onboarding and phases 3–6 approved and committed; phase 7 deferred.
