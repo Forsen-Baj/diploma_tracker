@@ -133,7 +133,13 @@ export function DecisionPanel({ step, onDecided }: DecisionPanelProps) {
       <ConfirmDialog
         open={confirmAction !== null}
         title={t(confirmAction === 'return' ? 'steps.return' : 'steps.approve')}
-        message={confirmAction === 'approve' ? t('steps.approveConfirm', { mark }) : t('steps.returnConfirm')}
+        message={
+          confirmAction === 'approve'
+            ? t('steps.approveConfirm', { mark })
+            : mark.trim() === ''
+              ? t('steps.returnConfirm')
+              : t('steps.returnConfirmMarkIgnored', { mark })
+        }
         tone="primary"
         loading={isDeciding}
         onConfirm={() => void confirmDecision()}

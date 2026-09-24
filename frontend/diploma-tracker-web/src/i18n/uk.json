@@ -389,7 +389,7 @@
     "topicsApproved": "Затверджені теми",
     "latestDecision": "Останнє рішення",
     "decisionApproved": "Рішення {{name}}: затверджено · {{mark}}",
-    "decisionReturned": "Рішення {{name}}: повернено",
+    "decisionReturned": "Рішення {{name}}: повернуто",
     "noDecisionYet": "Ваші роботи ще не оцінювали.",
     "openStep": "Відкрити етап"
   },
@@ -573,7 +573,7 @@
     "legendPending": "не подано, термін ще не минув",
     "legendOverdue": "термін минув, нічого не подано",
     "legendSubmitted": "очікує рішення",
-    "legendReturned": "повернено на доопрацювання",
+    "legendReturned": "повернуто на доопрацювання",
     "legendApproved": "затверджено, з оцінкою",
     "status": {
       "Pending": "Не розпочато",
@@ -616,6 +616,7 @@
     "approved": "Етап зараховано",
     "return": "Повернути",
     "returnConfirm": "Повернути роботу на доопрацювання?",
+    "returnConfirmMarkIgnored": "Повернути роботу на доопрацювання? Оцінку {{mark}} не буде збережено: під час повернення зберігається лише коментар.",
     "returned": "Роботу повернуто",
     "panelTitle": "Рецензенти",
     "seat": { "Supervisor": "Керівник", "Extra": "Додатковий рецензент" },

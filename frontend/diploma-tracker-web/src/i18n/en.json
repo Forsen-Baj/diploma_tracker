@@ -610,6 +610,7 @@
     "approved": "Step approved",
     "return": "Return",
     "returnConfirm": "Return the work for revision?",
+    "returnConfirmMarkIgnored": "Return the work for revision? The mark {{mark}} will not be saved: a return keeps only the comment.",
     "returned": "Work returned",
     "panelTitle": "Reviewers",
     "seat": { "Supervisor": "Supervisor", "Extra": "Extra reviewer" },
