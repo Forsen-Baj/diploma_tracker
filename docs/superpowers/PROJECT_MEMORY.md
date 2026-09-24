@@ -37,7 +37,7 @@ management) sits between 2 and 3.
 | 6 Document templates | Done — commit `Implement document templates` | `2026-09-17-document-templates-design.md` (amended 2026-09-19) | `2026-09-17-document-templates.md` |
 | 7 Document preview and commenting | Deferred by the owner; the last increment, after phase 10 | — | — |
 | 8 Hardening and polish | Done — commit `Implement hardening and polish` (line endings pinned separately in `Normalise line endings`), follow-ups `Fix test project and check scripts`, `Apply whole-plan review fixes` | `2026-09-21-hardening-and-polish-design.md` | `2026-09-21-hardening-and-polish.md` |
-| 9 Review panels | Planned, not implemented (branch `feature-dms`) | `2026-09-24-review-panels-and-document-routing-design.md` §3 | `2026-09-24-review-panels.md` |
+| 9 Review panels | Done — commit `Implement review panels` (branch `feature-dms`) | `2026-09-24-review-panels-and-document-routing-design.md` §3 | `2026-09-24-review-panels.md` |
 | 10 Document routing | Planned, not implemented; runs after phase 9 | same, §4 | `2026-09-24-document-routing.md` |
 
 Build order: onboarding → 3 → 4 → 5 → 6 → 8. Specs live in `docs/superpowers/specs/`, plans in
@@ -220,6 +220,9 @@ Parked for later (not blocking):
 - **Error contract:** every API error is `{ code, message }` (`fields` for `validation.failed`, `errors` for import rows); codes live in per-area catalogues and are translated in `src/i18n/{uk,en}.json`. Never compare message text.
 - **Check scripts** (`.superpowers/checks/`) run against the live local database. They are committed (they were git-ignored until 2026-09-18). Uniqueness across runs is carried by **codes, emails and student numbers**, never by the academic year — the year is a realistic `2026/2027` and the format rule now rejects stamped values. Every student a script creates lives in a group the script created; `removeGroup` in `checkCleanup.mjs` archives them in place, deletes the group (which deletes their accounts, §4.7) and purges the archive entry. Faculties, departments and step templates go through `cleanup.addLast`, which runs after every other undo. Only deactivated staff accounts remain after a run — there is no staff deletion.
 - **i18n:** `npm run i18n:check` validates that uk and en have the same keys and each language's own plural categories (uk one/few/many, en one/other).
+- **A step’s review panel is derived, never stored.** It is the student’s current supervisor plus `StudentTaskReviewers`. `ReviewPanel.Evaluate` decides from the facts `StudentWorkflowService.LoadPanelFactsAsync` loads. Approvals stick across versions; an extra seat counts only approvals given after it was added. Group reviewers watch and change panels but never decide. A reviewer whose seat reopened on a version they already decided (removed and re-added, or moved to another seat) re-decides by overwriting their `SubmissionReview` row, because of the unique (submission, reviewer) index. A resubmission that finds every seat already approved is approved at once.
+- **Every decision and panel change touches `StudentTask.UpdatedAt`**, so the step’s `RowVersion` serialises them. A new write path on a step must do the same.
+- **Port 5000 on the first machine** can be taken by `CS_GO_Arx_Applet.exe` (Logitech Arx). If the API will not start, ask the owner to close it.
 
 ## Decisions (do not reopen)
 
@@ -240,6 +243,7 @@ Parked for later (not blocking):
 
 ## Log
 
+- 2026-09-24 — Phase 9 implemented (commit `Implement review panels`): review panels with the supervisor plus extra reviewers per student step, sticky approvals, the rounded average mark, a staff picker, step-level visibility for extra reviewers, archived reviews. `InitialCreate` regenerated, so **every machine must drop its database**. All nine check scripts pass (400 checks, 38 in the new `review-panels-check.mjs`). Whole-phase review: 0 Critical, 2 Important, 12 Minor; both Important and ten Minors fixed in one wave, and the scoped re-review found all 13 fixed with nothing new. Parked: a topic change that absorbs the last open extra seat while the step is `Submitted` leaves it waiting (workaround: add and remove any reviewer); the staff picker returns emails (staff emails are public); an absorbed extra row stays hidden and revives if the supervisor changes back.
 - 2026-09-24 — Owner asked for two features before the demo: several reviewers per step, and a document routing system under the *Documents* tab. Designed together (`2026-09-24-review-panels-and-document-routing-design.md`) and planned as phase 9 (review panels) and phase 10 (document routing), each with its own plan and single commit. Owner decisions:
   - **Panels:** the supervisor always reviews; extra reviewers are added per student step by the supervisor, group reviewers or administrators; every reviewer marks or returns; approvals stick after a return; the mark is the rounded average; group reviewers only watch.
   - **Documents:** every role has them; one holder at a time; each hand-off is for review or for signing; signing means uploading the signed copy; the existing *Documents* page is split into four sections.

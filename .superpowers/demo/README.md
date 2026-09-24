@@ -69,3 +69,10 @@ A student can submit work only while holding an approved topic, so every student
 - *Topics* (Захарченко, who has no topic): leave the page open past the selection deadline and *Reserve* disappears by itself. To see this quickly, move the deadline to a minute ahead on the administrator's *Settings* page.
 
 **Progress matrix** (any role that can see it): ІП-22 shows red *Overdue* badges for Руденко and Павленко, with the five-state legend under the table.
+
+### Review panels
+
+- Бондаренко Максим, step 2: Петренко (supervisor) approved with 90; Коваленко, an extra reviewer, still has to decide. *My work* shows "1 of 2 approved"; Коваленко finds it in the review queue.
+- Мельник Дмитро, step 1: Петренко (extra) approved version 1, the supervisor Коваленко returned it, and version 2 completed the panel. The mark is the average, 87. Петренко's approval of version 1 still counted.
+- Лисенко Катерина, step 2: approved by Коваленко (92) and Шевчук (89), mark 91. Step 3 waits for Петренко and Шевчук after Коваленко's approval ("1 of 3").
+- A group's reviewer (for ІП-21, Петренко) sees the group's progress and every step page, and can add extra reviewers, but decides only where they sit on the panel.

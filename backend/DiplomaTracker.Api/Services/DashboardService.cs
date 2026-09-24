@@ -36,22 +36,24 @@ public class DashboardService : IDashboardService
             return (null, error);
         }
 
-        var latest = await _dbContext.Submissions.AsNoTracking()
-            .Where(s => s.StudentTask.StudentProfile.UserId == user.UserId && s.Decision != null)
-            .OrderByDescending(s => s.DecidedAt)
-            .ThenByDescending(s => s.Id)
-            .Select(s => new LatestDecisionResponse
+        // Design 2026-09-24 §3.6: the latest decision is the latest reviewer's decision - on a panel,
+        // one approval of several is news to the student too.
+        var latest = await _dbContext.SubmissionReviews.AsNoTracking()
+            .Where(r => r.Submission.StudentTask.StudentProfile.UserId == user.UserId)
+            .OrderByDescending(r => r.DecidedAt)
+            .ThenByDescending(r => r.Id)
+            .Select(r => new LatestDecisionResponse
             {
-                StudentTaskId = s.StudentTaskId,
-                SubmissionId = s.Id,
-                StepTitle = s.StudentTask.GroupTask.DiplomaTaskTemplate.Title,
-                StepOrder = s.StudentTask.GroupTask.DiplomaTaskTemplate.Order,
-                Version = s.Version,
-                Decision = s.Decision!.ToString()!,
-                Mark = s.Mark,
-                ReviewerName = s.Reviewer == null ? null : s.Reviewer.LastName + " " + s.Reviewer.FirstName,
-                ReviewerComment = s.ReviewerComment,
-                DecidedAt = s.DecidedAt!.Value
+                StudentTaskId = r.Submission.StudentTaskId,
+                SubmissionId = r.SubmissionId,
+                StepTitle = r.Submission.StudentTask.GroupTask.DiplomaTaskTemplate.Title,
+                StepOrder = r.Submission.StudentTask.GroupTask.DiplomaTaskTemplate.Order,
+                Version = r.Submission.Version,
+                Decision = r.Decision.ToString(),
+                Mark = r.Mark,
+                ReviewerName = r.Reviewer.LastName + " " + r.Reviewer.FirstName,
+                ReviewerComment = r.Comment,
+                DecidedAt = r.DecidedAt
             })
             .FirstOrDefaultAsync();
 
@@ -118,8 +120,12 @@ public class DashboardService : IDashboardService
         var withRequest = await students.CountAsync(p =>
             p.TopicId == null && p.TopicReservations.Any(r => r.Status == ReservationStatus.Pending));
 
+        // M14: agree with the review queue's own predicate - a student who moved groups while a
+        // version was pending must not still count as waiting here.
         var waiting = await _dbContext.Submissions.AsNoTracking()
-            .Where(s => s.Decision == null && s.StudentTask.Status == StudentTaskStatus.Submitted)
+            .Where(s => s.Decision == null
+                && s.StudentTask.Status == StudentTaskStatus.Submitted
+                && s.StudentTask.GroupTask.GroupId == s.StudentTask.StudentProfile.GroupId)
             .GroupBy(_ => 1)
             .Select(g => new { Total = g.Count(), Late = g.Count(s => s.IsLate) })
             .FirstOrDefaultAsync();

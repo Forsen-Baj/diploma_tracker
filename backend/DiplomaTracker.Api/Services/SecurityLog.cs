@@ -73,6 +73,12 @@ public static class SecurityLog
             "Submission decided: ReviewerId={ReviewerId}, SubmissionId={SubmissionId}, Decision={Decision}, Mark={Mark}",
             reviewerId, submissionId, decision, mark);
 
+    /// Action is Added or Removed.
+    public static void ReviewPanelChanged(ILogger logger, Guid actorUserId, string action, Guid studentTaskId, Guid reviewerId) =>
+        logger.LogInformation(
+            "Review panel changed: ActorUserId={ActorUserId}, Action={Action}, StudentTaskId={StudentTaskId}, ReviewerId={ReviewerId}",
+            actorUserId, action, studentTaskId, reviewerId);
+
     public static void FileDownloaded(ILogger logger, Guid actorUserId, Guid fileId, Guid studentProfileId) =>
         logger.LogInformation(
             "File downloaded: ActorUserId={ActorUserId}, FileId={FileId}, StudentProfileId={StudentProfileId}",

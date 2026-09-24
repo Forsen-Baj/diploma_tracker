@@ -77,12 +77,12 @@ export function StudentDashboardPage() {
                   </p>
                   <Badge tone={decision.decision === 'Approved' ? 'success' : 'warning'}>
                     {decision.decision === 'Approved'
-                      ? `${t('dashboard.decisionApproved')}${decision.mark !== null ? ` · ${decision.mark}` : ''}`
-                      : t('dashboard.decisionReturned')}
+                      ? t('dashboard.decisionApproved', { name: decision.reviewerName ?? '', mark: decision.mark ?? '—' })
+                      : t('dashboard.decisionReturned', { name: decision.reviewerName ?? '' })}
                   </Badge>
                 </div>
                 <p className="text-sm text-text-muted">
-                  {decision.reviewerName} · {dateFormat.format(new Date(decision.decidedAt))}
+                  {dateFormat.format(new Date(decision.decidedAt))}
                 </p>
                 {decision.reviewerComment && <p className="text-sm text-text-strong">{decision.reviewerComment}</p>}
                 <div>

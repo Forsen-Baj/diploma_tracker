@@ -15,7 +15,7 @@ import { PageHeader } from '../components/ui/PageHeader'
 import { Spinner } from '../components/ui/Spinner'
 import { useToast } from '../components/ui/useToast'
 import { formatBytes } from '../components/workflow/formatBytes'
-import type { ArchivedFile, ArchivedGroupDetails } from '../api/types'
+import type { ArchivedFile, ArchivedGroupDetails, ArchivedReview } from '../api/types'
 
 type StudentFileGroup = {
   studentName: string
@@ -142,8 +142,6 @@ export function ArchivedGroupPage() {
       render: (file) => (file.decision ? <Badge tone={file.decision === 'Approved' ? 'success' : 'warning'}>{t(`steps.decision.${file.decision}`)}</Badge> : null)
     },
     { key: 'mark', header: t('archive.mark'), render: (file) => (file.mark ?? '') },
-    { key: 'reviewer', header: t('archive.reviewer'), render: (file) => file.reviewerName ?? '' },
-    { key: 'comment', header: t('archive.comment'), render: (file) => file.reviewerComment ?? '' },
     {
       key: 'file',
       header: t('archive.file'),
@@ -168,6 +166,21 @@ export function ArchivedGroupPage() {
         )
       }
     }
+  ]
+
+  const reviewColumns: DataTableColumn<ArchivedReview>[] = [
+    { key: 'student', header: t('steps.student'), render: (review) => `${review.studentName} (${review.studentNumber})` },
+    { key: 'step', header: t('archive.step'), render: (review) => `${review.stepOrder}. ${review.stepTitle}` },
+    { key: 'version', header: t('archive.version'), render: (review) => review.version },
+    { key: 'reviewer', header: t('archive.reviewer'), render: (review) => `${review.reviewerName} · ${t(`steps.seat.${review.seat}`)}` },
+    {
+      key: 'decision',
+      header: t('archive.decision'),
+      render: (review) => <Badge tone={review.decision === 'Approved' ? 'success' : 'warning'}>{t(`steps.decision.${review.decision}`)}</Badge>
+    },
+    { key: 'mark', header: t('archive.mark'), render: (review) => review.mark ?? '' },
+    { key: 'comment', header: t('archive.comment'), render: (review) => review.comment ?? '' },
+    { key: 'decidedAt', header: t('archive.decidedAt'), render: (review) => dateTimeFormat.format(new Date(review.decidedAt)) }
   ]
 
   return (
@@ -216,6 +229,15 @@ export function ArchivedGroupPage() {
               ))}
             </div>
           )}
+
+          <Card title={t('archive.reviews')} className="mt-6">
+            <DataTable
+              columns={reviewColumns}
+              rows={details.reviews}
+              getRowKey={(review) => review.id}
+              emptyState={<EmptyState message={t('archive.noReviews')} />}
+            />
+          </Card>
 
           <ConfirmDialog
             open={isPurgeOpen}

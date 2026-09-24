@@ -13,4 +13,6 @@ public class ReviewQueueItem
     public int Version { get; set; }
     public DateTime SubmittedAt { get; set; }
     public bool IsLate { get; set; }
+    public int PanelSize { get; set; }
+    public int PanelApproved { get; set; }
 }

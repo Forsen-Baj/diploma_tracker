@@ -10,4 +10,5 @@ public interface ITeacherService
     Task<(TeacherResponse? teacher, string? error)> UpdateTeacherAsync(Guid id, UpdateTeacherRequest request, Guid administratorId);
     Task<(bool success, string? error)> DeactivateTeacherAsync(Guid id, Guid administratorId);
     Task<(bool success, string? error)> SetPasswordAsync(Guid id, string password, Guid administratorId);
+    Task<IReadOnlyList<StaffOptionResponse>> SearchStaffAsync(string? search);
 }

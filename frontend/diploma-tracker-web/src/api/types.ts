@@ -419,6 +419,36 @@ export type SupervisorOption = {
 
 export type StudentTaskStatus = 'Pending' | 'Submitted' | 'Approved' | 'Returned'
 
+export type ReviewSeat = 'Supervisor' | 'Extra'
+
+export type PanelSeat = {
+  seat: ReviewSeat
+  /** Null only for a supervisor seat whose student has no supervisor. */
+  reviewerId: string | null
+  reviewerName: string | null
+  isActive: boolean
+  state: 'Approved' | 'Returned' | 'Waiting'
+  mark: number | null
+  canRemove: boolean
+}
+
+export type SubmissionReview = {
+  id: string
+  reviewerName: string
+  seat: ReviewSeat
+  decision: 'Approved' | 'Returned'
+  mark: number | null
+  comment: string | null
+  decidedAt: string
+}
+
+export type StaffOption = {
+  id: string
+  name: string
+  role: 'Admin' | 'Teacher'
+  email: string
+}
+
 export type StudentStep = {
   id: string
   groupTaskId: string
@@ -433,6 +463,8 @@ export type StudentStep = {
   latestSubmittedAt: string | null
   canSubmit: boolean
   blockReason: string | null
+  panelSize: number
+  panelApproved: number
 }
 
 export type SubmissionFileInfo = {
@@ -448,11 +480,10 @@ export type Submission = {
   message: string | null
   submittedAt: string
   isLate: boolean
+  /** The version's outcome: null while the panel decides. */
   decision: 'Approved' | 'Returned' | null
-  reviewerName: string | null
-  reviewerComment: string | null
-  mark: number | null
   decidedAt: string | null
+  reviews: SubmissionReview[]
   files: SubmissionFileInfo[]
 }
 
@@ -460,8 +491,10 @@ export type StepDetails = StudentStep & {
   studentProfileId: string
   studentName: string
   groupCode: string
-  canReview: boolean
+  canDecide: boolean
   pendingSubmissionId: string | null
+  canManagePanel: boolean
+  panel: PanelSeat[]
   timeline: Submission[]
 }
 
@@ -477,6 +510,8 @@ export type ReviewQueueItem = {
   version: number
   submittedAt: string
   isLate: boolean
+  panelSize: number
+  panelApproved: number
 }
 
 export type GroupProgress = {
@@ -679,17 +714,31 @@ export type ArchivedFile = {
   isLate: boolean
   decision: 'Approved' | 'Returned' | null
   mark: number | null
-  reviewerName: string | null
-  reviewerComment: string | null
   decidedAt: string | null
   kind: 'Main' | 'Supporting'
   originalName: string
   sizeBytes: number
 }
 
+export type ArchivedReview = {
+  id: string
+  studentName: string
+  studentNumber: string
+  stepTitle: string
+  stepOrder: number
+  version: number
+  reviewerName: string
+  seat: ReviewSeat
+  decision: 'Approved' | 'Returned'
+  mark: number | null
+  comment: string | null
+  decidedAt: string
+}
+
 export type ArchivedGroupDetails = ArchivedGroupSummary & {
   reviewerNames: string[]
   files: ArchivedFile[]
+  reviews: ArchivedReview[]
 }
 
 export type ArchiveUsage = {

@@ -8,6 +8,7 @@ import { EmptyState } from '../ui/EmptyState'
 import { PageHeader } from '../ui/PageHeader'
 import { Spinner } from '../ui/Spinner'
 import { DecisionPanel } from './DecisionPanel'
+import { ReviewPanelCard } from './ReviewPanelCard'
 import { StepStatusBadge } from './StepStatusBadge'
 import { StepTimeline } from './StepTimeline'
 import { SubmitWorkForm } from './SubmitWorkForm'
@@ -112,6 +113,8 @@ export function StepDetails({ stepId, mode }: StepDetailsProps) {
         </div>
       </Card>
 
+      <ReviewPanelCard step={step} onChanged={setStep} />
+
       <Card className="mb-6">
         <p className="whitespace-pre-line text-sm text-text-strong">{step.description || t('common.noDescription')}</p>
       </Card>
@@ -130,7 +133,7 @@ export function StepDetails({ stepId, mode }: StepDetailsProps) {
         </div>
       )}
 
-      {mode === 'reviewer' && step.canReview && (
+      {mode === 'reviewer' && step.canDecide && (
         <div className="mb-6">
           <DecisionPanel step={step} onDecided={setStep} />
         </div>

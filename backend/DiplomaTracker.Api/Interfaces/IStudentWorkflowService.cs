@@ -15,4 +15,7 @@ public interface IStudentWorkflowService
     Task<PagedResponse<ReviewQueueItem>> GetReviewQueueAsync(UserContext user, Guid? groupId, bool? late, int page, int pageSize);
     Task<(GroupProgressResponse? progress, string? error)> GetGroupProgressAsync(UserContext user, Guid groupId);
     Task<(StudentProgressResponse? progress, string? error)> GetStudentProgressAsync(UserContext user, Guid? studentProfileId);
+    Task<(IReadOnlyList<PanelSeatResponse>? panel, string? error)> GetPanelAsync(UserContext user, Guid studentTaskId);
+    Task<(StepDetailsResponse? step, string? error)> AddReviewerAsync(UserContext user, Guid studentTaskId, Guid reviewerId);
+    Task<(StepDetailsResponse? step, string? error)> RemoveReviewerAsync(UserContext user, Guid studentTaskId, Guid reviewerId);
 }

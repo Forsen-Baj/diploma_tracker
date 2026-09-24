@@ -9,11 +9,11 @@ public class Submission
     public string? Message { get; set; }
     public DateTime SubmittedAt { get; set; }
     public bool IsLate { get; set; }
+
+    /// The outcome of this version (design 2026-09-24 §3.1): empty while the panel is deciding,
+    /// Returned when a reviewer returned it, Approved when it completed the panel.
     public SubmissionDecision? Decision { get; set; }
-    public Guid? ReviewerId { get; set; }
-    public AppUser? Reviewer { get; set; }
-    public string? ReviewerComment { get; set; }
-    public int? Mark { get; set; }
     public DateTime? DecidedAt { get; set; }
+    public ICollection<SubmissionReview> Reviews { get; set; } = new List<SubmissionReview>();
     public ICollection<SubmissionFile> Files { get; set; } = new List<SubmissionFile>();
 }

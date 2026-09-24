@@ -149,6 +149,44 @@ public class TeacherService : ITeacherService
         return (true, null);
     }
 
+    private const int StaffOptionLimit = 20;
+    private const int StaffSearchMaxLength = 100;
+
+    /// Design 2026-09-24 §3.5: active teachers and administrators, for the extra-reviewer picker.
+    public async Task<IReadOnlyList<StaffOptionResponse>> SearchStaffAsync(string? search)
+    {
+        var query = _dbContext.Users.AsNoTracking()
+            .Where(u => u.IsActive && (u.Role == "Teacher" || u.Role == "Admin"));
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var trimmed = search.Trim();
+            if (trimmed.Length > StaffSearchMaxLength)
+            {
+                trimmed = trimmed[..StaffSearchMaxLength];
+            }
+
+            // The same escaping the topic search uses: unescaped, "50%" would match as a pattern.
+            var term = trimmed.Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]");
+            query = query.Where(u => EF.Functions.Like(u.LastName, $"%{term}%")
+                || EF.Functions.Like(u.FirstName, $"%{term}%")
+                || EF.Functions.Like(u.Email, $"%{term}%"));
+        }
+
+        // M13: project to the fields the picker needs instead of loading the whole AppUser
+        // (PasswordHash included) into memory on every keystroke.
+        var users = await query
+            .OrderBy(u => u.LastName)
+            .ThenBy(u => u.FirstName)
+            .Take(StaffOptionLimit)
+            .Select(u => new { u.Id, u.LastName, u.FirstName, u.Patronymic, u.Role, u.Email })
+            .ToListAsync();
+
+        return users
+            .Select(u => new StaffOptionResponse(u.Id, PersonName.Full(u.LastName, u.FirstName, u.Patronymic), u.Role, u.Email))
+            .ToList();
+    }
+
     private static TeacherResponse MapTeacher(AppUser user)
     {
         return new TeacherResponse

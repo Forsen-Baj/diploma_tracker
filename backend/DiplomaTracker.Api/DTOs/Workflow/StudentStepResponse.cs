@@ -15,4 +15,10 @@ public class StudentStepResponse
     public DateTime? LatestSubmittedAt { get; set; }
     public bool CanSubmit { get; set; }
     public string? BlockReason { get; set; }
+
+    /// Seats on the step's review panel: the supervisor plus every extra reviewer (design 2026-09-24 §3.2).
+    public int PanelSize { get; set; }
+
+    /// Seats whose approval is recorded on some version of the step.
+    public int PanelApproved { get; set; }
 }

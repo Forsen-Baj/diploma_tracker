@@ -163,8 +163,7 @@
     },
     "submission": {
       "notFound": "Роботу не знайдено.",
-      "alreadyDecided": "Рішення щодо цієї роботи вже ухвалено.",
-      "notReviewer": "Ви не є рецензентом цього студента."
+      "alreadyDecided": "Рішення щодо цієї роботи вже ухвалено."
     },
     "file": {
       "mainMissing": "Додайте основний документ.",
@@ -177,7 +176,17 @@
     "review": {
       "markRequired": "Вкажіть оцінку, щоб зарахувати.",
       "markOutOfRange": "Оцінка має бути цілим числом від 0 до 100.",
-      "commentRequired": "Напишіть коментар, щоб повернути роботу."
+      "commentRequired": "Напишіть коментар, щоб повернути роботу.",
+      "notOnPanel": "Ви не є рецензентом цього етапу.",
+      "seatSatisfied": "Ваше рішення щодо цього етапу вже враховано."
+    },
+    "panel": {
+      "reviewerInvalid": "Оберіть активного викладача або адміністратора.",
+      "reviewerIsSupervisor": "Керівник студента вже рецензує цей етап.",
+      "reviewerExists": "Ця особа вже рецензує цей етап.",
+      "reviewerNotFound": "Ця особа не є додатковим рецензентом етапу.",
+      "notAllowed": "Ви не можете змінювати рецензентів цього етапу.",
+      "changed": "Етап змінився. Оновіть сторінку й спробуйте ще раз."
     },
     "admin": {
       "notFound": "Адміністратора не знайдено.",
@@ -289,7 +298,10 @@
     "purgeConfirm": "Видалити назавжди архів групи {{code}} і {{count}} файлів? Дію не можна скасувати.",
     "purged": "Архів видалено",
     "mainFile": "Основний документ",
-    "supportingFile": "Додатковий файл"
+    "supportingFile": "Додатковий файл",
+    "reviews": "Рішення рецензентів",
+    "noReviews": "Рішень не зафіксовано.",
+    "decidedAt": "Дата рішення"
   },
   "auth": {
     "signInTitle": "Вхід",
@@ -376,8 +388,8 @@
     "topicsReserved": "Зарезервовані теми",
     "topicsApproved": "Затверджені теми",
     "latestDecision": "Останнє рішення",
-    "decisionApproved": "Затверджено",
-    "decisionReturned": "Повернено",
+    "decisionApproved": "Рішення {{name}}: затверджено · {{mark}}",
+    "decisionReturned": "Рішення {{name}}: повернено",
     "noDecisionYet": "Ваші роботи ще не оцінювали.",
     "openStep": "Відкрити етап"
   },
@@ -553,7 +565,6 @@
     "step": "Етап",
     "deadline": "Термін",
     "mark": "Оцінка",
-    "markValue": "Оцінка: {{mark}}",
     "completedAt": "Завершено",
     "student": "Студент",
     "late": "Із запізненням",
@@ -601,11 +612,28 @@
     "reviewTitle": "Рішення",
     "comment": "Коментар",
     "approve": "Зарахувати",
-    "approveConfirm": "Зарахувати етап з оцінкою {{mark}}?",
+    "approveConfirm": "Зарахувати з оцінкою {{mark}}?",
     "approved": "Етап зараховано",
     "return": "Повернути",
     "returnConfirm": "Повернути роботу на доопрацювання?",
-    "returned": "Роботу повернуто"
+    "returned": "Роботу повернуто",
+    "panelTitle": "Рецензенти",
+    "seat": { "Supervisor": "Керівник", "Extra": "Додатковий рецензент" },
+    "seatState": { "Approved": "Зараховано — {{mark}}", "Returned": "Повернуто", "Waiting": "Очікує" },
+    "noSupervisor": "Керівника не призначено",
+    "inactiveReviewer": "Деактивовано",
+    "addReviewer": "Додати рецензента",
+    "addReviewerTitle": "Додати рецензента до етапу",
+    "reviewerSearch": "Пошук за ім'ям або email",
+    "reviewerSearchEmpty": "Не знайдено викладачів чи адміністраторів.",
+    "reviewerAdded": "Рецензента додано",
+    "removeReviewer": "Прибрати рецензента",
+    "removeReviewerConfirm": "Прибрати {{name}} з рецензентів етапу? Його рішення, якщо воно є, більше не враховуватиметься.",
+    "reviewerRemoved": "Рецензента прибрано",
+    "reviewerRemovedApproved": "Рецензента прибрано; етап тепер зараховано з оцінкою {{mark}}",
+    "panelProgress": "{{approved}} з {{total}} зараховано",
+    "approvalRecorded": "Ваше рішення враховано",
+    "outcome": { "Approved": "Етап зараховано", "Returned": "Повернуто на доопрацювання" }
   },
   "review": {
     "title": "Рецензування",
@@ -616,6 +644,7 @@
     "filterOnTime": "Вчасно",
     "lateFilterLabel": "Фільтр за запізненням",
     "group": "Група",
+    "panel": "Рецензенти",
     "version": "Версія",
     "submittedAt": "Надіслано",
     "empty": "Немає робіт, що очікують рішення.",

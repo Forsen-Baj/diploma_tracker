@@ -163,8 +163,7 @@
     },
     "submission": {
       "notFound": "Submission not found.",
-      "alreadyDecided": "This submission has already been decided.",
-      "notReviewer": "You are not a reviewer of this student."
+      "alreadyDecided": "This submission has already been decided."
     },
     "file": {
       "mainMissing": "Attach the main document.",
@@ -177,7 +176,17 @@
     "review": {
       "markRequired": "Enter a mark to approve.",
       "markOutOfRange": "The mark must be a whole number from 0 to 100.",
-      "commentRequired": "Write a comment to return the work."
+      "commentRequired": "Write a comment to return the work.",
+      "notOnPanel": "You are not on this step's review panel.",
+      "seatSatisfied": "Your approval of this step is already recorded."
+    },
+    "panel": {
+      "reviewerInvalid": "Choose an active teacher or administrator.",
+      "reviewerIsSupervisor": "The student's supervisor already reviews this step.",
+      "reviewerExists": "This person already reviews this step.",
+      "reviewerNotFound": "This person is not an extra reviewer of this step.",
+      "notAllowed": "You cannot change the reviewers of this step.",
+      "changed": "The step changed. Reload and try again."
     },
     "admin": {
       "notFound": "Administrator not found.",
@@ -289,7 +298,10 @@
     "purgeConfirm": "Permanently delete the archive of {{code}} and its {{count}} files? This cannot be undone.",
     "purged": "Archive deleted",
     "mainFile": "Main document",
-    "supportingFile": "Supporting file"
+    "supportingFile": "Supporting file",
+    "reviews": "Reviews",
+    "noReviews": "No reviews were recorded.",
+    "decidedAt": "Decided"
   },
   "auth": {
     "signInTitle": "Sign in",
@@ -375,8 +387,8 @@
     "topicsReserved": "Reserved topics",
     "topicsApproved": "Approved topics",
     "latestDecision": "Most recent decision",
-    "decisionApproved": "Approved",
-    "decisionReturned": "Returned",
+    "decisionApproved": "{{name}} approved · {{mark}}",
+    "decisionReturned": "{{name}} returned",
     "noDecisionYet": "No work of yours has been decided yet.",
     "openStep": "Open the step"
   },
@@ -547,7 +559,6 @@
     "step": "Step",
     "deadline": "Deadline",
     "mark": "Mark",
-    "markValue": "Mark: {{mark}}",
     "completedAt": "Completed",
     "student": "Student",
     "late": "Late",
@@ -595,11 +606,28 @@
     "reviewTitle": "Decision",
     "comment": "Comment",
     "approve": "Approve",
-    "approveConfirm": "Approve this step with mark {{mark}}?",
+    "approveConfirm": "Approve with mark {{mark}}?",
     "approved": "Step approved",
     "return": "Return",
     "returnConfirm": "Return the work for revision?",
-    "returned": "Work returned"
+    "returned": "Work returned",
+    "panelTitle": "Reviewers",
+    "seat": { "Supervisor": "Supervisor", "Extra": "Extra reviewer" },
+    "seatState": { "Approved": "Approved — {{mark}}", "Returned": "Returned", "Waiting": "Waiting" },
+    "noSupervisor": "No supervisor",
+    "inactiveReviewer": "Deactivated",
+    "addReviewer": "Add reviewer",
+    "addReviewerTitle": "Add a reviewer to this step",
+    "reviewerSearch": "Search by name or email",
+    "reviewerSearchEmpty": "No matching teachers or administrators.",
+    "reviewerAdded": "Reviewer added",
+    "removeReviewer": "Remove reviewer",
+    "removeReviewerConfirm": "Remove {{name}} from this step's reviewers? Their approval, if any, will no longer count.",
+    "reviewerRemoved": "Reviewer removed",
+    "reviewerRemovedApproved": "Reviewer removed; the step is now approved with mark {{mark}}",
+    "panelProgress": "{{approved}} of {{total}} approved",
+    "approvalRecorded": "Your approval is recorded",
+    "outcome": { "Approved": "Step approved", "Returned": "Returned for revision" }
   },
   "review": {
     "title": "Review",
@@ -610,6 +638,7 @@
     "filterOnTime": "On time",
     "lateFilterLabel": "Filter by lateness",
     "group": "Group",
+    "panel": "Reviewers",
     "version": "Version",
     "submittedAt": "Submitted",
     "empty": "No submissions are waiting for a decision.",

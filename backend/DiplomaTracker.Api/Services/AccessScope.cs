@@ -57,4 +57,24 @@ public class AccessScope : IAccessScope
     {
         return ReviewableStudents(user).AnyAsync(s => s.Id == studentProfileId);
     }
+
+    public Task<bool> CanSeeStudentTaskAsync(UserContext user, Guid studentTaskId)
+    {
+        var task = _dbContext.StudentTasks.Where(t => t.Id == studentTaskId);
+
+        if (user.IsAdmin)
+        {
+            return task.AnyAsync();
+        }
+
+        if (!user.IsTeacher)
+        {
+            return Task.FromResult(false);
+        }
+
+        var reviewable = ReviewableStudents(user).Select(s => s.Id);
+        return task.AnyAsync(t =>
+            reviewable.Contains(t.StudentProfileId)
+            || (t.StudentProfile.ArchivedAt == null && t.Reviewers.Any(r => r.ReviewerId == user.UserId)));
+    }
 }

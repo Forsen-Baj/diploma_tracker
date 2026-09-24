@@ -407,7 +407,7 @@ async function stepIdFor(studentToken, groupTaskId) {
 const q1Step = await stepIdFor(q1.token, pastGroupTask.id)
 const q1First = await call('POST', `/api/student-tasks/${q1Step}/submissions`, { token: q1.token, form: submissionForm({ main: docx(paragraph('v1')) }) })
 const q1SubmissionId = q1First.body.timeline[0].id
-await call('POST', `/api/submissions/${q1SubmissionId}/return`, { token: queueTeacherToken, json: { comment: 'try again' } })
+await call('POST', `/api/submissions/${q1SubmissionId}/return`, { token: teacher, json: { comment: 'try again' } })
 await call('POST', `/api/student-tasks/${q1Step}/submissions`, { token: q1.token, form: submissionForm({ main: docx(paragraph('v2')) }) })
 check('28 two late submissions of one step count once', (await call('GET', `/api/students/${q1.id}/progress`, { token: admin })).body.lateSteps, 1)
 
@@ -419,14 +419,14 @@ await call('POST', `/api/student-tasks/${q3Step}/submissions`, { token: q3.token
 const q5Step = await stepIdFor(q5.token, pastGroupTask.id)
 const q5Submission = await call('POST', `/api/student-tasks/${q5Step}/submissions`, { token: q5.token, form: submissionForm({ main: docx(paragraph('v1')) }) })
 const q5SubmissionId = q5Submission.body.timeline[0].id
-const q5Decision = await call('POST', `/api/submissions/${q5SubmissionId}/approve`, { token: queueTeacherToken, json: { mark: 77 } })
+const q5Decision = await call('POST', `/api/submissions/${q5SubmissionId}/approve`, { token: teacher, json: { mark: 77 } })
 check('29-arrange: decide q5 submission', q5Decision.status, 200)
 
 // q1, q2 and q3 are the three still-pending submissions the queue and the teacher dashboard count.
-const queuePage1 = (await call('GET', `/api/review/queue?groupId=${queueGroup.id}&pageSize=2`, { token: queueTeacherToken })).body
+const queuePage1 = (await call('GET', `/api/review/queue?groupId=${queueGroup.id}&pageSize=2`, { token: teacher })).body
 check('25 queue page size', queuePage1.items.length, 2)
 check('25a queue total greater than page size', queuePage1.total > 2, true)
-const queuePage2 = (await call('GET', `/api/review/queue?groupId=${queueGroup.id}&pageSize=2&page=2`, { token: queueTeacherToken })).body
+const queuePage2 = (await call('GET', `/api/review/queue?groupId=${queueGroup.id}&pageSize=2&page=2`, { token: teacher })).body
 const page1Ids = new Set(queuePage1.items.map((i) => i.submissionId))
 check('26 page 2 has different submission ids', queuePage2.items.every((i) => !page1Ids.has(i.submissionId)) && queuePage2.items.length > 0, true)
 
@@ -440,14 +440,16 @@ check('27b step not yet due', q4FutureCell.isOverdue, false)
 const studentDashboard = (await call('GET', '/api/dashboard/student', { token: q5.token })).body
 check('29 student dashboard shows the most recent decision', studentDashboard.latestDecision?.submissionId, q5SubmissionId)
 
-const teacherDashboard = (await call('GET', '/api/dashboard/teacher', { token: queueTeacherToken })).body
-const teacherQueueTotal = (await call('GET', `/api/review/queue?groupId=${queueGroup.id}`, { token: queueTeacherToken })).body.total
+// Phase 9: a group reviewer watches and the supervisor decides, so the waiting count belongs to the
+// supervisor - the seed teacher, whose topics these students hold.
+const teacherDashboard = (await call('GET', '/api/dashboard/teacher', { token: teacher })).body
+const teacherQueueTotal = (await call('GET', '/api/review/queue', { token: teacher })).body.total
 check('30 teacher dashboard waitingReviews matches queue total', teacherDashboard.waitingReviews, teacherQueueTotal)
 check('30a teacher dashboard latestForReview capped at five', teacherDashboard.latestForReview.length <= 5, true)
 // §7.4: the group table lists the groups a teacher reviews. The seed teacher supervises the queue
 // students (their topics are hers) but does not review their group, so it is not in her table.
-check('30b reviewer sees the group in the dashboard table', teacherDashboard.groups.some((g) => g.groupId === queueGroup.id), true)
-check('30c a supervisor who does not review it does not', (await call('GET', '/api/dashboard/teacher', { token: teacher })).body.groups.some((g) => g.groupId === queueGroup.id), false)
+check('30b reviewer sees the group in the dashboard table', (await call('GET', '/api/dashboard/teacher', { token: queueTeacherToken })).body.groups.some((g) => g.groupId === queueGroup.id), true)
+check('30c a supervisor who does not review it does not', teacherDashboard.groups.some((g) => g.groupId === queueGroup.id), false)
 
 const adminDashboard = (await call('GET', '/api/dashboard/admin', { token: admin })).body
 const ts = adminDashboard.topicSelection

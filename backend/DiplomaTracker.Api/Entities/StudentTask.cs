@@ -14,4 +14,5 @@ public class StudentTask
     public StudentProfile StudentProfile { get; set; } = null!;
     public GroupTask GroupTask { get; set; } = null!;
     public ICollection<Submission> Submissions { get; set; } = new List<Submission>();
+    public ICollection<StudentTaskReviewer> Reviewers { get; set; } = new List<StudentTaskReviewer>();
 }

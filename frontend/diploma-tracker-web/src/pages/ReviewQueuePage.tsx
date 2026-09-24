@@ -101,6 +101,7 @@ export function ReviewQueuePage() {
     { key: 'student', header: t('steps.student'), render: (item) => item.studentName },
     { key: 'group', header: t('review.group'), render: (item) => item.groupCode },
     { key: 'step', header: t('steps.step'), render: (item) => `${item.stepOrder}. ${item.stepTitle}` },
+    { key: 'panel', header: t('review.panel'), render: (item) => t('review.approvedOf', { approved: item.panelApproved, total: item.panelSize }) },
     { key: 'version', header: t('review.version'), render: (item) => item.version },
     { key: 'submittedAt', header: t('review.submittedAt'), render: (item) => dateTimeFormat.format(new Date(item.submittedAt)) },
     {
