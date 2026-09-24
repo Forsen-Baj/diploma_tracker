@@ -310,6 +310,30 @@ export function TaskTemplatesPage() {
     }
   }
 
+  const actionsColumn: DataTableColumn<TaskTemplate> = {
+    key: 'actions',
+    header: t('common.actions'),
+    render: (template) => (
+      <div className="flex items-center gap-1">
+        <Button variant="ghost" size="sm" icon={Pencil} aria-label={t('common.edit')} onClick={() => openEditTemplate(template)} />
+        {template.isActive ? (
+          <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('taskTemplates.deactivate')} onClick={() => setDeactivatingTemplate(template)} />
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={RotateCcw}
+            aria-label={t('taskTemplates.activate')}
+            loading={activatingTemplateId === template.id}
+            onClick={() => void handleActivate(template)}
+          />
+        )}
+      </div>
+    )
+  }
+
+  // A teacher can only look: no create button, no edit/delete/activate actions, no reorder
+  // controls or drag-and-drop. The server already refuses every write but Admin.
   const templateColumns: DataTableColumn<TaskTemplate>[] = [
     ...(isAdmin ? [reorderColumn] : []),
     { key: 'order', header: t('taskTemplates.order'), render: (template) => template.order },
@@ -328,34 +352,14 @@ export function TaskTemplatesPage() {
       header: t('common.status'),
       render: (template) => <Badge tone={template.isActive ? 'success' : 'neutral'}>{template.isActive ? t('common.active') : t('common.inactive')}</Badge>
     },
-    {
-      key: 'actions',
-      header: t('common.actions'),
-      render: (template) => (
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" icon={Pencil} aria-label={t('common.edit')} onClick={() => openEditTemplate(template)} />
-          {template.isActive ? (
-            <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('taskTemplates.deactivate')} onClick={() => setDeactivatingTemplate(template)} />
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={RotateCcw}
-              aria-label={t('taskTemplates.activate')}
-              loading={activatingTemplateId === template.id}
-              onClick={() => void handleActivate(template)}
-            />
-          )}
-        </div>
-      )
-    }
+    ...(isAdmin ? [actionsColumn] : [])
   ]
 
   return (
     <>
       <PageHeader
         title={t('taskTemplates.title')}
-        actions={<Button icon={Plus} onClick={openCreateTemplate} disabled={!selectedFacultyId}>{t('taskTemplates.add')}</Button>}
+        actions={isAdmin ? <Button icon={Plus} onClick={openCreateTemplate} disabled={!selectedFacultyId}>{t('taskTemplates.add')}</Button> : undefined}
       />
 
       <Card className="mb-6">

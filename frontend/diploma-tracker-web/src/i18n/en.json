@@ -656,7 +656,9 @@
     "approved": "Steps approved",
     "averageMark": "Average mark",
     "lateSteps": "Late steps",
-    "nextDeadline": "Next deadline"
+    "nextDeadline": "Next deadline",
+    "myStudents": "My students",
+    "otherStudents": "Other students"
   },
   "admins": {
     "title": "Administrators",

@@ -521,6 +521,7 @@ export type GroupProgress = {
   students: {
     studentProfileId: string
     name: string
+    canOpen: boolean
     cells: {
       groupTaskId: string
       studentTaskId: string
@@ -528,6 +529,8 @@ export type GroupProgress = {
       mark: number | null
       isLate: boolean
       isOverdue: boolean
+      panelApproved: number | null
+      panelSize: number | null
     }[]
   }[]
 }

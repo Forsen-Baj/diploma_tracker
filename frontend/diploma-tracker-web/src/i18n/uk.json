@@ -662,7 +662,9 @@
     "approved": "Зараховано етапів",
     "averageMark": "Середня оцінка",
     "lateSteps": "Етапів із запізненням",
-    "nextDeadline": "Найближчий термін"
+    "nextDeadline": "Найближчий термін",
+    "myStudents": "Мої студенти",
+    "otherStudents": "Інші студенти"
   },
   "admins": {
     "title": "Адміністратори",

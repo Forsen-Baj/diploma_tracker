@@ -448,6 +448,18 @@ public class StudentWorkflowService : IStudentWorkflowService
 
         var byStudent = tasks.ToLookup(t => t.StudentProfileId);
 
+        // Design 2026-09-24: a row is openable for an administrator, a reviewer of the group (both
+        // already give every student here via `ReviewableStudents`), or the student's own
+        // supervisor. Computed once for the whole group, not per student.
+        var reviewableIds = (await _accessScope.ReviewableStudents(user)
+            .Where(s => studentIds.Contains(s.Id))
+            .Select(s => s.Id)
+            .ToListAsync())
+            .ToHashSet();
+
+        var submittedTaskIds = tasks.Where(t => t.Status == StudentTaskStatus.Submitted).Select(t => t.Id).ToList();
+        var panelFacts = await LoadPanelFactsAsync(submittedTaskIds);
+
         return (new GroupProgressResponse
         {
             GroupId = group.Id,
@@ -464,17 +476,26 @@ public class StudentWorkflowService : IStudentWorkflowService
             {
                 StudentProfileId = student.Id,
                 Name = PersonName.Full(student.User),
+                CanOpen = reviewableIds.Contains(student.Id),
                 Cells = groupTasks
                     .Select(gt => byStudent[student.Id].FirstOrDefault(t => t.GroupTaskId == gt.Id))
                     .Where(t => t is not null)
-                    .Select(t => new GroupProgressCell
+                    .Select(t =>
                     {
-                        GroupTaskId = t!.GroupTaskId,
-                        StudentTaskId = t.Id,
-                        Status = t.Status.ToString(),
-                        Mark = t.Mark,
-                        IsLate = t.LatestLate ?? false,
-                        IsOverdue = IsOverdue(t.Status, t.Deadline, now)
+                        var panel = t!.Status == StudentTaskStatus.Submitted && panelFacts.TryGetValue(t.Id, out var fact)
+                            ? fact.Evaluate()
+                            : null;
+                        return new GroupProgressCell
+                        {
+                            GroupTaskId = t.GroupTaskId,
+                            StudentTaskId = t.Id,
+                            Status = t.Status.ToString(),
+                            Mark = t.Mark,
+                            IsLate = t.LatestLate ?? false,
+                            IsOverdue = IsOverdue(t.Status, t.Deadline, now),
+                            PanelApproved = panel?.Satisfied,
+                            PanelSize = panel?.Size
+                        };
                     }).ToList()
             }).ToList()
         }, null);

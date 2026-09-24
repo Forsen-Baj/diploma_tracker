@@ -21,6 +21,10 @@ public class GroupProgressCell
     /// submission when it is made, so a step that was NEVER submitted cannot carry it - which is
     /// why a month-overdue step used to look exactly like one that is not due yet.
     public bool IsOverdue { get; set; }
+
+    /// The reviewer panel's progress, filled only for a `Submitted` cell (null otherwise).
+    public int? PanelApproved { get; set; }
+    public int? PanelSize { get; set; }
 }
 
 public class GroupProgressStudent
@@ -28,6 +32,12 @@ public class GroupProgressStudent
     public Guid StudentProfileId { get; set; }
     public string Name { get; set; } = string.Empty;
     public IReadOnlyList<GroupProgressCell> Cells { get; set; } = [];
+
+    /// Follow-up 2026-09-24: whether the caller can open this student's step pages
+    /// (`GET /api/student-tasks/{id}`) for steps of this group - an administrator, a reviewer of
+    /// the group, or the student's current supervisor. An extra reviewer seat on a single step
+    /// does not make the row openable.
+    public bool CanOpen { get; set; }
 }
 
 public class GroupProgressResponse
