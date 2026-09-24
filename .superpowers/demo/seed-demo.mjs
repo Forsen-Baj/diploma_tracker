@@ -293,6 +293,52 @@ async function main() {
     }
   }
 
+  console.log('Documents...')
+  const byName = (lastName) => students.find((x) => x.lastName === lastName)
+  const docForm = (fields, file) => {
+    const form = new FormData()
+    for (const [key, value] of Object.entries(fields)) if (value !== undefined) form.append(key, String(value))
+    if (file) form.append('file', new Blob([file.bytes]), file.name)
+    return form
+  }
+  const docFile = (title, paragraphs, name) => ({ bytes: docx(title, paragraphs), name })
+  const createDoc = (token, title, description, file) => call('POST', '/api/documents', { token, form: docForm({ title, description }, file) })
+  const act = async (token, id, action, fields = {}, file) => {
+    const { sequence } = await call('GET', `/api/documents/${id}`, { token })
+    return ['forward', 'done', 'versions'].includes(action)
+      ? call('POST', `/api/documents/${id}/${action}`, { token, form: docForm({ ...fields, expectedSequence: sequence }, file) })
+      : call('POST', `/api/documents/${id}/${action}`, { token, json: { ...fields, expectedSequence: sequence } })
+  }
+
+  // Бондаренко asks the supervisor to sign the topic application: waiting in Петренко's signing box.
+  const bondarenko = byName('Бондаренко')
+  const application = await createDoc(bondarenko.token, 'Заява про затвердження теми дипломної роботи', 'Прошу затвердити тему та призначити керівника.',
+    docFile('Заява', ['Прошу затвердити тему дипломної роботи та призначити керівника.'], 'zaiava_bondarenko.docx'))
+  await act(bondarenko.token, application.id, 'send', { recipientId: teachers.petrenko.id, purpose: 'Signing', comment: 'Прошу підписати заяву.' })
+
+  // Лисенко's assignment sheet: signed by the supervisor, then by the head of department - completed.
+  const lysenko = byName('Лисенко')
+  const assignment = await createDoc(lysenko.token, 'Завдання на дипломну роботу', 'Потребує підписів керівника та завідувача кафедри.',
+    docFile('Завдання на дипломну роботу', ['Тема, вихідні дані, зміст пояснювальної записки, календарний план.'], 'zavdannia_lysenko.docx'))
+  await act(lysenko.token, assignment.id, 'send', { recipientId: teachers.kovalenko.id, purpose: 'Signing', comment: 'Підпишіть, будь ласка.' })
+  await act(teachers.kovalenko.token, assignment.id, 'forward', { recipientId: teachers.petrenko.id, purpose: 'Signing', comment: 'Підписано керівником, передаю завідувачу кафедри.' },
+    docFile('Завдання на дипломну роботу (підписано керівником)', ['Підпис керівника: Коваленко А. М.'], 'zavdannia_pidpys_kerivnyka.docx'))
+  await act(teachers.petrenko.token, assignment.id, 'done', { comment: 'Затверджено.' },
+    docFile('Завдання на дипломну роботу (затверджено)', ['Підписи керівника та завідувача кафедри.'], 'zavdannia_zatverdzheno.docx'))
+
+  // Мельник's request is sent back with a remark: the owner sees why.
+  const melnyk = byName('Мельник')
+  const request = await createDoc(melnyk.token, 'Заява про перенесення терміну етапу', undefined,
+    docFile('Заява', ['Прошу перенести термін подання етапу через хворобу.'], 'zaiava_melnyk.docx'))
+  await act(melnyk.token, request.id, 'send', { recipientId: teachers.kovalenko.id, purpose: 'Review' })
+  await act(teachers.kovalenko.token, request.id, 'reject', { comment: 'Додайте довідку та нову дату.' })
+
+  // A department minute: Петренко asks Коваленко to review; he passes it to Шевчук for signing.
+  const minute = await createDoc(teachers.petrenko.token, 'Протокол засідання кафедри № 3', 'Затвердження тем дипломних робіт.',
+    docFile('Протокол засідання кафедри № 3', ['Слухали: про затвердження тем дипломних робіт.', 'Ухвалили: затвердити.'], 'protokol_3.docx'))
+  await act(teachers.petrenko.token, minute.id, 'send', { recipientId: teachers.kovalenko.id, purpose: 'Review', comment: 'Перевірте формулювання.' })
+  await act(teachers.kovalenko.token, minute.id, 'forward', { recipientId: teachers.shevchuk.id, purpose: 'Signing', comment: 'Зауважень немає, прошу підписати як секретаря.' })
+
   console.log('Last year\'s group goes to the archive...')
   await call('POST', `/api/groups/${groups.ip11.id}/students/archive`, { token: admin })
   await call('DELETE', `/api/groups/${groups.ip11.id}`, { token: admin })

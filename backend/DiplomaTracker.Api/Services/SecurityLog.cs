@@ -99,4 +99,10 @@ public static class SecurityLog
         logger.LogWarning(
             "Archive purged: AdministratorId={AdministratorId}, ArchivedGroupId={ArchivedGroupId}, FileCount={FileCount}, Bytes={Bytes}",
             administratorId, archivedGroupId, fileCount, bytes);
+
+    /// Action is Created, VersionAdded, Updated, Sent, Forwarded, Rejected, Done, Recalled, Deleted or Downloaded.
+    public static void DocumentAction(ILogger logger, Guid actorUserId, string action, Guid documentId) =>
+        logger.LogInformation(
+            "Document action: ActorUserId={ActorUserId}, Action={Action}, DocumentId={DocumentId}",
+            actorUserId, action, documentId);
 }

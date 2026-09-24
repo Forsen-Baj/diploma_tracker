@@ -454,3 +454,54 @@ its review completes.
 - Archive: `ArchivedReview` rows copied once across two archiving events (`SourceReviewId` dedupe); `ArchivedFile.Mark` is the step mark on the approving version only; purging deletes the reviews. Group deletion cascades `StudentTaskReviewer` and `SubmissionReview` rows away while the referenced staff users remain.
 - Staff search: `%`, `_` and `[` escaped; terms over 100 characters cut; inactive users and students excluded; at most 20 results.
 - Frontend: a 409 refreshes the step; `canDecide` hides the decision form for a satisfied seat; `canManagePanel` hides add and remove for extras and students; the "1 of 3" text in *My work* and the queue; the Add reviewer dialog drops a selection the list no longer shows.
+
+## Phase 10 — Document routing
+
+- `DocumentRules.SignedCopyMissing`: only on a signing turn; a version added before the current hand-off does not count; one added by someone else does not count.
+- `DocumentRules.RejectCandidates`: excludes the holder; default is the hand-off's actor, else the owner; a document forwarded to its owner offers only earlier holders.
+- `DocumentRules.LastPurposeOf`: the purpose of the latest hand-off to that person; Review when none.
+- Writes: each refused on a stale `expectedSequence`; recipient rules (student → student refused, archived student refused, self refused); delete refused once sent; owner edit only while `WithOwner`; version upload allowed to the holder and to the owner while `WithOwner`/`Completed`.
+- Concurrency: two holders' writes on the same sequence yield one success and one `document.changed`; the files stored by the loser are deleted.
+- Visibility: a non-participant (administrators included) gets `document.notFound` for the document and its versions.
+- Account deletion (needs SQL Server or SQLite - InMemory cannot run `ExecuteDelete`): own documents and blobs removed after commit; held documents returned with a `Recalled` event with no actor id; ids nulled, names kept.
+- Frontend: default section chooses review, then signing, then mine; the badge keeps its last value on a failed read.
+
+From the whole-phase review:
+
+Behaviours the check script does not cover yet:
+
+1. **Recipient rules:** sending to an archived student is refused, and sending to yourself is
+   refused (both give `document.recipientInvalid`). A deactivated teacher is refused.
+2. **The concurrency race:** two writes with the same `expectedSequence`, fired in parallel,
+   give one 200 and one `document.changed`, and the loser's stored blob is gone from
+   `App_Data`.
+3. **Version rights:** the owner cannot add a version while someone else holds the document
+   (`document.notHolder`). The owner can add one while the document is `Completed`. A
+   non-holder participant is refused.
+4. **Edit:** refused for a non-owner (`document.notOwner`) and outside `WithOwner`
+   (`document.wrongState`).
+5. **Recall:** refused while `WithOwner`/`Completed`, and refused when the owner is the holder
+   (forwarded back to the owner).
+6. **Forward and Done with a file in the same request** satisfy the signing rule, and the version
+   count goes up by one.
+7. **A file error on Forward/Done:** a bad file with a valid recipient gives `file.*`, and
+   nothing is stored.
+8. **Reject:** a deactivated earlier participant is not offered as a target, the owner is
+   always offered, and rejecting to a non-owner restores that person's last purpose (the
+   Signing case).
+9. **An administrator is not a participant:** an admin gets `document.notFound` for someone
+   else's document, and the version download returns 404.
+10. **Account deletion:** the blobs of the deleted student's own documents are removed from
+    storage after the commit. The `UploadedById`, `ActorId` and `RecipientId` of the removed
+    account are null while the names are kept (check this for a *version* the student uploaded
+    to someone else's document).
+11. **Download content type:** an image version is served as `application/octet-stream`, and the
+    `.pdf`/`.docx` types are served as themselves.
+12. **Unit candidates for `DocumentRules`** (pure, cheap): `SignedCopyMissing` across
+    Sent → VersionAdded → Rejected → back; `RejectCandidates` with a repeated recipient, a
+    deleted recipient (null id) and an owner who holds the document; `LastPurposeOf` falling
+    back to `Review`.
+13. **Frontend:** stale-view handling in the dialogs, the badge keeping its
+    value when `/counts` fails, and the default section choice in `DocumentsPage`.
+
+---

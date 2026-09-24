@@ -124,6 +124,7 @@ export type GroupDeletionPreview = {
   activeStudentCount: number
   archivedStudentCount: number
   fileCount: number
+  documentCount: number
 }
 
 export type GroupReviewer = {
@@ -748,4 +749,89 @@ export type ArchiveUsage = {
   groupCount: number
   fileCount: number
   totalSizeBytes: number
+}
+
+export type DocumentState = 'WithOwner' | 'InCirculation' | 'Completed'
+export type DocumentPurpose = 'Review' | 'Signing'
+export type DocumentBoxName = 'review' | 'signing' | 'mine' | 'handled'
+export type DocumentEventKind = 'Created' | 'VersionAdded' | 'Sent' | 'Forwarded' | 'Done' | 'Rejected' | 'Recalled'
+
+export type DocumentListItem = {
+  id: string
+  title: string
+  ownerName: string
+  state: DocumentState
+  purpose: DocumentPurpose | null
+  holderName: string | null
+  fromName: string | null
+  comment: string | null
+  since: string | null
+  updatedAt: string
+  isRejected: boolean
+}
+
+export type DocumentCounts = {
+  review: number
+  signing: number
+}
+
+export type DocumentVersion = {
+  id: string
+  number: number
+  uploadedByName: string
+  originalName: string
+  sizeBytes: number
+  uploadedAt: string
+}
+
+export type DocumentEvent = {
+  sequence: number
+  kind: DocumentEventKind
+  actorName: string
+  actorRemoved: boolean
+  recipientName: string | null
+  purpose: DocumentPurpose | null
+  comment: string | null
+  versionNumber: number | null
+  at: string
+}
+
+export type DocumentPerson = {
+  id: string
+  name: string
+  isDefault: boolean
+}
+
+export type DocumentDetails = {
+  id: string
+  title: string
+  description: string | null
+  ownerName: string
+  isOwner: boolean
+  state: DocumentState
+  purpose: DocumentPurpose | null
+  holderName: string | null
+  isHolder: boolean
+  sequence: number
+  completedByName: string | null
+  rejection: { fromName: string; comment: string | null; at: string } | null
+  versions: DocumentVersion[]
+  events: DocumentEvent[]
+  canEdit: boolean
+  canDelete: boolean
+  canSend: boolean
+  canAddVersion: boolean
+  canForward: boolean
+  canReject: boolean
+  canDone: boolean
+  canRecall: boolean
+  signedCopyRequired: boolean
+  rejectTargets: DocumentPerson[]
+}
+
+export type DocumentRecipient = {
+  id: string
+  name: string
+  role: 'Admin' | 'Teacher' | 'Student'
+  groupCode: string | null
 }

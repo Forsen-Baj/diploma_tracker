@@ -133,6 +133,15 @@ public static class SubmissionFileRules
             : "application/octet-stream";
     }
 
+    /// Design 2026-09-24 §4.4: a routed document's version is stored with the type its extension
+    /// names. Only the three document formats are served as themselves; an image is served as
+    /// application/octet-stream, exactly as a supporting file is.
+    public static string DocumentContentType(string fileName)
+    {
+        var (_, extension) = Normalize(fileName);
+        return AllowedContentTypes.TryGetValue(extension, out var contentType) ? contentType : "application/octet-stream";
+    }
+
     public static string SafeOriginalName(string fileName)
     {
         var (name, _) = Normalize(fileName);

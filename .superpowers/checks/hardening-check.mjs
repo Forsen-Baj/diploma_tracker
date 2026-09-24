@@ -345,7 +345,7 @@ const moverP = await submitInMoveA('P')
 await call('PUT', `/api/students/${moverP.id}/group`, { token: admin, json: { groupId: moveB.id } })
 await call('POST', '/api/students/archive', { token: admin, json: { studentIds: [moverP.id] } })
 const previewB = (await call('GET', `/api/groups/${moveB.id}/deletion-preview`, { token: admin })).body
-check('24b preview names the archived account and its earlier work', JSON.stringify(previewB), JSON.stringify({ activeStudentCount: 0, archivedStudentCount: 1, fileCount: 1 }))
+check('24b preview names the archived account and its earlier work', JSON.stringify(previewB), JSON.stringify({ activeStudentCount: 0, archivedStudentCount: 1, fileCount: 1, documentCount: 0 }))
 check('24c deleting that group succeeds', (await call('DELETE', `/api/groups/${moveB.id}`, { token: admin })).status, 204)
 check('24d the earlier group\'s work is in the deleted group\'s archive', await archiveCount(moveB), 1)
 
@@ -353,7 +353,7 @@ check('24d the earlier group\'s work is in the deleted group\'s archive', await 
 const moverR = await submitInMoveA('R')
 await call('PUT', `/api/students/${moverR.id}/group`, { token: admin, json: { groupId: moveC.id } })
 const previewA = (await call('GET', `/api/groups/${moveA.id}/deletion-preview`, { token: admin })).body
-check('24e preview of the old group counts the moved student\'s work', JSON.stringify(previewA), JSON.stringify({ activeStudentCount: 0, archivedStudentCount: 0, fileCount: 1 }))
+check('24e preview of the old group counts the moved student\'s work', JSON.stringify(previewA), JSON.stringify({ activeStudentCount: 0, archivedStudentCount: 0, fileCount: 1, documentCount: 0 }))
 check('24f deleting the old group succeeds', (await call('DELETE', `/api/groups/${moveA.id}`, { token: admin })).status, 204)
 check('24g the moved student\'s old work is archived', await archiveCount(moveA), 1)
 check('24h the moved student still signs in', (await login(moverR.email, 'Password1!')).status, 200)

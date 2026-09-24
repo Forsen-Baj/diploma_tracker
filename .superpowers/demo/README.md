@@ -76,3 +76,10 @@ A student can submit work only while holding an approved topic, so every student
 - Мельник Дмитро, step 1: Петренко (extra) approved version 1, the supervisor Коваленко returned it, and version 2 completed the panel. The mark is the average, 87. Петренко's approval of version 1 still counted.
 - Лисенко Катерина, step 2: approved by Коваленко (92) and Шевчук (89), mark 91. Step 3 waits for Петренко and Шевчук after Коваленко's approval ("1 of 3").
 - A group's reviewer (for ІП-21, Петренко) sees the group's progress and every step page, and can add extra reviewers, but decides only where they sit on the panel.
+
+### Documents
+
+- Петренко: *For signing* holds Бондаренко's topic application; the navigation shows a badge.
+- Лисенко: *My documents* shows the assignment sheet **Completed**. Its history reads: sent to Коваленко for signing, passed to Петренко with the signed copy, marked done with the final version.
+- Мельник: *My documents* shows the request sent back by Коваленко with the remark at the top.
+- Шевчук: *For signing* holds the department minute, which came via Коваленко's review.

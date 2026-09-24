@@ -30,6 +30,9 @@ public class AppDbContext : DbContext
     public DbSet<ArchivedGroupReviewer> ArchivedGroupReviewers => Set<ArchivedGroupReviewer>();
     public DbSet<ArchivedFile> ArchivedFiles => Set<ArchivedFile>();
     public DbSet<ArchivedReview> ArchivedReviews => Set<ArchivedReview>();
+    public DbSet<RoutedDocument> RoutedDocuments => Set<RoutedDocument>();
+    public DbSet<DocumentVersion> DocumentVersions => Set<DocumentVersion>();
+    public DbSet<DocumentEvent> DocumentEvents => Set<DocumentEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -417,5 +420,78 @@ public class AppDbContext : DbContext
             .WithMany(x => x.Reviews)
             .HasForeignKey(x => x.ArchivedGroupId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        var routedDocument = modelBuilder.Entity<RoutedDocument>();
+        routedDocument.ToTable("RoutedDocuments");
+        routedDocument.HasKey(x => x.Id);
+        routedDocument.Property(x => x.Title).HasMaxLength(200).IsRequired();
+        routedDocument.Property(x => x.Description).HasMaxLength(2000);
+        routedDocument.Property(x => x.State).HasConversion<string>().HasMaxLength(50).IsRequired();
+        routedDocument.Property(x => x.Purpose).HasConversion<string>().HasMaxLength(50);
+        routedDocument.Property(x => x.CreatedAt).IsRequired();
+        routedDocument.Property(x => x.UpdatedAt).IsRequired();
+        routedDocument.Property(x => x.RowVersion).IsRowVersion();
+        routedDocument.HasIndex(x => new { x.HolderId, x.State, x.Purpose });
+        routedDocument.HasIndex(x => x.OwnerId);
+        routedDocument.HasOne(x => x.Owner)
+            .WithMany()
+            .HasForeignKey(x => x.OwnerId)
+            .OnDelete(DeleteBehavior.Restrict);
+        routedDocument.HasOne(x => x.Holder)
+            .WithMany()
+            .HasForeignKey(x => x.HolderId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        var documentVersion = modelBuilder.Entity<DocumentVersion>();
+        documentVersion.ToTable("DocumentVersions");
+        documentVersion.HasKey(x => x.Id);
+        // Last + first + patronymic, each up to 100 characters, plus two separating spaces: 302.
+        documentVersion.Property(x => x.UploadedByName).HasMaxLength(302).IsRequired();
+        documentVersion.Property(x => x.OriginalName).HasMaxLength(255).IsRequired();
+        documentVersion.Property(x => x.StorageKey).HasMaxLength(300).IsRequired();
+        documentVersion.Property(x => x.ContentType).HasMaxLength(200).IsRequired();
+        documentVersion.Property(x => x.UploadedAt).IsRequired();
+        documentVersion.HasIndex(x => new { x.DocumentId, x.Number }).IsUnique();
+        documentVersion.HasIndex(x => x.UploadedById);
+        documentVersion.HasOne(x => x.Document)
+            .WithMany(x => x.Versions)
+            .HasForeignKey(x => x.DocumentId)
+            .OnDelete(DeleteBehavior.Cascade);
+        // No database action: SQL Server refuses a second cascading path from Users, so the
+        // account-deletion path nulls these ids itself (DocumentService.ReleaseForDeletedAccountsAsync).
+        documentVersion.HasOne<AppUser>()
+            .WithMany()
+            .HasForeignKey(x => x.UploadedById)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.ClientSetNull);
+
+        var documentEvent = modelBuilder.Entity<DocumentEvent>();
+        documentEvent.ToTable("DocumentEvents");
+        documentEvent.HasKey(x => x.Id);
+        documentEvent.Property(x => x.Kind).HasConversion<string>().HasMaxLength(50).IsRequired();
+        documentEvent.Property(x => x.Purpose).HasConversion<string>().HasMaxLength(50);
+        documentEvent.Property(x => x.ActorName).HasMaxLength(302).IsRequired();
+        documentEvent.Property(x => x.RecipientName).HasMaxLength(302);
+        documentEvent.Property(x => x.Comment).HasMaxLength(2000);
+        documentEvent.Property(x => x.At).IsRequired();
+        // One line per number: two writers who both read sequence 7 cannot both write 8.
+        documentEvent.HasIndex(x => new { x.DocumentId, x.Sequence }).IsUnique();
+        documentEvent.HasIndex(x => x.ActorId);
+        documentEvent.HasIndex(x => x.RecipientId);
+        documentEvent.HasOne(x => x.Document)
+            .WithMany(x => x.Events)
+            .HasForeignKey(x => x.DocumentId)
+            .OnDelete(DeleteBehavior.Cascade);
+        documentEvent.HasOne<AppUser>()
+            .WithMany()
+            .HasForeignKey(x => x.ActorId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.ClientSetNull);
+        documentEvent.HasOne<AppUser>()
+            .WithMany()
+            .HasForeignKey(x => x.RecipientId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.ClientSetNull);
     }
 }

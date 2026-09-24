@@ -7,6 +7,8 @@ export type Role = CurrentUser['role']
 export type NavItem = {
   to: string
   labelKey: NavLabelKey
+  /** Shows the number of documents waiting for the signed-in user. */
+  badge?: 'documents'
 }
 
 export const dashboardRouteByRole: Record<Role, string> = {
@@ -24,7 +26,7 @@ export const navigationByRole: Record<Role, NavItem[]> = {
     { to: '/admin/students', labelKey: 'nav.students' },
     { to: '/admin/teachers', labelKey: 'nav.teachers' },
     { to: '/admin/topics', labelKey: 'nav.topics' },
-    { to: '/documents', labelKey: 'nav.documents' },
+    { to: '/documents', labelKey: 'nav.documents', badge: 'documents' },
     { to: '/archive', labelKey: 'nav.archive' },
     { to: '/task-templates', labelKey: 'nav.taskTemplates' },
     { to: '/admins', labelKey: 'nav.admins' },
@@ -35,7 +37,7 @@ export const navigationByRole: Record<Role, NavItem[]> = {
     { to: '/review', labelKey: 'nav.review' },
     { to: '/teacher/groups', labelKey: 'nav.groups' },
     { to: '/teacher/topics', labelKey: 'nav.myTopics' },
-    { to: '/documents', labelKey: 'nav.documents' },
+    { to: '/documents', labelKey: 'nav.documents', badge: 'documents' },
     { to: '/archive', labelKey: 'nav.archive' },
     { to: '/task-templates', labelKey: 'nav.taskTemplates' }
   ],
@@ -43,6 +45,6 @@ export const navigationByRole: Record<Role, NavItem[]> = {
     { to: '/student/dashboard', labelKey: 'nav.dashboard' },
     { to: '/student/topics', labelKey: 'nav.topics' },
     { to: '/student/tasks', labelKey: 'nav.myTasks' },
-    { to: '/documents', labelKey: 'nav.documents' }
+    { to: '/documents', labelKey: 'nav.documents', badge: 'documents' }
   ]
 }

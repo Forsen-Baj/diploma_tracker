@@ -26,7 +26,8 @@ public static class ErrorCatalog
             TopicErrors.All,
             WorkflowErrors.All,
             TemplateErrors.All,
-            ArchiveErrors.All
+            ArchiveErrors.All,
+            DocumentErrors.All
         ];
 
         var definitions = new Dictionary<string, ErrorDefinition>(StringComparer.Ordinal);

@@ -43,7 +43,9 @@
     "language": "Language",
     "review": "Review",
     "documents": "Documents",
-    "archive": "Archive"
+    "archive": "Archive",
+    "documentsWaiting_one": "{{count}} document waits for you",
+    "documentsWaiting_other": "{{count}} documents wait for you"
   },
   "roles": {
     "Admin": "Administrator",
@@ -255,6 +257,18 @@
     },
     "archive": {
       "notFound": "Archived item not found."
+    },
+    "document": {
+      "notFound": "Document not found.",
+      "notHolder": "Only the person who holds the document can do this.",
+      "notOwner": "Only the document's owner can do this.",
+      "wrongState": "This action does not fit the document's current state.",
+      "signedCopyRequired": "Upload the signed copy first.",
+      "recipientInvalid": "You cannot send the document to this person.",
+      "rejectTargetInvalid": "The document can go back only to someone who worked on it before.",
+      "alreadySent": "A document that has been sent cannot be deleted.",
+      "changed": "Someone acted on this document first. Reload and try again.",
+      "fileMissing": "Attach a file."
     }
   },
   "pagination": {
@@ -422,6 +436,8 @@
     "deleteAccounts_other": "The accounts of {{count}} archived students will also be deleted.",
     "deleteFiles_one": "{{count}} file will be archived.",
     "deleteFiles_other": "{{count}} files will be archived.",
+    "deleteDocuments_one": "{{count}} document owned by these students will be deleted.",
+    "deleteDocuments_other": "{{count}} documents owned by these students will be deleted.",
     "code": "Group code",
     "academicYear": "Academic year",
     "academicYearHint": "Digits and / \\ - . only (for example, 2026/2027)",
@@ -782,8 +798,95 @@
     "deadlineSaved": "Deadline saved",
     "deadlineCleared": "Deadline cleared"
   },
-  "templates": {
+  "documents": {
     "title": "Documents",
+    "subtitle": "Documents you keep, review and sign, and the templates you can fill in.",
+    "sectionsLabel": "Document sections",
+    "sections": { "review": "For review", "signing": "For signing", "mine": "My documents", "templates": "Templates" },
+    "mineSwitchLabel": "Which documents",
+    "mineSwitch": { "mine": "Mine", "handled": "Handled by me" },
+    "new": "New document",
+    "newTitle": "New document",
+    "fields": {
+      "title": "Title",
+      "description": "Description",
+      "file": "File",
+      "fileHint": ".pdf, .docx, .pptx, .png or .jpg, up to 20 MB",
+      "signedCopy": "Signed copy",
+      "signedCopyHint": "The signed document: a scan, or the file signed with an e-signature.",
+      "comment": "Comment",
+      "recipient": "Recipient",
+      "purpose": "Purpose",
+      "target": "Send back to"
+    },
+    "columns": { "title": "Title", "owner": "Owner", "from": "From", "since": "Since", "comment": "Comment", "state": "State", "holder": "With", "updatedAt": "Last activity" },
+    "empty": {
+      "review": "Nothing waits for your review.",
+      "signing": "Nothing waits for your signature.",
+      "mine": "You have no documents yet.",
+      "handled": "You have not handled anyone else's documents yet."
+    },
+    "state": { "WithOwner": "With the owner", "InCirculation": "In circulation", "Completed": "Completed" },
+    "purpose": { "Review": "Review", "Signing": "Signing" },
+    "purposeFor": { "Review": "for review", "Signing": "for signing" },
+    "rejectedBadge": "Sent back to you",
+    "owner": "Owner",
+    "holder": "With",
+    "completedBy": "Completed — done by {{name}}",
+    "versions": "Versions",
+    "version": "Version {{number}}",
+    "timeline": "History",
+    "back": "Back to documents",
+    "rejectedTitle": "Sent back to you by {{name}}",
+    "signedCopyNeeded": "You received this document for signing: upload the signed copy when you pass it on or mark it as done.",
+    "actions": {
+      "title": "Actions",
+      "send": "Send",
+      "forward": "Pass on",
+      "reject": "Send back",
+      "done": "Mark as done",
+      "version": "Upload new version",
+      "edit": "Edit",
+      "recall": "Take back",
+      "delete": "Delete"
+    },
+    "dialog": {
+      "send": "Send the document",
+      "forward": "Pass the document on",
+      "reject": "Send the document back",
+      "done": "Mark the document as done",
+      "version": "Upload a new version",
+      "edit": "Edit the document"
+    },
+    "toasts": {
+      "created": "Document created",
+      "send": "Document sent",
+      "forward": "Document passed on",
+      "reject": "Document sent back",
+      "done": "Document marked as done",
+      "version": "New version uploaded",
+      "edit": "Document saved",
+      "recalled": "Document taken back",
+      "deleted": "Document deleted"
+    },
+    "recallConfirm": "Take the document back from {{name}}?",
+    "deleteConfirm": "Delete \"{{title}}\"? This cannot be undone.",
+    "recipientSearch": "Search by name or email",
+    "recipientEmpty": "Nobody matches.",
+    "fileChanged": "The file changed on disk after you chose it. Choose it again.",
+    "events": {
+      "Created": "{{actor}} created the document",
+      "VersionAdded": "{{actor}} uploaded version {{version}}",
+      "Sent": "{{actor}} sent it to {{recipient}} {{purpose}}",
+      "Forwarded": "{{actor}} passed it to {{recipient}} {{purpose}}",
+      "Rejected": "{{actor}} sent it back to {{recipient}}",
+      "Done": "{{actor}} marked it as done",
+      "Recalled": "{{actor}} took it back",
+      "RecalledRemoved": "It returned to the owner because {{actor}}'s account was removed"
+    }
+  },
+  "templates": {
+    "title": "Templates",
     "subtitle": "Application and form templates; downloaded documents are filled with your data.",
     "add": "Add template",
     "edit": "Edit template",
