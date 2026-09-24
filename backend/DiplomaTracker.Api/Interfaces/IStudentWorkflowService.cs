@@ -1,3 +1,4 @@
+using DiplomaTracker.Api.DTOs.Dashboard;
 using DiplomaTracker.Api.DTOs.Workflow;
 using DiplomaTracker.Api.Models;
 using DiplomaTracker.Api.Services;
@@ -13,6 +14,7 @@ public interface IStudentWorkflowService
     Task<(StepDetailsResponse? step, string? error)> ReturnAsync(UserContext user, Guid submissionId, ReturnSubmissionRequest request);
     Task<(StoredFileDownload? file, string? error)> OpenFileAsync(UserContext user, Guid fileId, CancellationToken cancellationToken);
     Task<PagedResponse<ReviewQueueItem>> GetReviewQueueAsync(UserContext user, Guid? groupId, bool? late, int page, int pageSize);
+    Task<IReadOnlyList<LateAwaitingReviewRow>> GetLateAwaitingReviewAsync(UserContext user, int take);
     Task<(PagedResponse<ReviewStudentItem>? result, string? error)> GetReviewStudentsAsync(UserContext user, Guid? groupId, bool? late, string? state, int page, int pageSize);
     Task<(GroupProgressResponse? progress, string? error)> GetGroupProgressAsync(UserContext user, Guid groupId);
     Task<(StudentProgressResponse? progress, string? error)> GetStudentProgressAsync(UserContext user, Guid? studentProfileId);

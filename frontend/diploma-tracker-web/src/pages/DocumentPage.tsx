@@ -1,7 +1,7 @@
 import { ArrowLeft, Download } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { deleteDocument, downloadDocumentVersion, getDocument, recallDocument } from '../api/documentsApi'
 import { useErrorMessage } from '../api/useErrorMessage'
 import { DocumentActionDialog, type DocumentDialogMode } from '../components/documents/DocumentActionDialog'
@@ -106,19 +106,36 @@ export function DocumentPage() {
     }
   }
 
+  // Bug 7 (task 7): the back link used to sit inside PageHeader's actions slot, which places it
+  // top-right next to the title - every other detail page (ReviewStepPage, GroupDetailsPage,
+  // GroupProgressPage, ArchivedGroupPage, StudentTaskDetailsPage) renders it as a standalone link
+  // top-left, above the header, shown even while the page is loading or errored.
+  const backLink = (
+    <Link to="/documents" className="mb-4 inline-flex h-10 items-center gap-2 rounded-control bg-transparent px-4 text-sm font-medium text-accent hover:bg-surface">
+      <ArrowLeft className="size-4" aria-hidden />
+      {t('documents.back')}
+    </Link>
+  )
+
   if (isLoading && !document) {
     return (
-      <div className="flex justify-center py-10">
-        <Spinner />
-      </div>
+      <>
+        {backLink}
+        <div className="flex justify-center py-10">
+          <Spinner />
+        </div>
+      </>
     )
   }
 
   if (loadError || !document) {
     return (
-      <Card>
-        <p className="text-sm text-danger">{loadError || t('errors.server.unexpected')}</p>
-      </Card>
+      <>
+        {backLink}
+        <Card>
+          <p className="text-sm text-danger">{loadError || t('errors.server.unexpected')}</p>
+        </Card>
+      </>
     )
   }
 
@@ -134,14 +151,11 @@ export function DocumentPage() {
 
   return (
     <>
+      {backLink}
+
       <PageHeader
         title={document.title}
         description={`${t('documents.owner')}: ${document.ownerName}`}
-        actions={
-          <Button variant="secondary" icon={ArrowLeft} onClick={() => navigate('/documents')}>
-            {t('documents.back')}
-          </Button>
-        }
       />
 
       {document.rejection && (

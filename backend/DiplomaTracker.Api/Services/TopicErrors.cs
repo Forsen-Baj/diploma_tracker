@@ -20,6 +20,7 @@ public static class TopicErrors
     public const string ReservationNotYours = "reservation.notYours";
     public const string ReservationNotSupervisor = "reservation.notSupervisor";
     public const string ReservationHasSubmissions = "reservation.hasSubmissions";
+    public const string ReservationTopicHeld = "reservation.topicHeld";
     public const string SelectionClosed = "selection.closed";
     public const string StudentProfileRequired = "topic.studentProfileRequired";
 
@@ -41,6 +42,7 @@ public static class TopicErrors
         new(ReservationNotYours, StatusCodes.Status403Forbidden, "This reservation belongs to another student."),
         new(ReservationNotSupervisor, StatusCodes.Status403Forbidden, "Only the topic's supervisor can decide on this reservation."),
         new(ReservationHasSubmissions, StatusCodes.Status409Conflict, "The student has already submitted work on this topic; the topic cannot be removed."),
+        new(ReservationTopicHeld, StatusCodes.Status409Conflict, "You already have an approved topic. Ask your supervisor or an administrator to change it."),
         new(SelectionClosed, StatusCodes.Status403Forbidden, "The topic selection deadline has passed."),
         new(StudentProfileRequired, StatusCodes.Status403Forbidden, "Only students with a profile can do this.")
     ];

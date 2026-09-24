@@ -123,15 +123,15 @@ export function ReviewQueuePage() {
   }
 
   const columns: DataTableColumn<ReviewStudentItem>[] = [
+    { key: 'student', header: t('steps.student'), render: (item) => item.studentName },
     {
-      key: 'student',
-      header: t('steps.student'),
-      render: (item) => (
-        <span className="inline-flex items-center gap-2">
-          {item.studentName}
-          {item.isMyDecision && <Badge tone="info">{t('review.myDecision')}</Badge>}
-        </span>
-      )
+      // Bug 2 (task 7): the tag used to sit inline after the student's name, so it landed at a
+      // different x position on every row depending on how long the name was. Its own column
+      // gives it one fixed position, whitespace-nowrap keeps it from wrapping, and the shared
+      // td's align-middle keeps it vertically centred with the rest of the row.
+      key: 'myDecision',
+      header: <span className="sr-only">{t('review.myDecision')}</span>,
+      render: (item) => (item.isMyDecision ? <Badge tone="info">{t('review.myDecision')}</Badge> : null)
     },
     { key: 'group', header: t('review.group'), render: (item) => item.groupCode },
     {

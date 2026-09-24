@@ -28,7 +28,7 @@ public class ReservationService : IReservationService
             return (null, TopicErrors.StudentProfileRequired);
         }
 
-        var precondition = await CheckStudentMayRequestAsync(student.Id);
+        var precondition = await CheckStudentMayRequestAsync(student);
         if (precondition is not null)
         {
             return (null, precondition);
@@ -43,14 +43,10 @@ public class ReservationService : IReservationService
             return (null, TopicErrors.TopicNotFound);
         }
 
-        // Checked before the origin filter below: a student's own proposal is never in the
-        // catalogue, so filtering it out first would make this unreachable and a student
-        // "reserving" the proposal they already hold would be told it does not exist.
-        if (student.TopicId == topic.Id)
-        {
-            return (null, TopicErrors.TopicAlreadyYours);
-        }
-
+        // Review M2 (task 7 fix round 1): a "student.TopicId == topic.Id" branch used to sit here
+        // for a student reserving the topic they already hold. It is unreachable now -
+        // CheckStudentMayRequestAsync above already refuses with reservation.topicHeld the moment
+        // student.TopicId is set, for ANY topic id, before this line is ever reached.
         if (topic.Origin != TopicOrigin.Catalogue)
         {
             return (null, TopicErrors.TopicNotFound);
@@ -93,7 +89,7 @@ public class ReservationService : IReservationService
             return (null, TopicErrors.StudentProfileRequired);
         }
 
-        var precondition = await CheckStudentMayRequestAsync(student.Id);
+        var precondition = await CheckStudentMayRequestAsync(student);
         if (precondition is not null)
         {
             return (null, precondition);
@@ -480,19 +476,31 @@ public class ReservationService : IReservationService
     }
 
     /// <summary>
-    /// A student may ask for a topic whenever nothing of theirs is awaiting a decision. Already
-    /// holding an approved topic is not an obstacle — such a request is a change request, and the
-    /// selection deadline does not bind it: the deadline exists to make everyone choose
-    /// something by a date, not to freeze the choice for the rest of the year.
+    /// A student may ask for a topic whenever nothing of theirs is awaiting a decision. Task 7 bug
+    /// 9 (owner ruling, replacing the "change request" design this comment used to describe):
+    /// once a student holds an approved topic (StudentProfile.TopicId set - the single source of
+    /// truth, so this always agrees with an Approved reservation), reserve/propose are refused
+    /// outright with reservation.topicHeld instead of being filed as a competing Pending request
+    /// next to the Approved one. Only an administrator still replaces a held topic directly
+    /// (SetStudentTopicAsync via `PUT /api/students/{id}/topic`, which
+    /// `[Authorize(Roles = "Admin")]` on `StudentsController` keeps Admin-only - not a supervisor,
+    /// review M7); an already-pending change request may still be decided or cancelled - this only
+    /// blocks filing a new one. Below that, unchanged: nothing of theirs may already be pending,
+    /// and the selection deadline still binds a first request the normal way.
     /// </summary>
-    private async Task<string?> CheckStudentMayRequestAsync(Guid studentProfileId)
+    private async Task<string?> CheckStudentMayRequestAsync(StudentProfile student)
     {
-        if (await HasPendingReservationAsync(studentProfileId))
+        if (student.TopicId is not null)
+        {
+            return TopicErrors.ReservationTopicHeld;
+        }
+
+        if (await HasPendingReservationAsync(student.Id))
         {
             return TopicErrors.ReservationAlreadyActive;
         }
 
-        if (!await HasApprovedReservationAsync(studentProfileId) && !await _settings.IsSelectionOpenAsync())
+        if (!await _settings.IsSelectionOpenAsync())
         {
             return TopicErrors.SelectionClosed;
         }
@@ -626,10 +634,12 @@ public class ReservationService : IReservationService
 
             // Which per-student index was hit decides the message, and only the *pending* one
             // can be: reserve and propose insert a Pending row, and the one path that inserts an
-            // Approved row releases the previous one in the same save. Asking whether the student
-            // has any active reservation would misreport the common change-request race — a
-            // student who legitimately holds an approved topic and loses the race for the topic
-            // they asked for would be told they already have a request, not that the topic went.
+            // Approved row releases the previous one in the same save. Review M2 (task 7 fix
+            // round 1): this used to describe "the common change-request race" - a student
+            // reserving/proposing while already holding an approved topic is refused up front now
+            // (bug 9), so that specific race is gone. What remains is the ordinary race between
+            // two concurrent reserve/propose calls for the same not-yet-topic-holding student,
+            // both passing CheckStudentMayRequestAsync before either inserts.
             return await HasPendingReservationAsync(studentProfileId)
                 ? TopicErrors.ReservationAlreadyActive
                 : topicConflictError;
@@ -660,13 +670,17 @@ public class ReservationService : IReservationService
             return null;
         }
 
-        // Mirrors GetMineAsync: a student who already holds an approved topic may cancel a
-        // change request after the deadline, so a response returned straight from a write
-        // (reserve, propose) must widen the same way GetMineAsync's list does, or a caller
-        // driven off this response alone hides Cancel until the page reloads.
+        // Review M2 (task 7 fix round 1): this used to widen canCancel with
+        // HasApprovedReservationAsync the same way GetMineAsync/CancelAsync do for an
+        // already-approved student's change request - but every caller here reaches this with a
+        // student UserContext only right after that same student's own successful reserve/propose
+        // (ReserveAsync/ProposeAsync's return), and CheckStudentMayRequestAsync already guarantees
+        // StudentProfile.TopicId was null at that moment - no Approved reservation can exist for
+        // them yet, so the widening was always false here. A non-student caller (SetStudentTopicAsync,
+        // SaveDecisionAsync's admin/teacher decisions) already short-circuits on user.IsStudent.
         var canCancel = user.IsStudent
             && row.Status == ReservationStatus.Pending
-            && (await _settings.IsSelectionOpenAsync() || await HasApprovedReservationAsync(row.StudentProfileId));
+            && await _settings.IsSelectionOpenAsync();
         return ToResponse(row, canCancel);
     }
 

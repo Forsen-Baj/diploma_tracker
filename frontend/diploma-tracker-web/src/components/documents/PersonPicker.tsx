@@ -63,7 +63,12 @@ export function PersonPicker({ value, onChange, error }: PersonPickerProps) {
       )}
       {!isLoading && !loadError && options.length === 0 && <p className="text-sm text-text-muted">{t('documents.recipientEmpty')}</p>}
       {!isLoading && options.length > 0 && (
-        <ul role="listbox" aria-label={t('documents.fields.recipient')} className="flex max-h-48 flex-col gap-1 overflow-auto">
+        // Review I2 (task 7 fix round 1): the browser's default focus outline is drawn OUTSIDE the
+        // button box, and this list's own overflow-auto clips it at the edges - the actual
+        // "scuffed corners" the owner saw on Pass on/Send (the only document dialogs that render
+        // this list). p-1 gives the outline room, and an INSET ring (ring-inset) can never be
+        // clipped by overflow, unlike an outside outline/ring.
+        <ul role="listbox" aria-label={t('documents.fields.recipient')} className="flex max-h-48 flex-col gap-1 overflow-auto p-1">
           {options.map((option) => (
             <li key={option.id}>
               <button
@@ -71,7 +76,11 @@ export function PersonPicker({ value, onChange, error }: PersonPickerProps) {
                 role="option"
                 aria-selected={value === option.id}
                 onClick={() => onChange(option.id)}
-                className={cn('w-full rounded-control px-3 py-2 text-left text-sm hover:bg-surface', value === option.id && 'bg-surface font-semibold')}
+                className={cn(
+                  'w-full rounded-control px-3 py-2 text-left text-sm hover:bg-surface',
+                  'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent',
+                  value === option.id && 'bg-surface font-semibold'
+                )}
               >
                 <span className="block text-text-strong">{option.name}</span>
                 <span className="block text-xs text-text-muted">

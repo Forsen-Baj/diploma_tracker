@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using DiplomaTracker.Api.Data;
+using DiplomaTracker.Api.DTOs.Dashboard;
 using DiplomaTracker.Api.DTOs.Workflow;
 using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Errors;
@@ -292,26 +293,17 @@ public class StudentWorkflowService : IStudentWorkflowService
     public const int ReviewQueueDefaultPageSize = 25;
     public const int ReviewQueueMaxPageSize = 100;
 
-    public async Task<PagedResponse<ReviewQueueItem>> GetReviewQueueAsync(
-        UserContext user,
-        Guid? groupId,
-        bool? late,
-        int page,
-        int pageSize)
+    // Design 2026-09-24 §3.5. A teacher's queue is the steps where they hold an OPEN seat; a
+    // group reviewer who sits on no panel watches the group and has nothing to decide. An
+    // administrator sees every submission still awaiting its panel. Shared by GetReviewQueueAsync
+    // (below) and GetLateAwaitingReviewAsync (task 7 bug 5) so both agree exactly on what "the
+    // caller's open seat" means - explicit panel membership only, R1's own definition, and never an
+    // administrator stand-in (moot here: an administrator's query is deliberately unfiltered, the
+    // same "global backlog" GetReviewQueueAsync always gave them).
+    // M14: a student who moved groups while a version was pending leaves a queue item that opens
+    // as studentTask.notFound - agree with the admin dashboard's waiting count.
+    private IQueryable<Submission> WaitingForCallerQuery(UserContext user)
     {
-        // Phase 8 §8: an administrator used to receive every undecided submission in one array.
-        // The page is clamped rather than refused - a bad page number is a client mistake, not
-        // something a reviewer should see an error for.
-        page = page < 1 ? 1 : page;
-        pageSize = pageSize < 1 ? ReviewQueueDefaultPageSize
-            : pageSize > ReviewQueueMaxPageSize ? ReviewQueueMaxPageSize
-            : pageSize;
-
-        // Design 2026-09-24 §3.5. A teacher's queue is the steps where they hold an OPEN seat; a
-        // group reviewer who sits on no panel watches the group and has nothing to decide. An
-        // administrator sees every submission still awaiting its panel.
-        // M14: a student who moved groups while a version was pending leaves a queue item that
-        // opens as studentTask.notFound - agree with the admin dashboard's waiting count.
         var query = _dbContext.Submissions.AsNoTracking()
             .Where(s => s.Decision == null
                 && s.StudentTask.Status == StudentTaskStatus.Submitted
@@ -339,6 +331,26 @@ public class StudentWorkflowService : IStudentWorkflowService
         {
             query = query.Where(_ => false);
         }
+
+        return query;
+    }
+
+    public async Task<PagedResponse<ReviewQueueItem>> GetReviewQueueAsync(
+        UserContext user,
+        Guid? groupId,
+        bool? late,
+        int page,
+        int pageSize)
+    {
+        // Phase 8 §8: an administrator used to receive every undecided submission in one array.
+        // The page is clamped rather than refused - a bad page number is a client mistake, not
+        // something a reviewer should see an error for.
+        page = page < 1 ? 1 : page;
+        pageSize = pageSize < 1 ? ReviewQueueDefaultPageSize
+            : pageSize > ReviewQueueMaxPageSize ? ReviewQueueMaxPageSize
+            : pageSize;
+
+        var query = WaitingForCallerQuery(user);
 
         if (groupId is not null)
         {
@@ -407,6 +419,57 @@ public class StudentWorkflowService : IStudentWorkflowService
         };
     }
 
+    /// Task 7 bug 5: "Overdue steps" (DashboardService.OverdueStepsAsync) only ever covers steps
+    /// that were never submitted - a step already Submitted is excluded there by design, so an
+    /// overdue submission awaiting the caller's decision used to show up nowhere on the dashboard.
+    /// This is the teacher-dashboard-only counterpart: the same "caller holds an open seat" rows
+    /// GetReviewQueueAsync gives a teacher, narrowed to the owner's two cases - submitted after the
+    /// deadline (IsLate), or submitted on time and still waiting past it (deadline &lt; now).
+    /// Review I3 / M3: these are NOT the same condition (a since-extended deadline can leave
+    /// IsLate true while deadline &lt; now is false), so both are kept explicitly rather than
+    /// collapsed into one - IsLate is projected so the frontend can tell the two cases apart
+    /// per row instead of mislabelling an on-time-but-still-waiting submission as "submitted
+    /// late". Oldest submission first, capped at `take` rows, the same shape the dashboard's
+    /// other lists use.
+    public async Task<IReadOnlyList<LateAwaitingReviewRow>> GetLateAwaitingReviewAsync(UserContext user, int take)
+    {
+        var now = DateTime.UtcNow;
+
+        var rows = await WaitingForCallerQuery(user)
+            .Where(s => s.IsLate || s.StudentTask.GroupTask.Deadline < now)
+            .OrderBy(s => s.SubmittedAt)
+            .ThenBy(s => s.Id)
+            .Take(take)
+            .Select(s => new LateAwaitingReviewRow
+            {
+                StudentTaskId = s.StudentTaskId,
+                StudentProfileId = s.StudentTask.StudentProfileId,
+                StudentName = s.StudentTask.StudentProfile.User.LastName + " "
+                    + s.StudentTask.StudentProfile.User.FirstName
+                    + (s.StudentTask.StudentProfile.User.Patronymic == null
+                        ? ""
+                        : " " + s.StudentTask.StudentProfile.User.Patronymic),
+                GroupId = s.StudentTask.StudentProfile.GroupId,
+                GroupCode = s.StudentTask.StudentProfile.Group.Code,
+                StepTitle = s.StudentTask.GroupTask.DiplomaTaskTemplate.Title,
+                StepOrder = s.StudentTask.GroupTask.DiplomaTaskTemplate.Order,
+                Version = s.Version,
+                SubmittedAt = s.SubmittedAt,
+                Deadline = s.StudentTask.GroupTask.Deadline,
+                IsLate = s.IsLate
+            })
+            .ToListAsync();
+
+        // M3: a deadline extended after a late submission can leave Deadline >= now even though
+        // IsLate is still true - clamp at 0 rather than show a negative "days past due".
+        foreach (var row in rows)
+        {
+            row.DaysOverdue = Math.Max(0, (int)Math.Floor((now - row.Deadline).TotalDays));
+        }
+
+        return rows;
+    }
+
     /// O3: every visible student and where they are - an overview, not just submissions awaiting
     /// a decision (that stays GetReviewQueueAsync above, which the dashboards' own "waiting for
     /// review" lists still call directly). "Current step" is the first step in order that is not
@@ -469,9 +532,11 @@ public class StudentWorkflowService : IStudentWorkflowService
                 panelSize = panel.Size;
                 panelApproved = panel.Satisfied;
 
-                // Reuses GetReviewQueueAsync's own notion of "waiting for the caller's decision":
-                // the seat their decision would fill, and whether that seat is already satisfied.
-                var seat = ReviewPanel.SeatFor(user, fact.SupervisorId, fact.Extras);
+                // Task 7 R1: "Your decision" means explicitly assigned - the caller sits on the
+                // panel as the supervisor or an extra reviewer - never an administrator's stand-in
+                // power, so allowAdminStandIn is false here (unlike canDecide in BuildDetailsAsync,
+                // which keeps the stand-in power to decide).
+                var seat = ReviewPanel.SeatFor(user, fact.SupervisorId, fact.Extras, allowAdminStandIn: false);
                 isMyDecision = seat is not null && !ReviewPanel.IsSeatSatisfied(panel, seat.Value, user.UserId);
             }
 
@@ -573,6 +638,20 @@ public class StudentWorkflowService : IStudentWorkflowService
             .ToListAsync())
             .ToHashSet();
 
+        // Bug 3 (task 7): "mine" for the My students / Others split - the caller supervises this
+        // student, or holds an extra-reviewer seat on any of their steps. An administrator owns
+        // every row (the split is teacher-only; the frontend collapses to one list when every row
+        // is "mine", same as it already does for CanOpen). A group reviewer with no seat of their
+        // own owns none - CanOpen still lets them open the row read-only.
+        var mineIds = user.IsAdmin
+            ? studentIds.ToHashSet()
+            : (await _dbContext.StudentProfiles.AsNoTracking()
+                .Where(p => studentIds.Contains(p.Id)
+                    && (p.SupervisorId == user.UserId || p.StudentTasks.Any(t => t.Reviewers.Any(r => r.ReviewerId == user.UserId))))
+                .Select(p => p.Id)
+                .ToListAsync())
+                .ToHashSet();
+
         var submittedTaskIds = tasks.Where(t => t.Status == StudentTaskStatus.Submitted).Select(t => t.Id).ToList();
         var panelFacts = await LoadPanelFactsAsync(submittedTaskIds);
 
@@ -593,6 +672,7 @@ public class StudentWorkflowService : IStudentWorkflowService
                 StudentProfileId = student.Id,
                 Name = PersonName.Full(student.User),
                 CanOpen = reviewableIds.Contains(student.Id),
+                IsMine = mineIds.Contains(student.Id),
                 Cells = groupTasks
                     .Select(gt => byStudent[student.Id].FirstOrDefault(t => t.GroupTaskId == gt.Id))
                     .Where(t => t is not null)

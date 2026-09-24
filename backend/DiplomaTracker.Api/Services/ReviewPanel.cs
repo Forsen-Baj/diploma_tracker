@@ -70,8 +70,12 @@ public static class ReviewPanel
     }
 
     /// The seat the caller's decision fills (§3.3), or null when they have none. Their own seat
-    /// wins; an administrator with no seat of their own stands in for the supervisor.
-    public static ReviewSeat? SeatFor(UserContext user, Guid? supervisorId, IReadOnlyList<ExtraSeatFact> extras)
+    /// wins; an administrator with no seat of their own stands in for the supervisor by default
+    /// (`allowAdminStandIn: true`, the default) - that power drives `canDecide` and the Approve/
+    /// Return form. Task 7 R1: "Your decision" / `isMyDecision` means explicitly assigned - the
+    /// caller actually sits on the panel - so that computation passes `allowAdminStandIn: false`
+    /// to get `null` for an administrator who is neither the supervisor nor an extra reviewer.
+    public static ReviewSeat? SeatFor(UserContext user, Guid? supervisorId, IReadOnlyList<ExtraSeatFact> extras, bool allowAdminStandIn = true)
     {
         if (supervisorId == user.UserId)
         {
@@ -83,7 +87,7 @@ public static class ReviewPanel
             return ReviewSeat.Extra;
         }
 
-        return user.IsAdmin ? ReviewSeat.Supervisor : null;
+        return allowAdminStandIn && user.IsAdmin ? ReviewSeat.Supervisor : null;
     }
 
     public static bool IsSeatSatisfied(PanelState panel, ReviewSeat seat, Guid userId) =>

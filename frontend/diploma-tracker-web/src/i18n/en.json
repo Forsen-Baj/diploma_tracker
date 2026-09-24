@@ -239,7 +239,8 @@
       "invalidState": "This action is not possible for the reservation in its current state.",
       "notYours": "This reservation belongs to another student.",
       "notSupervisor": "Only the topic's supervisor can decide.",
-      "hasSubmissions": "The student has already submitted work on this topic; the topic cannot be removed."
+      "hasSubmissions": "The student has already submitted work on this topic; the topic cannot be removed.",
+      "topicHeld": "You already have an approved topic. Ask your supervisor or an administrator to change it."
     },
     "selection": {
       "closed": "The topic selection deadline has passed."
@@ -363,6 +364,11 @@
     "noWaiting": "Nothing is waiting for a decision.",
     "overdueSteps": "Overdue steps",
     "overdueEmpty": "No step is overdue.",
+    "lateAwaitingReview": "Waiting for review past the deadline",
+    "pastDue": "Past due",
+    "lateAwaitingReviewEmpty": "Nothing is waiting for review past the deadline.",
+    "waitingPastDeadline_one": "waiting {{count}} day past the deadline",
+    "waitingPastDeadline_other": "waiting {{count}} days past the deadline",
     "daysOverdue_one": "{{count}} day overdue",
     "daysOverdue_other": "{{count}} days overdue",
     "supervisedStudents": "Students I supervise",
@@ -736,8 +742,8 @@
     "reserve": "Reserve",
     "reserveConfirm": "Reserve \"{{title}}\"? You cannot reserve another topic until the supervisor decides.",
     "reserveDisabledPending": "You already have a request awaiting a decision",
-    "reserveDisabledOwnTopic": "This is already your topic",
     "reserveDisabledClosed": "The topic selection deadline has passed",
+    "topicHeldNotice": "You already have an approved topic. Ask your supervisor or an administrator to change it.",
     "reserved": "Topic reserved",
     "propose": "Propose my own topic",
     "proposeTitle": "Your own topic",
@@ -783,9 +789,6 @@
     "clearTitle": "Clear topic?",
     "replaceConfirm": "Replace \"{{current}}\" with \"{{next}}\"? The previous topic is released.",
     "clearConfirm": "Clear the current topic \"{{current}}\"? The student's supervisor is cleared along with it.",
-    "requestChange": "Request this topic",
-    "proposeDifferent": "Propose a different topic",
-    "changeConfirm": "Ask for \"{{next}}\" instead of \"{{current}}\"? You keep your current topic until the request is approved.",
     "changeRequested": "Change requested",
     "changeBadge": "Change",
     "currentTopicLabel": "Current topic: {{title}}",

@@ -360,9 +360,23 @@ check('24h the moved student still signs in', (await login(moverR.email, 'Passwo
 check('24i preview reports the active student', (await call('GET', `/api/groups/${moveC.id}/deletion-preview`, { token: admin })).body.activeStudentCount, 1)
 
 // Archiving every student of a group settles their reservations, as archiving one does.
+// task-7 review I1: moverR already holds an APPROVED topic (submitInMoveA calls giveTopic), so
+// reserving with their token is refused with reservation.topicHeld (bug 9) rather than filed as a
+// Pending reservation - this block needs a student who holds no topic yet. A first-time
+// reservation is bound by the selection deadline (topicHeld bypassed that; a plain reserve does
+// not), so the deadline is opened here and restored via cleanup, the same way
+// templates-check.mjs:242-245 does.
+const hardeningOriginalDeadline = (await call('GET', '/api/settings/topic-selection', { token: admin })).body.deadline
+cleanup.add('topic-selection deadline (hardening 24j-24l)', () => call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: hardeningOriginalDeadline } }))
+await call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: null } })
+
+const moverSEmail = `move.S.${stamp}@student.local`
+await call('POST', '/api/students', { token: admin, json: { firstName: 'Move', lastName: 'S', email: moverSEmail, studentNumber: `MVS${stamp}`, password: 'Password1!', groupId: moveC.id } })
+const moverSToken = await loginToken(moverSEmail, 'Password1!')
+
 const reservedTopic = (await call('POST', '/api/topics', { token: teacher, json: { title: `Hardening Topic ${stamp}`, departmentId: hardeningDepartment.id } })).body
 cleanup.add(`topic ${reservedTopic.title}`, () => call('DELETE', `/api/topics/${reservedTopic.id}`, { token: admin }))
-check('24j reservation pending', (await call('POST', `/api/topics/${reservedTopic.id}/reserve`, { token: moverR.token })).body.status, 'Pending')
+check('24j reservation pending', (await call('POST', `/api/topics/${reservedTopic.id}/reserve`, { token: moverSToken })).body.status, 'Pending')
 check('24k archiving the whole group', (await call('POST', `/api/groups/${moveC.id}/students/archive`, { token: admin })).status, 200)
 check('24l the reserved topic is available again', (await call('GET', `/api/topics/${reservedTopic.id}`, { token: admin })).body.status, 'Available')
 
@@ -446,10 +460,14 @@ const teacherDashboard = (await call('GET', '/api/dashboard/teacher', { token: t
 const teacherQueueTotal = (await call('GET', '/api/review/queue', { token: teacher })).body.total
 check('30 teacher dashboard waitingReviews matches queue total', teacherDashboard.waitingReviews, teacherQueueTotal)
 check('30a teacher dashboard latestForReview capped at five', teacherDashboard.latestForReview.length <= 5, true)
-// §7.4: the group table lists the groups a teacher reviews. The seed teacher supervises the queue
-// students (their topics are hers) but does not review their group, so it is not in her table.
+// task-7 review I1 ruling / owner's 2026-09-24 decision: the dashboard's group table lists every
+// group IAccessScope.VisibleGroups returns for the teacher - a group they review, OR a group
+// where they supervise a student - the same set the Groups tab shows (replacing the old "reviewed
+// groups only" rule this comment used to describe). The seed teacher supervises the queue students
+// (their topics are hers) but does not review queueGroup; under the new rule that still puts
+// queueGroup in her table.
 check('30b reviewer sees the group in the dashboard table', (await call('GET', '/api/dashboard/teacher', { token: queueTeacherToken })).body.groups.some((g) => g.groupId === queueGroup.id), true)
-check('30c a supervisor who does not review it does not', teacherDashboard.groups.some((g) => g.groupId === queueGroup.id), false)
+check('30c a supervisor who does not review it sees it too', teacherDashboard.groups.some((g) => g.groupId === queueGroup.id), true)
 
 const adminDashboard = (await call('GET', '/api/dashboard/admin', { token: admin })).body
 const ts = adminDashboard.topicSelection

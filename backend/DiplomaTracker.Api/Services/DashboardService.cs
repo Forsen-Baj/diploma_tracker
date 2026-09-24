@@ -10,6 +10,7 @@ public class DashboardService : IDashboardService
 {
     private const int LatestForReviewCount = 5;
     private const int OverdueStepsCount = 20;
+    private const int LateAwaitingReviewCount = 10;
 
     private readonly AppDbContext _dbContext;
     private readonly IAccessScope _accessScope;
@@ -66,6 +67,7 @@ public class DashboardService : IDashboardService
         var now = DateTime.UtcNow;
 
         var overdue = await OverdueStepsAsync(user, now);
+        var lateAwaitingReview = await _workflow.GetLateAwaitingReviewAsync(user, LateAwaitingReviewCount);
         var groups = await GroupRowsAsync(user, now);
 
         var supervised = await _dbContext.StudentProfiles.AsNoTracking()
@@ -103,6 +105,7 @@ public class DashboardService : IDashboardService
             WaitingReviews = queue.Total,
             LatestForReview = queue.Items,
             OverdueSteps = overdue,
+            LateAwaitingReview = lateAwaitingReview,
             SupervisedStudents = supervised,
             Groups = groups
         };
@@ -174,18 +177,28 @@ public class DashboardService : IDashboardService
         };
     }
 
-    /// The per-group breakdown, identical for both roles apart from which groups are in it: every
-    /// group for an administrator, and for a teacher only the groups they review (§7.4). A group a
-    /// teacher sees only because they supervise one of its students is left out, as its overdue
-    /// and waiting figures are about students the teacher does not review; that student appears
-    /// under the students they supervise instead.
+    /// The per-group breakdown, identical for both roles apart from which groups are in it and
+    /// (review I5) which of a group's students each count covers: every group for an
+    /// administrator, and for a teacher every group `IAccessScope.VisibleGroups` returns for them
+    /// - groups they review, plus groups where they supervise a student - the same set the Groups
+    /// tab lists and the tile's click-through opens (owner ruling, 2026-09-24 task 7, replacing
+    /// the 2026-09-23 reviewed-groups-only decision).
+    ///
+    /// Review I5: a REVIEWED group's figures still cover the whole group (unchanged - the teacher
+    /// can open every row there). A group the teacher only supervises a student in narrows every
+    /// count to their own reviewable students in it (`SupervisorId == me`, the same rule
+    /// `IAccessScope.ReviewableStudents`/`OverdueStepsAsync` already use for a non-reviewed
+    /// group), so the row agrees with the teacher's own Overdue list and with the group page's
+    /// My students/Others split instead of showing figures about students they cannot act on.
+    /// Expressed as one inlined condition rather than two branches of the same query, so an
+    /// administrator (always whole-group) and a reviewed group (always whole-group) both take the
+    /// `isAdmin || g.Reviewers.Any(...)` shortcut before the per-student `SupervisorId == me`
+    /// check is even reached.
     private async Task<IReadOnlyList<DashboardGroupRow>> GroupRowsAsync(UserContext user, DateTime now)
     {
         var groups = _accessScope.VisibleGroups(user);
-        if (user.IsTeacher)
-        {
-            groups = groups.Where(g => g.Reviewers.Any(r => r.ReviewerId == user.UserId));
-        }
+        var isAdmin = user.IsAdmin;
+        var me = user.UserId;
 
         return await groups.AsNoTracking()
             .OrderByDescending(g => g.AcademicYear)
@@ -196,27 +209,34 @@ public class DashboardService : IDashboardService
                 GroupCode = g.Code,
                 AcademicYear = g.AcademicYear,
                 DepartmentName = g.Department.Name,
-                StudentCount = g.Students.Count(s => s.ArchivedAt == null),
-                ApprovedTopicCount = g.Students.Count(s => s.ArchivedAt == null && s.TopicId != null),
+                StudentCount = g.Students.Count(s => s.ArchivedAt == null
+                    && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || s.SupervisorId == me)),
+                ApprovedTopicCount = g.Students.Count(s => s.ArchivedAt == null && s.TopicId != null
+                    && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || s.SupervisorId == me)),
                 StepsApproved = g.GroupTasks
                     .SelectMany(gt => gt.StudentTasks)
-                    .Count(t => t.StudentProfile.ArchivedAt == null && t.Status == StudentTaskStatus.Approved),
+                    .Count(t => t.StudentProfile.ArchivedAt == null && t.Status == StudentTaskStatus.Approved
+                        && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || t.StudentProfile.SupervisorId == me)),
                 StepsTotal = g.GroupTasks
                     .SelectMany(gt => gt.StudentTasks)
-                    .Count(t => t.StudentProfile.ArchivedAt == null),
+                    .Count(t => t.StudentProfile.ArchivedAt == null
+                        && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || t.StudentProfile.SupervisorId == me)),
                 WaitingReviews = g.GroupTasks
                     .SelectMany(gt => gt.StudentTasks)
-                    .Count(t => t.StudentProfile.ArchivedAt == null && t.Status == StudentTaskStatus.Submitted),
+                    .Count(t => t.StudentProfile.ArchivedAt == null && t.Status == StudentTaskStatus.Submitted
+                        && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || t.StudentProfile.SupervisorId == me)),
                 LateSteps = g.GroupTasks
                     .SelectMany(gt => gt.StudentTasks)
                     .Count(t => t.StudentProfile.ArchivedAt == null
-                        && t.Submissions.OrderByDescending(s => s.Version).Select(s => s.IsLate).FirstOrDefault()),
+                        && t.Submissions.OrderByDescending(s => s.Version).Select(s => s.IsLate).FirstOrDefault()
+                        && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || t.StudentProfile.SupervisorId == me)),
                 OverdueSteps = g.GroupTasks
                     .SelectMany(gt => gt.StudentTasks)
                     .Count(t => t.StudentProfile.ArchivedAt == null
                         && t.Status != StudentTaskStatus.Approved
                         && t.Status != StudentTaskStatus.Submitted
-                        && t.GroupTask.Deadline < now)
+                        && t.GroupTask.Deadline < now
+                        && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || t.StudentProfile.SupervisorId == me))
             })
             .ToListAsync();
     }

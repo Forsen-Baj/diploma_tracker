@@ -552,6 +552,7 @@ export type GroupProgress = {
     studentProfileId: string
     name: string
     canOpen: boolean
+    isMine: boolean
     cells: {
       groupTaskId: string
       studentTaskId: string
@@ -674,6 +675,23 @@ export type OverdueStepRow = {
   daysOverdue: number
 }
 
+/** Task 7 bug 5: a late submission (submitted after its deadline, or still waiting past it) that
+ *  is also waiting for the caller's own decision (R1). Teacher-dashboard-only. */
+export type LateAwaitingReviewRow = {
+  studentTaskId: string
+  studentProfileId: string
+  studentName: string
+  groupId: string
+  groupCode: string
+  stepTitle: string
+  stepOrder: number
+  version: number
+  submittedAt: string
+  deadline: string
+  daysOverdue: number
+  isLate: boolean
+}
+
 export type SupervisedStudentRow = {
   studentProfileId: string
   studentName: string
@@ -689,6 +707,7 @@ export type TeacherDashboard = {
   waitingReviews: number
   latestForReview: ReviewQueueItem[]
   overdueSteps: OverdueStepRow[]
+  lateAwaitingReview: LateAwaitingReviewRow[]
   supervisedStudents: SupervisedStudentRow[]
   groups: DashboardGroupRow[]
 }

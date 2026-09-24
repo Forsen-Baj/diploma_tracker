@@ -116,7 +116,8 @@ export function AddReviewerDialog({ step, onClose, onAdded }: AddReviewerDialogP
       )}
       {!isLoading && !loadError && available.length === 0 && <p className="text-sm text-text-muted">{t('steps.reviewerSearchEmpty')}</p>}
       {!isLoading && available.length > 0 && (
-        <ul role="listbox" aria-label={t('steps.reviewerSearch')} className="flex max-h-64 flex-col gap-1 overflow-auto">
+        // Same overflow-clipped-outline fix as PersonPicker (review I2, task 7 fix round 1).
+        <ul role="listbox" aria-label={t('steps.reviewerSearch')} className="flex max-h-64 flex-col gap-1 overflow-auto p-1">
           {available.map((option) => (
             <li key={option.id}>
               <button
@@ -126,6 +127,7 @@ export function AddReviewerDialog({ step, onClose, onAdded }: AddReviewerDialogP
                 onClick={() => setSelectedId(option.id)}
                 className={cn(
                   'w-full rounded-control px-3 py-2 text-left text-sm hover:bg-surface',
+                  'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent',
                   selectedId === option.id && 'bg-surface font-semibold'
                 )}
               >

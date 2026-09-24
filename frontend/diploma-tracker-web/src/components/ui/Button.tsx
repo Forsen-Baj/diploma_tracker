@@ -45,7 +45,14 @@ export function Button({
       disabled={disabled || loading}
       className={cn(
         'inline-flex items-center justify-center whitespace-nowrap rounded-control font-medium transition-colors',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+        // Review I2 (task 7 fix round 1): the real "scuffed corners" the owner saw on Pass on
+        // turned out to be PersonPicker's/SegmentedControl's own outline-clipping and radius
+        // mismatch (fixed there), not this Button - modern engines already draw a plain outline
+        // along border-radius. Kept anyway as a real, harmless improvement over the plain outline
+        // this replaced: `outline-hidden` (not `outline-none`) keeps a transparent outline that
+        // Windows forced-colors mode still paints, so high-contrast users do not lose the focus
+        // indicator the way a bare `outline-none` would drop it (review M5).
+        'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background',
         'disabled:cursor-not-allowed disabled:opacity-50',
         variantClasses[variant],
         sizeClasses[size],

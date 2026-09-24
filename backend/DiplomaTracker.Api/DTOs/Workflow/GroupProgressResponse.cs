@@ -38,6 +38,13 @@ public class GroupProgressStudent
     /// the group, or the student's current supervisor. An extra reviewer seat on a single step
     /// does not make the row openable.
     public bool CanOpen { get; set; }
+
+    /// Task 7 bug 3: "mine" for the split - the caller supervises this student, or sits on the
+    /// panel (any seat, any step) as an extra reviewer. Narrower than `CanOpen`: a group reviewer
+    /// with no seat of their own can open every row (watch access) but owns none of them. True for
+    /// every student when the caller is an administrator, so the frontend's split collapses to one
+    /// list for admins exactly like it already does when every row is `CanOpen`.
+    public bool IsMine { get; set; }
 }
 
 public class GroupProgressResponse
