@@ -19,6 +19,10 @@ public class ReservationResponse
     public DateTime? DecidedAt { get; set; }
     public bool CanCancel { get; set; }
 
+    /// True when the student has at least one Submission on any of their steps - releasing this
+    /// reservation would then be refused with reservation.hasSubmissions (O1).
+    public bool HasSubmissions { get; set; }
+
     /// <summary>
     /// The topic the student holds today, when this is a <c>Pending</c> request from a student
     /// who already has one — that is, a change request. Null otherwise. It lets a teacher see

@@ -15,6 +15,7 @@ import { PageHeader } from '../components/ui/PageHeader'
 import { Select, type SelectOption } from '../components/ui/Select'
 import { SegmentedControl, type SegmentedOption } from '../components/ui/SegmentedControl'
 import { TextField } from '../components/ui/TextField'
+import { Tooltip } from '../components/ui/Tooltip'
 import { useToast } from '../components/ui/useToast'
 import { DecisionCommentModal } from '../components/topics/DecisionCommentModal'
 import { TopicFormModal } from '../components/topics/TopicFormModal'
@@ -232,7 +233,15 @@ export function AdminTopicsPage() {
               </>
             )}
             {topic.activeReservationStatus === 'Approved' && (
-              <Button variant="secondary" size="sm" onClick={() => setReleasing(topic)}>{t('topics.release')}</Button>
+              topic.hasSubmissions ? (
+                <Tooltip content={t('topics.hasSubmissionsHint')}>
+                  <span tabIndex={0} className="inline-flex">
+                    <Button variant="secondary" size="sm" disabled>{t('topics.release')}</Button>
+                  </span>
+                </Tooltip>
+              ) : (
+                <Button variant="secondary" size="sm" onClick={() => setReleasing(topic)}>{t('topics.release')}</Button>
+              )
             )}
           </div>
         )

@@ -160,7 +160,9 @@ export function StudentsPage() {
   )
 
   const topicOptions: SelectOption[] = useMemo(() => {
-    const options: SelectOption[] = [{ value: '', label: t('topics.noTopic') }]
+    // O1: a student who has already submitted work on their topic cannot be left without one -
+    // the "no topic" option is not offered at all, rather than offered and then refused.
+    const options: SelectOption[] = editingStudent?.hasSubmissions ? [] : [{ value: '', label: t('topics.noTopic') }]
     const seen = new Set<string>()
     for (const topic of formTopics) {
       options.push({ value: topic.id, label: topic.title })
@@ -763,6 +765,7 @@ export function StudentsPage() {
                 value={studentForm.topicId}
                 onChange={handleTopicIdChange}
                 options={topicOptions}
+                hint={editingStudent?.hasSubmissions ? t('topics.hasSubmissionsHint') : undefined}
               />
             </div>
           )}

@@ -256,8 +256,16 @@ public class ReservationService : IReservationService
             return (null, error);
         }
 
+        // O1: a topic cannot be taken away (left with no topic) once the student has submitted
+        // at least one step - whatever that submission's status. Checked here, not just in the
+        // UI, because the UI flag is only a convenience.
+        if (await HasSubmissionsAsync(reservation!.StudentProfileId))
+        {
+            return (null, TopicErrors.ReservationHasSubmissions);
+        }
+
         var now = DateTime.UtcNow;
-        reservation!.Status = ReservationStatus.Released;
+        reservation.Status = ReservationStatus.Released;
         reservation.DecisionComment = IdentityNormalizer.Optional(request.Comment);
         reservation.DecidedAt = now;
         reservation.StudentProfile.TopicId = null;
@@ -290,6 +298,13 @@ public class ReservationService : IReservationService
         if (student.ArchivedAt is not null)
         {
             return (null, OnboardingErrors.StudentArchived);
+        }
+
+        // O1: only a removal to "no topic" is guarded - replacing the topic with another one
+        // stays allowed even once the student has submitted work.
+        if (topicId is null && student.TopicId is not null && await HasSubmissionsAsync(student.Id))
+        {
+            return (null, TopicErrors.ReservationHasSubmissions);
         }
 
         var now = DateTime.UtcNow;
@@ -447,6 +462,13 @@ public class ReservationService : IReservationService
             .ToListAsync();
 
         return rows.Select(row => ToResponse(row, canCancel: false)).ToList();
+    }
+
+    /// O1: whether the student has at least one Submission on any of their steps, whatever its
+    /// status - the fact that guards removing their topic.
+    private Task<bool> HasSubmissionsAsync(Guid studentProfileId)
+    {
+        return _dbContext.Submissions.AnyAsync(s => s.StudentTask.StudentProfileId == studentProfileId);
     }
 
     private async Task<StudentProfile?> LoadStudentForActionAsync(Guid userId)
@@ -676,7 +698,10 @@ public class ReservationService : IReservationService
                 // The student's current topic, so a Pending row from a student who already
                 // holds a different one can be told apart as a change request in ToResponse.
                 StudentCurrentTopicId = r.StudentProfile.TopicId,
-                StudentCurrentTopicTitle = r.StudentProfile.Topic != null ? r.StudentProfile.Topic.Title : null
+                StudentCurrentTopicTitle = r.StudentProfile.Topic != null ? r.StudentProfile.Topic.Title : null,
+                // O1: whether releasing this reservation would be refused - computed here rather
+                // than with a second round trip, the same Any() subquery HasSubmissionsAsync runs.
+                HasSubmissions = r.StudentProfile.StudentTasks.Any(t => t.Submissions.Any())
             });
     }
 
@@ -707,6 +732,7 @@ public class ReservationService : IReservationService
             CreatedAt = row.CreatedAt,
             DecidedAt = row.DecidedAt,
             CanCancel = canCancel,
+            HasSubmissions = row.HasSubmissions,
             // Only a pending request from a student who already holds a different topic is a
             // change request; everything else leaves these null.
             CurrentTopicId = isChangeRequest ? row.StudentCurrentTopicId : null,
@@ -745,5 +771,6 @@ public class ReservationService : IReservationService
         /// </summary>
         public Guid? StudentCurrentTopicId { get; init; }
         public string? StudentCurrentTopicTitle { get; init; }
+        public bool HasSubmissions { get; init; }
     }
 }

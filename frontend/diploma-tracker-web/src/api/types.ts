@@ -61,6 +61,7 @@ export type Student = {
   claimReopened: boolean
   topicId: string | null
   topicTitle: string | null
+  hasSubmissions: boolean
   groupId: string | null
   groupCode: string | null
   supervisorId: string | null
@@ -363,6 +364,8 @@ export type Topic = {
   studentProfileId: string | null
   studentName: string | null
   groupCode: string | null
+  /** Set only for the topic's holder: whether releasing it would be refused (O1). */
+  hasSubmissions: boolean
   createdAt: string
   updatedAt: string
 }
@@ -401,6 +404,8 @@ export type Reservation = {
   /** Set only on a pending change request: the topic the student holds today. */
   currentTopicId: string | null
   currentTopicTitle: string | null
+  /** Whether releasing this reservation would be refused (O1). */
+  hasSubmissions: boolean
 }
 
 export type ProposeTopicRequest = {
@@ -514,6 +519,30 @@ export type ReviewQueueItem = {
   panelSize: number
   panelApproved: number
 }
+
+/** O3: one row of the Review tab's overview - a student and where they are. */
+export type ReviewStudentItem = {
+  studentProfileId: string
+  studentName: string
+  groupId: string
+  groupCode: string
+  /** Null when the student has no steps at all - the row shows "No steps" and has no link. */
+  studentTaskId: string | null
+  stepTitle: string | null
+  stepOrder: number | null
+  status: StudentTaskStatus | null
+  /** Whether the caller could actually open studentTaskId - false (and no link) when it's null, too. */
+  canOpen: boolean
+  version: number | null
+  submittedAt: string | null
+  isLate: boolean
+  isOverdue: boolean
+  panelSize: number | null
+  panelApproved: number | null
+  isMyDecision: boolean
+}
+
+export type ReviewStateFilter = 'All' | 'Waiting' | 'NotStarted' | 'Submitted' | 'Returned' | 'Approved'
 
 export type GroupProgress = {
   groupId: string

@@ -438,6 +438,8 @@ public class StudentService : IStudentService
         ArchivedAt = profile.ArchivedAt,
         TopicId = profile.TopicId,
         TopicTitle = profile.Topic != null ? profile.Topic.Title : null,
+        // O1: whether clearing the topic from this form would be refused.
+        HasSubmissions = profile.StudentTasks.Any(t => t.Submissions.Any()),
         GroupId = profile.GroupId,
         GroupCode = profile.Group != null ? profile.Group.Code : null,
         SupervisorId = profile.SupervisorId,

@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using DiplomaTracker.Api.Data;
 using DiplomaTracker.Api.DTOs.Workflow;
 using DiplomaTracker.Api.Entities;
@@ -404,6 +405,121 @@ public class StudentWorkflowService : IStudentWorkflowService
             PageSize = pageSize,
             Total = total
         };
+    }
+
+    /// O3: every visible student and where they are - an overview, not just submissions awaiting
+    /// a decision (that stays GetReviewQueueAsync above, which the dashboards' own "waiting for
+    /// review" lists still call directly). "Current step" is the first step in order that is not
+    /// Approved, or the last step when every one is; projected as two ordered subqueries
+    /// (CurrentOpen/LastStep) the same way TopicService.Projection projects a topic's Holder and
+    /// Request, and combined with ?? once materialized, since EF cannot translate that
+    /// null-coalesce into one query. Visible students for a teacher or administrator are bounded
+    /// (their own students, or every active student for an administrator), so - like
+    /// GetGroupProgressAsync just above - this loads them in full and paginates in memory rather
+    /// than trying to push the state filter, which depends on the computed current step, into SQL.
+    public async Task<(PagedResponse<ReviewStudentItem>? result, string? error)> GetReviewStudentsAsync(
+        UserContext user,
+        Guid? groupId,
+        bool? late,
+        string? state,
+        int page,
+        int pageSize)
+    {
+        page = page < 1 ? 1 : page;
+        pageSize = pageSize < 1 ? ReviewQueueDefaultPageSize
+            : pageSize > ReviewQueueMaxPageSize ? ReviewQueueMaxPageSize
+            : pageSize;
+
+        var stateFilter = ReviewStateFilter.All;
+        if (!string.IsNullOrWhiteSpace(state) && !Enum.TryParse<ReviewStateFilter>(state, ignoreCase: true, out stateFilter))
+        {
+            return (null, CommonErrors.ValidationFailed);
+        }
+
+        var query = _accessScope.ReviewOverviewStudents(user);
+        if (groupId is not null)
+        {
+            query = query.Where(s => s.GroupId == groupId);
+        }
+
+        var rows = await query.Select(BuildReviewStudentProjection(user)).ToListAsync();
+
+        // Only a Submitted current step ever has an open panel to load facts for.
+        var currentTaskIds = rows
+            .Select(r => r.CurrentOpen ?? r.LastStep)
+            .Where(c => c is not null && c.Status == StudentTaskStatus.Submitted)
+            .Select(c => c!.StudentTaskId)
+            .ToList();
+
+        var facts = await LoadPanelFactsAsync(currentTaskIds);
+
+        var now = DateTime.UtcNow;
+        var working = new List<ReviewStudentWorking>(rows.Count);
+        foreach (var row in rows)
+        {
+            var current = row.CurrentOpen ?? row.LastStep;
+            int? panelSize = null;
+            int? panelApproved = null;
+            var isMyDecision = false;
+
+            if (current is not null && current.Status == StudentTaskStatus.Submitted
+                && facts.TryGetValue(current.StudentTaskId, out var fact))
+            {
+                var panel = fact.Evaluate();
+                panelSize = panel.Size;
+                panelApproved = panel.Satisfied;
+
+                // Reuses GetReviewQueueAsync's own notion of "waiting for the caller's decision":
+                // the seat their decision would fill, and whether that seat is already satisfied.
+                var seat = ReviewPanel.SeatFor(user, fact.SupervisorId, fact.Extras);
+                isMyDecision = seat is not null && !ReviewPanel.IsSeatSatisfied(panel, seat.Value, user.UserId);
+            }
+
+            // I2: "late" is the app's existing notion (StepStatusBadge's isLate/isOverdue pair,
+            // GroupProgressMatrix), not just the latest submission's own flag - a step nobody has
+            // touched past its deadline is just as much something a reviewer needs to see.
+            var isOverdue = current is not null && IsOverdue(current.Status, current.Deadline, now);
+
+            working.Add(new ReviewStudentWorking(row, current, panelSize, panelApproved, isMyDecision, isOverdue));
+        }
+
+        IEnumerable<ReviewStudentWorking> filtered = working;
+
+        if (late is not null)
+        {
+            filtered = filtered.Where(w => IsLateOrOverdue(w) == late);
+        }
+
+        filtered = stateFilter switch
+        {
+            ReviewStateFilter.Waiting => filtered.Where(w => w.IsMyDecision),
+            ReviewStateFilter.NotStarted => filtered.Where(w => w.Current is { Status: StudentTaskStatus.Pending }),
+            ReviewStateFilter.Submitted => filtered.Where(w => w.Current is { Status: StudentTaskStatus.Submitted }),
+            ReviewStateFilter.Returned => filtered.Where(w => w.Current is { Status: StudentTaskStatus.Returned }),
+            ReviewStateFilter.Approved => filtered.Where(w => w.Current is { Status: StudentTaskStatus.Approved }),
+            _ => filtered
+        };
+
+        // A row waiting for the caller's decision sorts first, oldest submission first; the rest
+        // sort by group code, then student last name, first name (§ O3).
+        var ordered = filtered
+            .OrderByDescending(w => w.IsMyDecision)
+            .ThenBy(w => w.IsMyDecision ? w.Current!.LatestSubmission!.SubmittedAt : (DateTime?)null)
+            .ThenBy(w => w.Row.GroupCode, StringComparer.Ordinal)
+            .ThenBy(w => w.Row.LastName, StringComparer.Ordinal)
+            .ThenBy(w => w.Row.FirstName, StringComparer.Ordinal)
+            .ToList();
+
+        var total = ordered.Count;
+        var items = ordered.Skip((page - 1) * pageSize).Take(pageSize).Select(ToReviewStudentItem).ToList();
+
+        return (new PagedResponse<ReviewStudentItem>
+        {
+            Items = items,
+            Page = page,
+            PageSize = pageSize,
+            Total = total
+        }, null);
     }
 
     public async Task<(GroupProgressResponse? progress, string? error)> GetGroupProgressAsync(UserContext user, Guid groupId)
@@ -1218,5 +1334,158 @@ public class StudentWorkflowService : IStudentWorkflowService
         public DateTime? CompletedAt { get; init; }
         public DateTime? LatestSubmittedAt { get; init; }
         public bool? LatestIsLate { get; init; }
+    }
+
+    /// I2 fix: the combined "needs attention" signal the `late` filter matches against - the app's
+    /// existing notion (StepStatusBadge's separate isLate/isOverdue props, as GroupProgressMatrix
+    /// renders both): either the current step's latest submission was itself late, or the step is
+    /// overdue (IsOverdue, above - nothing submitted, or returned, past the deadline).
+    private static bool IsLateOrOverdue(ReviewStudentWorking working) =>
+        (working.Current?.LatestSubmission?.IsLate ?? false) || working.IsOverdue;
+
+    private static ReviewStudentItem ToReviewStudentItem(ReviewStudentWorking working)
+    {
+        var current = working.Current;
+        return new ReviewStudentItem
+        {
+            StudentProfileId = working.Row.StudentProfileId,
+            StudentName = PersonName.Full(working.Row.LastName, working.Row.FirstName, working.Row.Patronymic),
+            GroupId = working.Row.GroupId,
+            GroupCode = working.Row.GroupCode,
+            StudentTaskId = current?.StudentTaskId,
+            StepTitle = current?.Title,
+            StepOrder = current?.Order,
+            Status = current?.Status.ToString(),
+            Version = current?.LatestSubmission?.Version,
+            SubmittedAt = current?.LatestSubmission?.SubmittedAt,
+            IsLate = current?.LatestSubmission?.IsLate ?? false,
+            IsOverdue = working.IsOverdue,
+            // I1 fix: the row is still listed (the caller has SOME grant on this student), but the
+            // link is only live when the caller could actually open the current step -
+            // CanSeeStudentTaskAsync's own, narrower rule, computed per current step below.
+            CanOpen = current?.CanOpen ?? false,
+            PanelSize = working.PanelSize,
+            PanelApproved = working.PanelApproved,
+            IsMyDecision = working.IsMyDecision
+        };
+    }
+
+    private enum ReviewStateFilter
+    {
+        All,
+        Waiting,
+        NotStarted,
+        Submitted,
+        Returned,
+        Approved
+    }
+
+    private sealed record ReviewStudentWorking(
+        StudentProjectionRow Row,
+        CurrentStepRow? Current,
+        int? PanelSize,
+        int? PanelApproved,
+        bool IsMyDecision,
+        bool IsOverdue);
+
+    private sealed class StudentProjectionRow
+    {
+        public Guid StudentProfileId { get; init; }
+        public string LastName { get; init; } = string.Empty;
+        public string FirstName { get; init; } = string.Empty;
+        public string? Patronymic { get; init; }
+        public Guid GroupId { get; init; }
+        public string GroupCode { get; init; } = string.Empty;
+        public CurrentStepRow? CurrentOpen { get; init; }
+        public CurrentStepRow? LastStep { get; init; }
+    }
+
+    private sealed class CurrentStepRow
+    {
+        public Guid StudentTaskId { get; init; }
+        public string Title { get; init; } = string.Empty;
+        public int Order { get; init; }
+        public StudentTaskStatus Status { get; init; }
+        public DateTime Deadline { get; init; }
+
+        /// I1 fix: exactly CanSeeStudentTaskAsync's rule for this one task - not the broader
+        /// ReviewOverviewStudents listing rule, which can be satisfied by a seat on a DIFFERENT
+        /// step of the same student.
+        public bool CanOpen { get; init; }
+
+        public LatestSubmissionRow? LatestSubmission { get; init; }
+    }
+
+    /// I3 fix: the current step's latest submission, projected once as a nested object (the
+    /// TopicPartyRow pattern) instead of three independent correlated subqueries.
+    private sealed class LatestSubmissionRow
+    {
+        public int Version { get; init; }
+        public DateTime SubmittedAt { get; init; }
+        public bool IsLate { get; init; }
+    }
+
+    /// O3: the student's current step. Projected as two ordered subqueries the way
+    /// TopicService.Projection projects a topic's Holder and Request - CurrentOpen (the first
+    /// step in order that is not Approved) and LastStep (the last step in order, used only when
+    /// CurrentOpen is null: every step is Approved, or there are none) - and combined with ??
+    /// after materializing. Built per call (not a static field) because CanOpen needs the
+    /// caller's identity closed over so it becomes part of the same SQL query.
+    private static Expression<Func<StudentProfile, StudentProjectionRow>> BuildReviewStudentProjection(UserContext user)
+    {
+        var callerId = user.UserId;
+        var isAdmin = user.IsAdmin;
+
+        return p => new StudentProjectionRow
+        {
+            StudentProfileId = p.Id,
+            LastName = p.User.LastName,
+            FirstName = p.User.FirstName,
+            Patronymic = p.User.Patronymic,
+            GroupId = p.GroupId,
+            GroupCode = p.Group.Code,
+            CurrentOpen = p.StudentTasks
+                .Where(t => t.GroupTask.GroupId == p.GroupId && t.Status != StudentTaskStatus.Approved)
+                .OrderBy(t => t.GroupTask.DiplomaTaskTemplate.Order)
+                .ThenBy(t => t.GroupTask.DiplomaTaskTemplate.Title)
+                .Select(t => new CurrentStepRow
+                {
+                    StudentTaskId = t.Id,
+                    Title = t.GroupTask.DiplomaTaskTemplate.Title,
+                    Order = t.GroupTask.DiplomaTaskTemplate.Order,
+                    Status = t.Status,
+                    Deadline = t.GroupTask.Deadline,
+                    CanOpen = isAdmin
+                        || p.SupervisorId == callerId
+                        || p.Group.Reviewers.Any(r => r.ReviewerId == callerId)
+                        || t.Reviewers.Any(r => r.ReviewerId == callerId),
+                    LatestSubmission = t.Submissions
+                        .OrderByDescending(s => s.Version)
+                        .Select(s => new LatestSubmissionRow { Version = s.Version, SubmittedAt = s.SubmittedAt, IsLate = s.IsLate })
+                        .FirstOrDefault()
+                })
+                .FirstOrDefault(),
+            LastStep = p.StudentTasks
+                .Where(t => t.GroupTask.GroupId == p.GroupId)
+                .OrderByDescending(t => t.GroupTask.DiplomaTaskTemplate.Order)
+                .ThenByDescending(t => t.GroupTask.DiplomaTaskTemplate.Title)
+                .Select(t => new CurrentStepRow
+                {
+                    StudentTaskId = t.Id,
+                    Title = t.GroupTask.DiplomaTaskTemplate.Title,
+                    Order = t.GroupTask.DiplomaTaskTemplate.Order,
+                    Status = t.Status,
+                    Deadline = t.GroupTask.Deadline,
+                    CanOpen = isAdmin
+                        || p.SupervisorId == callerId
+                        || p.Group.Reviewers.Any(r => r.ReviewerId == callerId)
+                        || t.Reviewers.Any(r => r.ReviewerId == callerId),
+                    LatestSubmission = t.Submissions
+                        .OrderByDescending(s => s.Version)
+                        .Select(s => new LatestSubmissionRow { Version = s.Version, SubmittedAt = s.SubmittedAt, IsLate = s.IsLate })
+                        .FirstOrDefault()
+                })
+                .FirstOrDefault()
+        };
     }
 }

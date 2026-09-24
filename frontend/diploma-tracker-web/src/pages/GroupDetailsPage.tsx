@@ -1,7 +1,7 @@
 import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { assignAllTaskTemplates, createGroupTask, deleteGroupTask, getTasksForGroup, updateGroupTask } from '../api/groupTasksApi'
 import { addGroupReviewer, getGroupReviewers, getGroups, getGroupStudents, removeGroupReviewer } from '../api/groupsApi'
 import { archiveGroupStudents } from '../api/studentsApi'
@@ -26,6 +26,7 @@ import { useToast } from '../components/ui/useToast'
 import { GroupProgressMatrix } from '../components/workflow/GroupProgressMatrix'
 import { fromDatetimeLocalValue, toDatetimeLocalValue } from '../utils/datetime'
 import { formatPeriod } from '../utils/period'
+import { stepBackNavigation } from '../utils/reviewStepBack'
 import type { Group, GroupProgress, GroupReviewer, GroupStudent, GroupTask, TaskTemplate, Teacher } from '../api/types'
 
 type BulkSelection = {
@@ -40,6 +41,7 @@ export function GroupDetailsPage() {
   const { groupId } = useParams<{ groupId: string }>()
   const { user } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [group, setGroup] = useState<Group | null>(null)
   const [reviewers, setReviewers] = useState<GroupReviewer[]>([])
@@ -566,7 +568,10 @@ export function GroupDetailsPage() {
             )}
             {!isProgressLoading && progressError && <p className="text-sm text-danger">{progressError}</p>}
             {!isProgressLoading && !progressError && progress && (
-              <GroupProgressMatrix progress={progress} onOpenStep={(studentTaskId) => navigate(`/review/steps/${studentTaskId}`)} />
+              <GroupProgressMatrix
+                progress={progress}
+                onOpenStep={(studentTaskId) => navigate(`/review/steps/${studentTaskId}`, stepBackNavigation(location, 'group'))}
+              />
             )}
           </Card>
 

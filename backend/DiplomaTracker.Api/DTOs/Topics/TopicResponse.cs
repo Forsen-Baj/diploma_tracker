@@ -17,6 +17,10 @@ public class TopicResponse
     public Guid? StudentProfileId { get; set; }
     public string? StudentName { get; set; }
     public string? GroupCode { get; set; }
+
+    /// True when the topic's holder has at least one Submission on any of their steps -
+    /// releasing this topic would then be refused with reservation.hasSubmissions (O1).
+    public bool HasSubmissions { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

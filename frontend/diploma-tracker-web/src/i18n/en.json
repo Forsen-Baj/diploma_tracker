@@ -238,7 +238,8 @@
       "alreadyActive": "You already have a request awaiting a decision.",
       "invalidState": "This action is not possible for the reservation in its current state.",
       "notYours": "This reservation belongs to another student.",
-      "notSupervisor": "Only the topic's supervisor can decide."
+      "notSupervisor": "Only the topic's supervisor can decide.",
+      "hasSubmissions": "The student has already submitted work on this topic; the topic cannot be removed."
     },
     "selection": {
       "closed": "The topic selection deadline has passed."
@@ -648,18 +649,32 @@
   },
   "review": {
     "title": "Review",
-    "subtitle": "Submissions awaiting a decision, oldest first",
+    "subtitle": "Your students and their current step",
     "allGroups": "All groups",
     "filterAll": "All",
     "filterLate": "Late",
     "filterOnTime": "On time",
     "lateFilterLabel": "Filter by lateness",
+    "stateFilterLabel": "Filter by state",
+    "stateFilter": {
+      "All": "All",
+      "Waiting": "Waiting for my decision",
+      "NotStarted": "Not started",
+      "Submitted": "Submitted",
+      "Returned": "Returned",
+      "Approved": "Approved"
+    },
     "group": "Group",
+    "currentStep": "Current step",
+    "noSteps": "No steps",
+    "myDecision": "Your decision",
     "panel": "Reviewers",
     "version": "Version",
     "submittedAt": "Submitted",
-    "empty": "No submissions are waiting for a decision.",
+    "empty": "No students to show.",
     "backToQueue": "Back to review queue",
+    "backToGroup": "Back to group",
+    "backToDashboard": "Back to dashboard",
     "approvedOf": "{{approved}}/{{total}}"
   },
   "progress": {
@@ -760,6 +775,7 @@
     "release": "Release topic",
     "releaseTitle": "Release topic",
     "released": "Topic released",
+    "hasSubmissionsHint": "Student has already submitted work",
     "comment": "Comment for the student",
     "assigned": "Topic assigned",
     "noTopic": "No topic",

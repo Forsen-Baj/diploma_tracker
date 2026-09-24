@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { getGroups } from '../../api/groupsApi'
 import { getGroupProgress } from '../../api/workflowApi'
 import { useErrorMessage } from '../../api/useErrorMessage'
@@ -9,6 +9,7 @@ import { EmptyState } from '../ui/EmptyState'
 import { Select, type SelectOption } from '../ui/Select'
 import { Spinner } from '../ui/Spinner'
 import { GroupProgressMatrix } from '../workflow/GroupProgressMatrix'
+import { stepBackNavigation } from '../../utils/reviewStepBack'
 import type { Group, GroupProgress } from '../../api/types'
 
 // The group selector and progress matrix shared by the teacher and the administrator dashboard
@@ -16,6 +17,7 @@ import type { Group, GroupProgress } from '../../api/types'
 export function GroupProgressCard() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const location = useLocation()
   const errorMessage = useErrorMessage()
 
   const [groups, setGroups] = useState<Group[]>([])
@@ -116,7 +118,10 @@ export function GroupProgressCard() {
           {selectedGroupId && !isLoadingProgress && progressError && <p className="text-sm text-danger">{progressError}</p>}
 
           {selectedGroupId && !isLoadingProgress && !progressError && progress && (
-            <GroupProgressMatrix progress={progress} onOpenStep={(studentTaskId) => navigate(`/review/steps/${studentTaskId}`)} />
+            <GroupProgressMatrix
+              progress={progress}
+              onOpenStep={(studentTaskId) => navigate(`/review/steps/${studentTaskId}`, stepBackNavigation(location, 'dashboard'))}
+            />
           )}
         </>
       )}

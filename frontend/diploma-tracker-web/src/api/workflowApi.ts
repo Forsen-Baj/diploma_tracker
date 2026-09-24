@@ -1,5 +1,5 @@
 import { apiDownload, apiRequest, saveBlob } from './apiClient'
-import type { GroupProgress, Paged, ReviewQueueItem, StaffOption, StepDetails, StudentProgress, StudentStep } from './types'
+import type { GroupProgress, Paged, ReviewStateFilter, ReviewStudentItem, StaffOption, StepDetails, StudentProgress, StudentStep } from './types'
 
 export function getMySteps(): Promise<StudentStep[]> {
   return apiRequest<StudentStep[]>('/api/student-tasks/mine')
@@ -30,18 +30,23 @@ export async function downloadSubmissionFile(fileId: string, fallbackName: strin
   saveBlob(blob, fileName ?? fallbackName)
 }
 
-export function getReviewQueue(
+// O3: the Review tab's overview - every visible student and where they are, with a state
+// filter. Replaces this page's earlier use of /api/review/queue (submissions awaiting a
+// decision only); that endpoint is kept for the dashboards' own "waiting for review" lists.
+export function getReviewStudents(
   groupId?: string,
   late?: boolean,
+  state?: ReviewStateFilter,
   page = 1,
   pageSize = 25
-): Promise<Paged<ReviewQueueItem>> {
+): Promise<Paged<ReviewStudentItem>> {
   const params = new URLSearchParams()
   if (groupId) params.set('groupId', groupId)
   if (late !== undefined) params.set('late', String(late))
+  if (state && state !== 'All') params.set('state', state)
   params.set('page', String(page))
   params.set('pageSize', String(pageSize))
-  return apiRequest<Paged<ReviewQueueItem>>(`/api/review/queue?${params.toString()}`)
+  return apiRequest<Paged<ReviewStudentItem>>(`/api/review/students?${params.toString()}`)
 }
 
 export function getGroupProgress(groupId: string): Promise<GroupProgress> {

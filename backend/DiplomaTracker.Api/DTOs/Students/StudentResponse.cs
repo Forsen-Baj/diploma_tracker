@@ -16,6 +16,10 @@ public class StudentResponse
     public DateTime? ArchivedAt { get; set; }
     public Guid? TopicId { get; set; }
     public string? TopicTitle { get; set; }
+
+    /// True when the student has at least one Submission on any of their steps - clearing the
+    /// topic would then be refused with reservation.hasSubmissions (O1).
+    public bool HasSubmissions { get; set; }
     public Guid? GroupId { get; set; }
     public string? GroupCode { get; set; }
     public Guid? SupervisorId { get; set; }

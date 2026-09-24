@@ -12,6 +12,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { DataTable, type DataTableColumn } from '../components/ui/DataTable'
 import { EmptyState } from '../components/ui/EmptyState'
 import { PageHeader } from '../components/ui/PageHeader'
+import { Tooltip } from '../components/ui/Tooltip'
 import { useToast } from '../components/ui/useToast'
 import { DecisionCommentModal } from '../components/topics/DecisionCommentModal'
 import { TopicFormModal } from '../components/topics/TopicFormModal'
@@ -225,9 +226,16 @@ export function TeacherTopicsPage() {
     {
       key: 'actions',
       header: t('common.actions'),
-      render: (reservation) => (
-        <Button variant="secondary" size="sm" onClick={() => setReleasing(reservation)}>{t('topics.release')}</Button>
-      )
+      render: (reservation) =>
+        reservation.hasSubmissions ? (
+          <Tooltip content={t('topics.hasSubmissionsHint')}>
+            <span tabIndex={0} className="inline-flex">
+              <Button variant="secondary" size="sm" disabled>{t('topics.release')}</Button>
+            </span>
+          </Tooltip>
+        ) : (
+          <Button variant="secondary" size="sm" onClick={() => setReleasing(reservation)}>{t('topics.release')}</Button>
+        )
     }
   ]
 
