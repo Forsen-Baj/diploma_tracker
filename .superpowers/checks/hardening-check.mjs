@@ -374,7 +374,10 @@ const moverSEmail = `move.S.${stamp}@student.local`
 await call('POST', '/api/students', { token: admin, json: { firstName: 'Move', lastName: 'S', email: moverSEmail, studentNumber: `MVS${stamp}`, password: 'Password1!', groupId: moveC.id } })
 const moverSToken = await loginToken(moverSEmail, 'Password1!')
 
-const reservedTopic = (await call('POST', '/api/topics', { token: teacher, json: { title: `Hardening Topic ${stamp}`, departmentId: hardeningDepartment.id } })).body
+// Design 2026-09-27: a topic belongs to a direction; this department gets its own, managed by the seeded teacher.
+const hardeningDirection = (await call('POST', '/api/directions', { token: admin, json: { departmentId: hardeningDepartment.id, name: `Hardening ${stamp}`, managerId: (await call('GET', '/api/auth/me', { token: teacher })).body.id } })).body
+cleanup.addLast(`direction ${hardeningDirection.name}`, () => call('DELETE', `/api/directions/${hardeningDirection.id}`, { token: admin }))
+const reservedTopic = (await call('POST', '/api/topics', { token: teacher, json: { title: `Hardening Topic ${stamp}`, directionId: hardeningDirection.id } })).body
 cleanup.add(`topic ${reservedTopic.title}`, () => call('DELETE', `/api/topics/${reservedTopic.id}`, { token: admin }))
 check('24j reservation pending', (await call('POST', `/api/topics/${reservedTopic.id}/reserve`, { token: moverSToken })).body.status, 'Pending')
 check('24k archiving the whole group', (await call('POST', `/api/groups/${moveC.id}/students/archive`, { token: admin })).status, 200)

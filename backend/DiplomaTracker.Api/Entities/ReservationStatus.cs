@@ -6,5 +6,9 @@ public enum ReservationStatus
     Approved,
     Rejected,
     Cancelled,
-    Released
+    Released,
+
+    /// Design 2026-09-27 §5.1: an approver returned the request for changes. It is still open -
+    /// it holds its topic - and waits for the student to resubmit.
+    Returned
 }

@@ -101,42 +101,53 @@ const SCHEDULE = {
 }
 
 const TEACHERS = {
-  petrenko: { firstName: 'Олена', lastName: 'Петренко', patronymic: 'Василівна', email: 'o.petrenko@diploma.local' },
+  petrenko: { firstName: 'Олена', lastName: 'Петренко', patronymic: 'Василівна', email: 'o.petrenko@diploma.local', isDirectionManager: true },
   kovalenko: { firstName: 'Андрій', lastName: 'Коваленко', patronymic: 'Миколайович', email: 'a.kovalenko@diploma.local' },
-  shevchuk: { firstName: 'Ірина', lastName: 'Шевчук', patronymic: 'Олегівна', email: 'i.shevchuk@diploma.local' }
+  shevchuk: { firstName: 'Ірина', lastName: 'Шевчук', patronymic: 'Олегівна', email: 'i.shevchuk@diploma.local', isDirectionManager: true },
+  hrytsenko: { firstName: 'Наталія', lastName: 'Гриценко', patronymic: 'Павлівна', email: 'n.hrytsenko@diploma.local', isStandardsController: true }
 }
 
+// Design 2026-09-27: every topic belongs to a direction. Петренко manages the three directions of
+// ІПЗ, Шевчук the one of ІСТ.
+const DIRECTIONS = [
+  { key: 'web', dept: 'ipz', manager: 'petrenko', name: 'Вебтехнології та мобільні застосунки', description: 'Вебсистеми, мобільні застосунки та їхня інфраструктура.' },
+  { key: 'ai', dept: 'ipz', manager: 'petrenko', name: 'Інтелектуальні системи та аналіз даних', description: 'Машинне навчання, рекомендаційні системи, обробка природної мови.' },
+  { key: 'quality', dept: 'ipz', manager: 'petrenko', name: 'Якість і автоматизація розробки ПЗ', description: 'Тестування, автоматизація процесів, планування ресурсів.' },
+  { key: 'systems', dept: 'ist', manager: 'shevchuk', name: 'Інформаційні системи та безпека', description: 'Захист мереж, чат-боти, аналітичні панелі.' }
+]
+
 const TOPICS = [
-  { key: 'monitoring', supervisor: 'petrenko', dept: 'ipz', title: 'Вебсистема моніторингу виконання дипломних робіт', description: 'Облік етапів, подання версій і рецензування робіт студентів кафедри з розмежуванням ролей.' },
-  { key: 'finance', supervisor: 'petrenko', dept: 'ipz', title: 'Мобільний застосунок для обліку особистих фінансів із прогнозуванням витрат', description: 'Кросплатформний застосунок з аналітикою витрат і прогнозом на основі часових рядів.' },
-  { key: 'volunteer', supervisor: 'petrenko', dept: 'ipz', title: 'Платформа для координації волонтерських ініціатив', description: 'Публікація запитів, розподіл завдань між волонтерами та звітність.' },
-  { key: 'recommender', supervisor: 'kovalenko', dept: 'ipz', title: 'Рекомендаційна система для підбору навчальних курсів', description: 'Колаборативна фільтрація та контентні ознаки для персоналізованих рекомендацій.' },
-  { key: 'apitesting', supervisor: 'kovalenko', dept: 'ipz', title: 'Автоматизоване тестування REST API з генерацією тестових сценаріїв', description: 'Генерація тестів зі специфікації OpenAPI та аналіз покриття.' },
-  { key: 'schedule', supervisor: 'kovalenko', dept: 'ipz', title: 'Система автоматизованого складання розкладу занять', description: 'Пошук допустимого розкладу з урахуванням обмежень аудиторій, викладачів і груп.' },
-  { key: 'sentiment', supervisor: 'kovalenko', dept: 'ipz', title: 'Аналіз тональності україномовних відгуків методами NLP', description: 'Порівняння класичних моделей і трансформерів на корпусі відгуків.' },
-  { key: 'anomaly', supervisor: 'shevchuk', dept: 'ist', title: 'Система виявлення аномалій у мережевому трафіку', description: 'Моделі машинного навчання для виявлення атак у корпоративній мережі.' },
-  { key: 'chatbot', supervisor: 'shevchuk', dept: 'ist', title: 'Чат-бот для консультування абітурієнтів', description: 'Відповіді на типові запитання вступної кампанії з інтеграцією в Telegram.' },
-  { key: 'dashboard', supervisor: 'shevchuk', dept: 'ist', title: 'Інформаційна панель показників успішності студентів', description: 'Візуалізація та аналіз академічних показників для деканату.' }
+  { key: 'monitoring', supervisor: 'petrenko', direction: 'web', title: 'Вебсистема моніторингу виконання дипломних робіт', description: 'Облік етапів, подання версій і рецензування робіт студентів кафедри з розмежуванням ролей.' },
+  { key: 'finance', supervisor: 'petrenko', direction: 'web', title: 'Мобільний застосунок для обліку особистих фінансів із прогнозуванням витрат', description: 'Кросплатформний застосунок з аналітикою витрат і прогнозом на основі часових рядів.' },
+  { key: 'volunteer', supervisor: 'petrenko', direction: 'web', title: 'Платформа для координації волонтерських ініціатив', description: 'Публікація запитів, розподіл завдань між волонтерами та звітність.' },
+  { key: 'recommender', supervisor: 'kovalenko', direction: 'ai', title: 'Рекомендаційна система для підбору навчальних курсів', description: 'Колаборативна фільтрація та контентні ознаки для персоналізованих рекомендацій.' },
+  { key: 'apitesting', supervisor: 'kovalenko', direction: 'quality', title: 'Автоматизоване тестування REST API з генерацією тестових сценаріїв', description: 'Генерація тестів зі специфікації OpenAPI та аналіз покриття.' },
+  { key: 'schedule', supervisor: 'kovalenko', direction: 'quality', title: 'Система автоматизованого складання розкладу занять', description: 'Пошук допустимого розкладу з урахуванням обмежень аудиторій, викладачів і груп.' },
+  { key: 'sentiment', supervisor: 'kovalenko', direction: 'ai', title: 'Аналіз тональності україномовних відгуків методами NLP', description: 'Порівняння класичних моделей і трансформерів на корпусі відгуків.' },
+  { key: 'anomaly', supervisor: 'shevchuk', direction: 'systems', title: 'Система виявлення аномалій у мережевому трафіку', description: 'Моделі машинного навчання для виявлення атак у корпоративній мережі.' },
+  { key: 'chatbot', supervisor: 'shevchuk', direction: 'systems', title: 'Чат-бот для консультування абітурієнтів', description: 'Відповіді на типові запитання вступної кампанії з інтеграцією в Telegram.' },
+  { key: 'dashboard', supervisor: 'shevchuk', direction: 'systems', title: 'Інформаційна панель показників успішності студентів', description: 'Візуалізація та аналіз академічних показників для деканату.' }
 ]
 
 // topic: catalogue key reserved and approved | 'proposal' (with `proposal`: its title) | 'pending:<key>' |
-// 'rejected:<key>' | null. Work on the steps starts only once a topic is approved, so a student
-// without one has no `steps`.
+// 'rejected:<key>' | 'returned:<key>' | null. Work on the steps starts only once a topic is
+// approved, so a student without one has no `steps`.
 // steps: one entry per step worked on, in order - 'approved:<mark>', 'returned', 'submitted'
 const STUDENTS = [
   // ІП-21: on schedule, reviewed by Петренко
-  // Бондаренко: step 2 waits for Коваленко after Петренко's approval ("1 of 2").
+  // Бондаренко: step 2 waits for Коваленко and the standards controller after Петренко's approval ("1 of 3").
   { group: 'ip21', lastName: 'Бондаренко', firstName: 'Максим', patronymic: 'Сергійович', email: 'm.bondarenko', number: 'ІП21-001', topic: 'monitoring', steps: ['approved:95', 'submitted'], extras: { 1: ['kovalenko'] } },
   { group: 'ip21', lastName: 'Ткаченко', firstName: 'Анна', patronymic: 'Ігорівна', email: 'a.tkachenko', number: 'ІП21-002', topic: 'proposal', proposal: 'Інтерактивний тренажер для вивчення алгоритмів сортування', steps: ['approved:88'] },
-  // Мельник: Петренко approves version 1, the supervisor returns it, version 2 completes the panel.
-  { group: 'ip21', lastName: 'Мельник', firstName: 'Дмитро', patronymic: 'Олександрович', email: 'd.melnyk', number: 'ІП21-003', topic: 'schedule', steps: ['returned', 'submitted'], extras: { 0: ['petrenko'] } },
+  // Мельник: Шевчук approves version 1, the supervisor returns it, version 2 completes the panel.
+  { group: 'ip21', lastName: 'Мельник', firstName: 'Дмитро', patronymic: 'Олександрович', email: 'd.melnyk', number: 'ІП21-003', topic: 'schedule', steps: ['returned', 'submitted'], extras: { 0: ['shevchuk'] } },
   { group: 'ip21', lastName: 'Кравченко', firstName: 'Софія', patronymic: 'Андріївна', email: 's.kravchenko', number: 'ІП21-004', topic: 'rejected:recommender', steps: [] },
   { group: 'ip21', lastName: 'Олійник', firstName: 'Владислав', patronymic: 'Петрович', email: 'v.oliinyk', number: 'ІП21-005', topic: 'pending:finance', steps: [] },
-  // Лисенко: step 2 approved by a panel of two (average mark), step 3 waits for two of three.
-  { group: 'ip21', lastName: 'Лисенко', firstName: 'Катерина', patronymic: 'Володимирівна', email: 'k.lysenko', number: 'ІП21-006', topic: 'apitesting', steps: ['approved:100', 'approved:92', 'submitted'], extras: { 1: ['shevchuk'], 2: ['petrenko', 'shevchuk'] } },
+  // Лисенко: step 2 approved by a panel of four (average of three marks), step 3 waits for two of three.
+  { group: 'ip21', lastName: 'Лисенко', firstName: 'Катерина', patronymic: 'Володимирівна', email: 'k.lysenko', number: 'ІП21-006', topic: 'apitesting', steps: ['approved:100', 'approved:92', 'submitted'], extras: { 1: ['shevchuk'], 2: ['shevchuk'] } },
   // ІП-22: behind - the first deadline has passed, reviewed by Коваленко
   { group: 'ip22', lastName: 'Савченко', firstName: 'Артем', patronymic: 'Юрійович', email: 'a.savchenko', number: 'ІП22-001', topic: 'sentiment', steps: ['approved:75'] },
-  { group: 'ip22', lastName: 'Руденко', firstName: 'Юлія', patronymic: 'Миколаївна', email: 'y.rudenko', number: 'ІП22-002', topic: null, steps: [] },
+  // Руденко: the direction manager returned her topic request for a sharper wording.
+  { group: 'ip22', lastName: 'Руденко', firstName: 'Юлія', patronymic: 'Миколаївна', email: 'y.rudenko', number: 'ІП22-002', topic: 'returned:recommender', steps: [] },
   { group: 'ip22', lastName: 'Мороз', firstName: 'Олександр', patronymic: 'Вікторович', email: 'o.moroz', number: 'ІП22-003', topic: 'volunteer', steps: ['submitted'] },
   { group: 'ip22', lastName: 'Павленко', firstName: 'Дарина', patronymic: 'Сергіївна', email: 'd.pavlenko', number: 'ІП22-004', topic: null, steps: [] },
   // ІС-21: reviewed by Шевчук
@@ -204,11 +215,24 @@ async function main() {
     await call('POST', `/api/groups/${groups[key].id}/reviewers`, { token: admin, json: { reviewerId: teachers[teacher].id } })
   }
 
+  console.log('Directions and standards control...')
+  const directions = {}
+  for (const d of DIRECTIONS) {
+    directions[d.key] = await call('POST', '/api/directions', { token: teachers[d.manager].token, json: { departmentId: departments[d.dept].id, name: d.name, description: d.description } })
+  }
+  // Гриценко checks the formatting of ІП-21's first two steps for every student of the group.
+  const ip21Steps = (await call('GET', `/api/groups/${groups.ip21.id}/tasks`, { token: admin })).sort((a, b) => a.taskOrder - b.taskOrder)
+  for (const step of ip21Steps.slice(0, 2)) {
+    await call('PUT', `/api/group-tasks/${step.id}/standards-controller`, { token: admin, json: { userId: teachers.hrytsenko.id } })
+  }
+  const controls = (s, stepIndex) => s.group === 'ip21' && stepIndex < 2
+  const managerOf = (topic) => DIRECTIONS.find((d) => d.key === topic.direction).manager
+
   console.log('Topic selection...')
   await call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: deadline(21) } })
   const topics = {}
   for (const topic of TOPICS) {
-    topics[topic.key] = { ...topic, ...(await call('POST', '/api/topics', { token: teachers[topic.supervisor].token, json: { title: topic.title, description: topic.description, departmentId: departments[topic.dept].id } })) }
+    topics[topic.key] = { ...topic, ...(await call('POST', '/api/topics', { token: teachers[topic.supervisor].token, json: { title: topic.title, description: topic.description, directionId: directions[topic.direction].id } })) }
   }
 
   console.log('Students...')
@@ -219,29 +243,44 @@ async function main() {
     students.push({ ...s, index, email, id: created.id, token: await login(email, DEMO_PASSWORD) })
   }
 
+  // Design 2026-09-27 §5: a topic is the student's once the administration, the direction manager
+  // and the supervisor have approved it. The supervisor created every catalogue topic, so their
+  // seat - and the manager's, when that is the same person - starts approved.
   for (const s of students) {
     if (!s.topic) continue
     const [kind, key] = s.topic.includes(':') ? s.topic.split(':') : ['approved', s.topic]
     if (kind === 'approved' && key === 'proposal') continue
     const topic = topics[key]
     const supervisor = teachers[topic.supervisor]
+    const managerKey = managerOf(topic)
     s.supervisorKey = topic.supervisor
+    s.managerKey = managerKey
     const reservation = await call('POST', `/api/topics/${topic.id}/reserve`, { token: s.token })
     if (kind === 'approved') {
-      await call('POST', `/api/reservations/${reservation.id}/approve`, { token: supervisor.token, json: { comment: 'Тему затверджено. Успіхів у роботі!' } })
+      await call('POST', `/api/reservations/${reservation.id}/approve`, { token: admin })
+      if (managerKey !== topic.supervisor) {
+        await call('POST', `/api/reservations/${reservation.id}/approve`, { token: teachers[managerKey].token })
+      }
       s.topicTitle = topic.title
     } else if (kind === 'rejected') {
       // Deliberately without a comment: the student's topic page shows the rejection anyway.
       await call('POST', `/api/reservations/${reservation.id}/reject`, { token: supervisor.token, json: {} })
+    } else if (kind === 'returned') {
+      await call('POST', `/api/reservations/${reservation.id}/return`, { token: teachers[managerKey].token, json: { comment: 'Уточніть формулювання: тема має відображати предметну область і результат роботи.' } })
+      s.topicTitle = topic.title
     } else {
+      // 'pending': the creator's seats are in; the others still wait.
       s.topicTitle = topic.title
     }
   }
   for (const proposer of students.filter((s) => s.topic === 'proposal')) {
-    const proposal = await call('POST', '/api/topics/proposals', { token: proposer.token, json: { title: proposer.proposal, description: 'Тему запропоновано студентом і погоджено з керівником.', supervisorId: teachers.petrenko.id } })
-    await call('POST', `/api/reservations/${proposal.id}/approve`, { token: teachers.petrenko.token, json: {} })
+    const proposal = await call('POST', '/api/topics/proposals', { token: proposer.token, json: { title: proposer.proposal, description: 'Тему запропоновано студентом і погоджено з керівником.', supervisorId: teachers.petrenko.id, directionId: directions.web.id } })
+    // Петренко supervises and manages the direction: one approval fills both seats.
+    await call('POST', `/api/reservations/${proposal.id}/approve`, { token: teachers.petrenko.token })
+    await call('POST', `/api/reservations/${proposal.id}/approve`, { token: admin })
     proposer.topicTitle = proposer.proposal
     proposer.supervisorKey = 'petrenko'
+    proposer.managerKey = 'petrenko'
   }
 
   console.log('Submissions and reviews...')
@@ -265,6 +304,13 @@ async function main() {
         const step = await call('GET', `/api/student-tasks/${task.id}`, { token: reviewer.token })
         await call('POST', `/api/submissions/${step.pendingSubmissionId}/${action}`, { token: reviewer.token, json })
       }
+      // Design 2026-09-27 §6: the direction manager, when not the supervisor, and the standards
+      // controller of the group's step sit on the panel too.
+      const manager = s.managerKey !== s.supervisorKey ? teachers[s.managerKey] : null
+      const approveOthers = async (i, mark) => {
+        if (manager) await decide(manager, 'approve', { mark: Math.min(100, mark + 2), comment: 'Погоджено керівником напряму.' })
+        if (controls(s, i)) await decide(teachers.hrytsenko, 'approve', { comment: 'Оформлення відповідає вимогам нормоконтролю.' })
+      }
       const extras = (s.extras?.[i] ?? []).map((key) => teachers[key])
 
       await submit(1, i === 0 ? 'Надсилаю тему та план роботи.' : undefined)
@@ -284,11 +330,13 @@ async function main() {
         // A returned step is sent again. The last step of a student's list stays awaiting review.
         await submit(2, 'Виправлену версію надіслано.')
         if (i === s.steps.length - 1) continue
+        await approveOthers(i, 85)
         await decide(supervisor, 'approve', { mark: 85, comment: 'Зауваження враховано.' })
         continue
       }
       const mark = Number(outcome.split(':')[1])
       for (const extra of extras) await decide(extra, 'approve', { mark: Math.max(0, mark - 3), comment: 'Оформлення відповідає вимогам.' })
+      await approveOthers(i, mark)
       await decide(supervisor, 'approve', { mark, comment: APPROVE_COMMENTS[(s.index + i) % APPROVE_COMMENTS.length] })
     }
   }
@@ -345,7 +393,10 @@ async function main() {
 
   console.log('\nDone. Demo accounts (password for all: ' + DEMO_PASSWORD + '):')
   console.log('  Administrator: admin@diploma.local (the seeded account, its own password)')
-  for (const t of Object.values(teachers)) console.log(`  Викладач   ${t.lastName} ${t.firstName} ${t.patronymic}: ${t.email}`)
+  for (const t of Object.values(teachers)) {
+    const label = t.isDirectionManager ? 'Керівник напряму' : t.isStandardsController ? 'Нормоконтролер' : 'Викладач'
+    console.log(`  ${label}   ${t.lastName} ${t.firstName} ${t.patronymic}: ${t.email}`)
+  }
   for (const s of students.filter((x) => x.group !== 'ip11')) console.log(`  Студент ${groups[s.group].code}  ${s.lastName} ${s.firstName}: ${s.email}`)
 }
 

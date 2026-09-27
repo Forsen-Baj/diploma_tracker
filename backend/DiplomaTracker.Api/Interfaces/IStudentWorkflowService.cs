@@ -1,4 +1,5 @@
 using DiplomaTracker.Api.DTOs.Dashboard;
+using DiplomaTracker.Api.DTOs.GroupTasks;
 using DiplomaTracker.Api.DTOs.Workflow;
 using DiplomaTracker.Api.Models;
 using DiplomaTracker.Api.Services;
@@ -21,4 +22,11 @@ public interface IStudentWorkflowService
     Task<(IReadOnlyList<PanelSeatResponse>? panel, string? error)> GetPanelAsync(UserContext user, Guid studentTaskId);
     Task<(StepDetailsResponse? step, string? error)> AddReviewerAsync(UserContext user, Guid studentTaskId, Guid reviewerId);
     Task<(StepDetailsResponse? step, string? error)> RemoveReviewerAsync(UserContext user, Guid studentTaskId, Guid reviewerId);
+    Task<(StandardsControllerChangeResponse? result, string? error)> SetStandardsControllerAsync(UserContext user, Guid groupTaskId, Guid? controllerId);
+
+    /// Design 2026-09-27 §4.2 and §5.2: a change of a student's supervisor or direction manager moves
+    /// a seat on every step they have not finished. Touches each such step and approves a Submitted
+    /// one whose panel, after `adjust` applies the unsaved change, is now satisfied. Stages the
+    /// changes only; the caller saves them with its own change. Returns whether any step was touched.
+    Task<bool> RefreshStudentPanelsAsync(IReadOnlyCollection<Guid> studentProfileIds, DateTime now, Func<ReviewPanel.Facts, ReviewPanel.Facts> adjust);
 }

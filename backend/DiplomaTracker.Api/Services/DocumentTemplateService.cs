@@ -619,7 +619,7 @@ public class DocumentTemplateService : IDocumentTemplateService
                     .Include(t => t.Supervisor)
                     .FirstOrDefaultAsync(t => t.Id == request.TopicId
                         && (t.Id == student.TopicId
-                            || t.Reservations.Any(r => r.StudentProfileId == student.Id && r.Status == ReservationStatus.Pending)),
+                            || t.Reservations.Any(r => r.StudentProfileId == student.Id && (r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Returned))),
                         cancellationToken);
 
                 if (topic is null)
@@ -678,7 +678,7 @@ public class DocumentTemplateService : IDocumentTemplateService
 
         return await _dbContext.Topics.AsNoTracking()
             .Include(t => t.Supervisor)
-            .Where(t => t.Reservations.Any(r => r.StudentProfileId == student.Id && r.Status == ReservationStatus.Pending))
+            .Where(t => t.Reservations.Any(r => r.StudentProfileId == student.Id && (r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Returned)))
             .FirstOrDefaultAsync(cancellationToken);
     }
 

@@ -10,7 +10,7 @@ public class UpdateTopicRequest
     [MaxLength(4000)]
     public string? Description { get; set; }
 
-    public Guid DepartmentId { get; set; }
+    public Guid DirectionId { get; set; }
 
     public Guid? SupervisorId { get; set; }
 }

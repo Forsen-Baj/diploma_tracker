@@ -232,7 +232,9 @@ public class AuthService : IAuthService
             FirstName = user.FirstName,
             LastName = user.LastName,
             Email = user.Email,
-            Role = user.Role
+            Role = user.Role,
+            IsDirectionManager = user.IsDirectionManager,
+            IsStandardsController = user.IsStandardsController
         };
     }
 }

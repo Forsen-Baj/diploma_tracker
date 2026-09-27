@@ -174,9 +174,9 @@ export function StudentsPage() {
     return options
   }, [formTopics, editingStudent, t])
 
-  // Assigning or clearing a topic through PUT /api/students/{id}/topic always sets the student's
-  // supervisor to the topic's supervisor (or clears it, when the topic is cleared) — see
-  // ReservationService.SetStudentTopicAsync. Whenever a topic is picked, or the student's existing
+  // Assigning or clearing a topic through PUT /api/students/{id}/topic sets the student's
+  // supervisor to the topic's supervisor once the request is approved (or clears it at once, when
+  // the topic is cleared) — see ReservationService.SetStudentTopicAsync. Whenever a topic is picked, or the student's existing
   // topic is being cleared, the supervisor field just shows what will happen instead of letting the
   // administrator pick a value that the save silently overrides.
   const topicControlsSupervisor = Boolean(editingStudent) && (Boolean(studentForm.topicId) || Boolean(editingStudent?.topicId))
@@ -367,7 +367,14 @@ export function StudentsPage() {
     setIsSavingStudent(true)
     try {
       if (editingStudent) {
-        await updateStudent(editingStudent.id, toRequest(studentForm))
+        // Design 2026-09-27 §5.2: a topic's supervisor reaches the student only when its request
+        // completes, so while the topic controls the field the student keeps the saved supervisor.
+        // The field shows the topic's supervisor; setStudentTopic makes the request that sets it.
+        const request = toRequest(studentForm)
+        await updateStudent(
+          editingStudent.id,
+          topicControlsSupervisor ? { ...request, supervisorId: editingStudent.supervisorId ?? undefined } : request
+        )
 
         const nextTopicId = studentForm.topicId || null
         const previousTopicId = editingStudent.topicId ?? null

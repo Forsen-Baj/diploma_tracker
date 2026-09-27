@@ -12,6 +12,7 @@ public class AppDbContext : DbContext
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<Faculty> Faculties => Set<Faculty>();
     public DbSet<Department> Departments => Set<Department>();
+    public DbSet<Direction> Directions => Set<Direction>();
     public DbSet<StudentProfile> StudentProfiles => Set<StudentProfile>();
     public DbSet<Group> Groups => Set<Group>();
     public DbSet<GroupReviewer> GroupReviewers => Set<GroupReviewer>();
@@ -21,6 +22,7 @@ public class AppDbContext : DbContext
     public DbSet<PlatformSettings> PlatformSettings => Set<PlatformSettings>();
     public DbSet<Topic> Topics => Set<Topic>();
     public DbSet<TopicReservation> TopicReservations => Set<TopicReservation>();
+    public DbSet<ReservationDecision> ReservationDecisions => Set<ReservationDecision>();
     public DbSet<Submission> Submissions => Set<Submission>();
     public DbSet<SubmissionFile> SubmissionFiles => Set<SubmissionFile>();
     public DbSet<StudentTaskReviewer> StudentTaskReviewers => Set<StudentTaskReviewer>();
@@ -60,6 +62,24 @@ public class AppDbContext : DbContext
             .HasForeignKey(x => x.FacultyId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        var direction = modelBuilder.Entity<Direction>();
+        direction.ToTable("Directions");
+        direction.HasKey(x => x.Id);
+        direction.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        direction.Property(x => x.Description).HasMaxLength(2000);
+        direction.Property(x => x.CreatedAt).IsRequired();
+        direction.Property(x => x.UpdatedAt).IsRequired();
+        direction.HasIndex(x => new { x.DepartmentId, x.Name }).IsUnique();
+        direction.HasIndex(x => x.ManagerId);
+        direction.HasOne(x => x.Department)
+            .WithMany(x => x.Directions)
+            .HasForeignKey(x => x.DepartmentId)
+            .OnDelete(DeleteBehavior.Restrict);
+        direction.HasOne(x => x.Manager)
+            .WithMany(x => x.ManagedDirections)
+            .HasForeignKey(x => x.ManagerId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         var user = modelBuilder.Entity<AppUser>();
         user.ToTable("Users");
         user.HasKey(x => x.Id);
@@ -71,6 +91,8 @@ public class AppDbContext : DbContext
         user.Property(x => x.PasswordHash);
         user.Property(x => x.Role).HasMaxLength(50).IsRequired();
         user.Property(x => x.IsActive).IsRequired();
+        user.Property(x => x.IsDirectionManager).IsRequired();
+        user.Property(x => x.IsStandardsController).IsRequired();
         user.Property(x => x.CreatedAt).IsRequired();
         user.Property(x => x.UpdatedAt).IsRequired();
 
@@ -166,6 +188,12 @@ public class AppDbContext : DbContext
             .WithMany(x => x.GroupTasks)
             .HasForeignKey(x => x.DiplomaTaskTemplateId)
             .OnDelete(DeleteBehavior.Restrict);
+        groupTask.HasIndex(x => x.StandardsControllerId);
+        groupTask.HasOne(x => x.StandardsController)
+            .WithMany()
+            .HasForeignKey(x => x.StandardsControllerId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
 
         var studentTask = modelBuilder.Entity<StudentTask>();
         studentTask.ToTable("StudentTasks");
@@ -207,37 +235,44 @@ public class AppDbContext : DbContext
         topic.Property(x => x.CreatedAt).IsRequired();
         topic.Property(x => x.UpdatedAt).IsRequired();
         topic.Property(x => x.RowVersion).IsRowVersion();
-        topic.HasIndex(x => new { x.DepartmentId, x.Status });
+        topic.HasIndex(x => new { x.DirectionId, x.Status });
         topic.HasOne(x => x.Supervisor)
             .WithMany(x => x.SupervisedTopics)
             .HasForeignKey(x => x.SupervisorId)
             .OnDelete(DeleteBehavior.Restrict);
-        topic.HasOne(x => x.Department)
+        topic.HasOne(x => x.Direction)
             .WithMany(x => x.Topics)
-            .HasForeignKey(x => x.DepartmentId)
+            .HasForeignKey(x => x.DirectionId)
+            .OnDelete(DeleteBehavior.Restrict);
+        topic.HasOne(x => x.CreatedBy)
+            .WithMany()
+            .HasForeignKey(x => x.CreatedById)
+            .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
 
         var reservation = modelBuilder.Entity<TopicReservation>();
         reservation.ToTable("TopicReservations");
         reservation.HasKey(x => x.Id);
         reservation.Property(x => x.TopicTitle).HasMaxLength(300).IsRequired();
+        reservation.Property(x => x.TopicDescription).HasMaxLength(4000);
+        reservation.Property(x => x.ContentChangedAt).IsRequired();
         reservation.Property(x => x.Status).HasConversion<string>().HasMaxLength(50).IsRequired();
         reservation.Property(x => x.DecisionComment).HasMaxLength(1000);
         reservation.Property(x => x.CreatedAt).IsRequired();
         reservation.HasIndex(x => x.TopicId)
             .IsUnique()
-            .HasFilter("[TopicId] IS NOT NULL AND [Status] IN ('Pending', 'Approved')")
+            .HasFilter("[TopicId] IS NOT NULL AND [Status] IN ('Pending', 'Returned', 'Approved')")
             .HasDatabaseName("IX_TopicReservations_ActivePerTopic");
-        // Two separate filters, not one on ('Pending', 'Approved'): a student holding an
-        // approved topic may have a pending change request at the same time.
+        // Two separate filters: a student holding an approved topic may have an open request at
+        // the same time.
         //
         // Both must use the HasIndex(expression, name) overload. EF Core identifies an index by
         // its property set, so two plain HasIndex(x => x.StudentProfileId) calls are the SAME
         // index — the second silently overwrites the first and only one filter reaches the
         // migration, whatever HasDatabaseName says. Naming them at creation makes them distinct.
-        reservation.HasIndex(x => x.StudentProfileId, "IX_TopicReservations_PendingPerStudent")
+        reservation.HasIndex(x => x.StudentProfileId, "IX_TopicReservations_OpenPerStudent")
             .IsUnique()
-            .HasFilter("[Status] = 'Pending'");
+            .HasFilter("[Status] IN ('Pending', 'Returned')");
         reservation.HasIndex(x => x.StudentProfileId, "IX_TopicReservations_ApprovedPerStudent")
             .IsUnique()
             .HasFilter("[Status] = 'Approved'");
@@ -251,6 +286,23 @@ public class AppDbContext : DbContext
             .WithMany(x => x.TopicReservations)
             .HasForeignKey(x => x.StudentProfileId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        var reservationDecision = modelBuilder.Entity<ReservationDecision>();
+        reservationDecision.ToTable("ReservationDecisions");
+        reservationDecision.HasKey(x => x.Id);
+        reservationDecision.Property(x => x.Kind).HasConversion<string>().HasMaxLength(50).IsRequired();
+        reservationDecision.Property(x => x.Comment).HasMaxLength(1000);
+        reservationDecision.Property(x => x.DecidedAt).IsRequired();
+        reservationDecision.HasIndex(x => new { x.ReservationId, x.DecidedAt });
+        reservationDecision.HasIndex(x => x.DeciderId);
+        reservationDecision.HasOne(x => x.Reservation)
+            .WithMany(x => x.Decisions)
+            .HasForeignKey(x => x.ReservationId)
+            .OnDelete(DeleteBehavior.Cascade);
+        reservationDecision.HasOne(x => x.Decider)
+            .WithMany()
+            .HasForeignKey(x => x.DeciderId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         var submission = modelBuilder.Entity<Submission>();
         submission.ToTable("Submissions");

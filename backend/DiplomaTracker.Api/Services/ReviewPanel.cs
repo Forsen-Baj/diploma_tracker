@@ -2,13 +2,16 @@ using DiplomaTracker.Api.Entities;
 
 namespace DiplomaTracker.Api.Services;
 
-/// Design 2026-09-24 §3.2. A step's panel is never stored as one list. It is the student's CURRENT
-/// supervisor plus one seat per extra reviewer on that step, and a seat is satisfied by an approval
-/// that fills it on ANY version of the step - approvals are sticky. Pure: callers load the facts,
-/// this decides, so every reader agrees on what the panel is.
+/// Design 2026-09-24 §3.2 and 2026-09-27 §6. A step's panel is never stored as one list. It is the
+/// student's CURRENT supervisor, the CURRENT manager of their topic's direction, one seat per extra
+/// reviewer on that step, and the standards controller of the group's step. A seat is satisfied by
+/// an approval that fills it on ANY version of the step - approvals are sticky. Pure: callers load
+/// the facts, this decides, so every reader agrees on what the panel is.
 public static class ReviewPanel
 {
     public sealed record ExtraSeatFact(Guid ReviewerId, DateTime AddedAt);
+
+    public sealed record StandardsControlFact(Guid ControllerId, DateTime AssignedAt);
 
     public sealed record ReviewFact(
         Guid ReviewerId,
@@ -17,6 +20,17 @@ public static class ReviewPanel
         SubmissionDecision Decision,
         int? Mark,
         DateTime DecidedAt);
+
+    /// What the panel of one step is made of, as loaded.
+    public sealed record Facts(
+        Guid? SupervisorId,
+        Guid? DirectionManagerId,
+        StandardsControlFact? StandardsControl,
+        IReadOnlyList<ExtraSeatFact> Extras,
+        IReadOnlyList<ReviewFact> Reviews)
+    {
+        public PanelState Evaluate() => ReviewPanel.Evaluate(this);
+    }
 
     /// ReviewerId is null only for a supervisor seat whose student has no supervisor (a topic
     /// released while a version waits) - an administrator can still fill it.
@@ -30,8 +44,14 @@ public static class ReviewPanel
 
         public bool IsComplete => Seats.All(s => s.IsSatisfied);
 
-        /// The step mark (§2): the average of the marks behind every satisfied seat, rounded to a
-        /// whole number, half away from zero.
+        /// Design 2026-09-27 §6.1: an approved step is final. Every seat was satisfied when it was
+        /// approved and approvals never lapse, so a seat that is open on it now arrived afterwards -
+        /// a standards controller assigned later, a supervisor or direction manager changed later.
+        /// That seat never sat on this step, so the approved step's panel leaves it out.
+        public PanelState AsApproved() => new(Seats.Where(s => s.IsSatisfied).ToList());
+
+        /// The step mark: the average of the marks behind every satisfied marked seat, rounded to
+        /// a whole number, half away from zero. The standards control seat carries no mark.
         public int? AverageMark()
         {
             var marks = Seats.Where(s => s.IsSatisfied && s.Mark is not null).Select(s => s.Mark!.Value).ToList();
@@ -39,52 +59,71 @@ public static class ReviewPanel
         }
     }
 
-    /// The supervisor seat is always first. An extra row naming the current supervisor (they were
-    /// added as an extra and later became the supervisor through a topic change) is absorbed into
-    /// the supervisor seat - otherwise it would be a seat nobody could ever fill. An extra seat
-    /// counts only approvals given after it was added, so removing and re-adding someone needs a
-    /// fresh approval (§3.3: a removal means their approval stops counting).
-    public static PanelState Evaluate(Guid? supervisorId, IReadOnlyList<ExtraSeatFact> extras, IReadOnlyList<ReviewFact> reviews)
+    /// Whether approving in this seat takes a mark (§6): every seat but standards control.
+    public static bool IsMarked(ReviewSeat seat) => seat != ReviewSeat.StandardsControl;
+
+    /// Seats in order: Supervisor (always first), DirectionManager, Extra..., StandardsControl. One
+    /// person holds one seat - whoever already sits earlier in that order is not seated again later,
+    /// which is how phase 9 already absorbed an extra naming the supervisor. An extra seat counts
+    /// only approvals given after it was added, the standards control seat only those given after
+    /// the controller was assigned.
+    public static PanelState Evaluate(Facts facts)
     {
-        var approvals = reviews
+        var approvals = facts.Reviews
             .Where(r => r.Decision == SubmissionDecision.Approved)
             .OrderByDescending(r => r.DecidedAt)
             .ToList();
 
+        var seated = new HashSet<Guid>();
+        var seats = new List<SeatState>();
+
         var supervisorApproval = approvals.FirstOrDefault(r =>
-            r.Seat == ReviewSeat.Supervisor && (r.ReviewerId == supervisorId || r.ReviewerIsAdmin));
-
-        var seats = new List<SeatState>(extras.Count + 1)
+            r.Seat == ReviewSeat.Supervisor && (r.ReviewerId == facts.SupervisorId || r.ReviewerIsAdmin));
+        seats.Add(new SeatState(ReviewSeat.Supervisor, facts.SupervisorId, supervisorApproval is not null, supervisorApproval?.Mark));
+        if (facts.SupervisorId is { } supervisorId)
         {
-            new(ReviewSeat.Supervisor, supervisorId, supervisorApproval is not null, supervisorApproval?.Mark)
-        };
+            seated.Add(supervisorId);
+        }
 
-        foreach (var extra in extras.Where(e => e.ReviewerId != supervisorId).OrderBy(e => e.AddedAt))
+        if (facts.DirectionManagerId is { } managerId && seated.Add(managerId))
         {
+            var approval = approvals.FirstOrDefault(r => r.Seat == ReviewSeat.DirectionManager && r.ReviewerId == managerId);
+            seats.Add(new SeatState(ReviewSeat.DirectionManager, managerId, approval is not null, approval?.Mark));
+        }
+
+        foreach (var extra in facts.Extras.OrderBy(e => e.AddedAt))
+        {
+            if (!seated.Add(extra.ReviewerId))
+            {
+                continue;
+            }
+
             var approval = approvals.FirstOrDefault(r =>
                 r.Seat == ReviewSeat.Extra && r.ReviewerId == extra.ReviewerId && r.DecidedAt >= extra.AddedAt);
             seats.Add(new SeatState(ReviewSeat.Extra, extra.ReviewerId, approval is not null, approval?.Mark));
         }
 
+        if (facts.StandardsControl is { } control && seated.Add(control.ControllerId))
+        {
+            var approval = approvals.FirstOrDefault(r =>
+                r.Seat == ReviewSeat.StandardsControl && r.ReviewerId == control.ControllerId && r.DecidedAt >= control.AssignedAt);
+            seats.Add(new SeatState(ReviewSeat.StandardsControl, control.ControllerId, approval is not null, null));
+        }
+
         return new PanelState(seats);
     }
 
-    /// The seat the caller's decision fills (§3.3), or null when they have none. Their own seat
-    /// wins; an administrator with no seat of their own stands in for the supervisor by default
-    /// (`allowAdminStandIn: true`, the default) - that power drives `canDecide` and the Approve/
-    /// Return form. Task 7 R1: "Your decision" / `isMyDecision` means explicitly assigned - the
-    /// caller actually sits on the panel - so that computation passes `allowAdminStandIn: false`
-    /// to get `null` for an administrator who is neither the supervisor nor an extra reviewer.
-    public static ReviewSeat? SeatFor(UserContext user, Guid? supervisorId, IReadOnlyList<ExtraSeatFact> extras, bool allowAdminStandIn = true)
+    /// The seat the caller's decision fills, or null when they have none. Their own seat wins; an
+    /// administrator with no seat of their own stands in for the supervisor by default
+    /// (`allowAdminStandIn: true`) - that power drives `canDecide` and the decision form. "Your
+    /// decision" (`isMyDecision`) passes `allowAdminStandIn: false`, so it counts only a seat the
+    /// caller actually holds.
+    public static ReviewSeat? SeatFor(UserContext user, PanelState panel, bool allowAdminStandIn = true)
     {
-        if (supervisorId == user.UserId)
+        var own = panel.Seats.FirstOrDefault(s => s.ReviewerId == user.UserId);
+        if (own is not null)
         {
-            return ReviewSeat.Supervisor;
-        }
-
-        if (extras.Any(e => e.ReviewerId == user.UserId))
-        {
-            return ReviewSeat.Extra;
+            return own.Seat;
         }
 
         return allowAdminStandIn && user.IsAdmin ? ReviewSeat.Supervisor : null;
@@ -93,5 +132,5 @@ public static class ReviewPanel
     public static bool IsSeatSatisfied(PanelState panel, ReviewSeat seat, Guid userId) =>
         seat == ReviewSeat.Supervisor
             ? panel.Seats[0].IsSatisfied
-            : panel.Seats.Any(s => s.Seat == ReviewSeat.Extra && s.ReviewerId == userId && s.IsSatisfied);
+            : panel.Seats.Any(s => s.Seat == seat && s.ReviewerId == userId && s.IsSatisfied);
 }

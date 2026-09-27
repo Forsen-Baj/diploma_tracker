@@ -397,7 +397,24 @@ public class GroupTaskService : IGroupTaskService
             Deadline = x.Deadline,
             CreatedAt = x.CreatedAt,
             UpdatedAt = x.UpdatedAt,
-            StudentTaskCount = x.StudentTasks.Count(st => st.StudentProfile.ArchivedAt == null)
+            StudentTaskCount = x.StudentTasks.Count(st => st.StudentProfile.ArchivedAt == null),
+            StandardsControllerId = x.StandardsControllerId,
+            StandardsControllerName = x.StandardsController == null
+                ? null
+                : x.StandardsController.LastName + " " + x.StandardsController.FirstName,
+            StandardsControlApproved = x.StandardsControllerId == null
+                ? 0
+                : x.StudentTasks.Count(st => st.StudentProfile.ArchivedAt == null
+                    && st.Submissions.SelectMany(s => s.Reviews).Any(r =>
+                        r.Seat == ReviewSeat.StandardsControl
+                        && r.Decision == SubmissionDecision.Approved
+                        && r.ReviewerId == x.StandardsControllerId
+                        && r.DecidedAt >= x.StandardsControllerAssignedAt)),
+            StandardsControlTotal = x.StandardsControllerId == null
+                ? 0
+                : x.StudentTasks.Count(st => st.StudentProfile.ArchivedAt == null
+                    && !(st.Status == StudentTaskStatus.Approved && st.CompletedAt < x.StandardsControllerAssignedAt)),
+            ApprovedStepCount = x.StudentTasks.Count(st => st.StudentProfile.ArchivedAt == null && st.Status == StudentTaskStatus.Approved)
         });
     }
 
@@ -416,7 +433,8 @@ public class GroupTaskService : IGroupTaskService
             Deadline = groupTask.Deadline,
             CreatedAt = groupTask.CreatedAt,
             UpdatedAt = groupTask.UpdatedAt,
-            StudentTaskCount = groupTask.StudentTasks.Count
+            StudentTaskCount = groupTask.StudentTasks.Count,
+            StandardsControllerId = groupTask.StandardsControllerId
         };
     }
 

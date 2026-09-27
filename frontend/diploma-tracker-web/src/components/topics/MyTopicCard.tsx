@@ -2,7 +2,7 @@ import { X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { cancelReservation, getMyReservations } from '../../api/reservationsApi'
+import { cancelReservation, getMyReservations, resubmitReservation } from '../../api/reservationsApi'
 import { useErrorMessage } from '../../api/useErrorMessage'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
@@ -10,7 +10,10 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { EmptyState } from '../ui/EmptyState'
 import { Spinner } from '../ui/Spinner'
 import { useToast } from '../ui/useToast'
+import { ApprovalSeats } from './ApprovalSeats'
+import { RequestTimeline } from './RequestTimeline'
 import { ReservationStatusBadge } from './ReservationStatusBadge'
+import { WordingModal } from './WordingModal'
 import type { Reservation } from '../../api/types'
 
 const DISMISSED_REJECTION_STORAGE_KEY = 'dt.dismissedRejectionId'
@@ -66,6 +69,9 @@ export function MyTopicCard({ reservations: controlledReservations, loading: con
   const [cancelling, setCancelling] = useState<Reservation | null>(null)
   const [isCancelling, setIsCancelling] = useState(false)
 
+  const [resubmitting, setResubmitting] = useState(false)
+  const [isResubmitting, setIsResubmitting] = useState(false)
+
   // Only the latest rejection is ever rendered, so remembering just its id is enough; a later
   // rejection is a different reservation and must appear again rather than staying pre-dismissed.
   const [dismissedRejectionId, setDismissedRejectionId] = useState<string | null>(() => readDismissedRejectionId())
@@ -111,6 +117,26 @@ export function MyTopicCard({ reservations: controlledReservations, loading: con
     }
   }
 
+  const confirmResubmit = async (request: { title: string; description?: string }) => {
+    if (!open) return
+
+    setIsResubmitting(true)
+    try {
+      await resubmitReservation(open.id, request)
+      toast.success(t('topics.resubmitted'))
+      setResubmitting(false)
+      if (isControlled) {
+        onChanged?.()
+      } else {
+        await load()
+      }
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setIsResubmitting(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <Card title={t('topics.myTopic')} className="mb-6">
@@ -130,7 +156,7 @@ export function MyTopicCard({ reservations: controlledReservations, loading: con
   }
 
   const approved = reservations.find((reservation) => reservation.status === 'Approved') ?? null
-  const pending = reservations.find((reservation) => reservation.status === 'Pending') ?? null
+  const open = reservations.find((r) => r.status === 'Pending' || r.status === 'Returned') ?? null
   // The API already returns the student's reservations newest-first, so no re-sort is needed here.
   const latest = reservations[0] ?? null
   const lastRejected = latest && latest.status === 'Rejected' && latest.id !== dismissedRejectionId ? latest : null
@@ -142,7 +168,7 @@ export function MyTopicCard({ reservations: controlledReservations, loading: con
 
   return (
     <Card title={t('topics.myTopic')} className="mb-6">
-      {!approved && !pending && (
+      {!approved && !open && (
         <EmptyState
           message={t('topics.noTopicYet')}
           action={<Button onClick={() => navigate('/student/topics')}>{t('topics.browseTopics')}</Button>}
@@ -156,35 +182,60 @@ export function MyTopicCard({ reservations: controlledReservations, loading: con
             <ReservationStatusBadge status={approved.status} />
           </div>
           <p className="text-sm text-text-muted">{approved.supervisorName}</p>
+          <p className="text-xs text-text-muted">{approved.directionName}</p>
         </div>
       )}
 
-      {!approved && pending && (
+      {!approved && open && (
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <p className="text-base font-semibold text-heading">{pending.topicTitle}</p>
-            <ReservationStatusBadge status={pending.status} />
+            <p className="text-base font-semibold text-heading">{open.topicTitle}</p>
+            <ReservationStatusBadge status={open.status} />
           </div>
-          <p className="text-sm text-text-muted">{pending.supervisorName}</p>
-          {pending.canCancel && (
+          <p className="text-sm text-text-muted">{open.supervisorName}</p>
+          <p className="text-xs text-text-muted">{open.directionName}</p>
+          <ApprovalSeats seats={open.seats} />
+          {open.canCancel && (
             <div>
-              <Button variant="secondary" size="sm" onClick={() => setCancelling(pending)}>{t('topics.cancel')}</Button>
+              <Button variant="secondary" size="sm" onClick={() => setCancelling(open)}>{t('topics.cancel')}</Button>
             </div>
           )}
+          {open.status === 'Returned' && (
+            <div className="mt-2 rounded-card bg-warning-soft p-3">
+              <p className="text-sm font-semibold text-warning">{t('topics.returnedNotice')}</p>
+              {open.returnComment && <p className="mt-1 text-sm text-text-strong">{open.returnComment}</p>}
+              {open.canResubmit && (
+                <Button size="sm" className="mt-2" onClick={() => setResubmitting(true)}>{t('topics.resubmit')}</Button>
+              )}
+            </div>
+          )}
+          <RequestTimeline timeline={open.timeline} />
         </div>
       )}
 
-      {approved && pending && (
+      {approved && open && (
         <div className="mt-4 rounded-card bg-surface p-4">
           <h3 className="text-sm font-semibold text-heading">{t('topics.changeRequested')}</h3>
-          <p className="mt-1 text-sm text-text-strong">{pending.topicTitle}</p>
-          <p className="text-xs text-text-muted">{pending.supervisorName}</p>
+          <p className="mt-1 text-sm text-text-strong">{open.topicTitle}</p>
+          <p className="text-xs text-text-muted">{open.supervisorName}</p>
+          <p className="text-xs text-text-muted">{open.directionName}</p>
+          <ApprovalSeats seats={open.seats} />
           <div className="mt-2 flex items-center gap-2">
-            <ReservationStatusBadge status={pending.status} />
-            {pending.canCancel && (
-              <Button variant="secondary" size="sm" onClick={() => setCancelling(pending)}>{t('topics.cancel')}</Button>
+            <ReservationStatusBadge status={open.status} />
+            {open.canCancel && (
+              <Button variant="secondary" size="sm" onClick={() => setCancelling(open)}>{t('topics.cancel')}</Button>
             )}
           </div>
+          {open.status === 'Returned' && (
+            <div className="mt-2 rounded-card bg-warning-soft p-3">
+              <p className="text-sm font-semibold text-warning">{t('topics.returnedNotice')}</p>
+              {open.returnComment && <p className="mt-1 text-sm text-text-strong">{open.returnComment}</p>}
+              {open.canResubmit && (
+                <Button size="sm" className="mt-2" onClick={() => setResubmitting(true)}>{t('topics.resubmit')}</Button>
+              )}
+            </div>
+          )}
+          <RequestTimeline timeline={open.timeline} />
         </div>
       )}
 
@@ -219,6 +270,18 @@ export function MyTopicCard({ reservations: controlledReservations, loading: con
         loading={isCancelling}
         onConfirm={() => void confirmCancel()}
         onCancel={() => setCancelling(null)}
+      />
+
+      <WordingModal
+        open={resubmitting && open !== null}
+        title={t('topics.resubmit')}
+        hint={t('topics.resubmitHint')}
+        confirmLabel={t('topics.resubmit')}
+        initialTitle={open?.topicTitle ?? ''}
+        initialDescription={open?.topicDescription ?? null}
+        loading={isResubmitting}
+        onConfirm={(request) => void confirmResubmit(request)}
+        onClose={() => setResubmitting(false)}
       />
     </Card>
   )

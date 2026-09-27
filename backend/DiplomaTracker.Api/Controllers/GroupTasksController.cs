@@ -12,10 +12,12 @@ namespace DiplomaTracker.Api.Controllers;
 public class GroupTasksController : ApiControllerBase
 {
     private readonly IGroupTaskService _groupTaskService;
+    private readonly IStudentWorkflowService _workflow;
 
-    public GroupTasksController(IGroupTaskService groupTaskService)
+    public GroupTasksController(IGroupTaskService groupTaskService, IStudentWorkflowService workflow)
     {
         _groupTaskService = groupTaskService;
+        _workflow = workflow;
     }
 
     [HttpGet]
@@ -103,5 +105,18 @@ public class GroupTasksController : ApiControllerBase
 
         var (success, error) = await _groupTaskService.DeleteGroupTaskAsync(id, administratorId);
         return success ? NoContent() : ErrorResult(error);
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPut("{id:guid}/standards-controller")]
+    public async Task<IActionResult> SetStandardsController(Guid id, [FromBody] SetStandardsControllerRequest request)
+    {
+        if (!TryGetCurrentUser(out var user))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (result, error) = await _workflow.SetStandardsControllerAsync(user, id, request.UserId);
+        return result is null ? ErrorResult(error) : Ok(result);
     }
 }

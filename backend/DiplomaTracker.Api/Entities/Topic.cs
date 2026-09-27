@@ -7,8 +7,16 @@ public class Topic
     public string? Description { get; set; }
     public Guid SupervisorId { get; set; }
     public AppUser Supervisor { get; set; } = null!;
-    public Guid DepartmentId { get; set; }
-    public Department Department { get; set; } = null!;
+    /// Design 2026-09-27 §4.1: every topic belongs to one direction; its department is the
+    /// direction's, and that is what decides which students may discover it.
+    public Guid DirectionId { get; set; }
+    public Direction Direction { get; set; } = null!;
+
+    /// The staff member who created the topic; their seats on a request start approved (§5.2).
+    /// Null for a student's proposal - a student holds no seat, and student accounts are deleted
+    /// with their group.
+    public Guid? CreatedById { get; set; }
+    public AppUser? CreatedBy { get; set; }
     public TopicOrigin Origin { get; set; }
     public TopicStatus Status { get; set; }
     public DateTime CreatedAt { get; set; }

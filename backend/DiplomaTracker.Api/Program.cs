@@ -69,6 +69,7 @@ builder.Services.AddScoped<IRegistrationService, RegistrationService>();
 builder.Services.AddScoped<IStudentImportService, StudentImportService>();
 builder.Services.AddScoped<ITopicSettingsService, TopicSettingsService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
+builder.Services.AddScoped<IDirectionService, DirectionService>();
 builder.Services.AddScoped<IReservationService, ReservationService>();
 builder.Services.AddScoped<IAccessScope, AccessScope>();
 builder.Services.AddScoped<IStudentWorkflowService, StudentWorkflowService>();

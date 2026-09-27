@@ -71,7 +71,11 @@ public class DashboardService : IDashboardService
         var groups = await GroupRowsAsync(user, now);
 
         var supervised = await _dbContext.StudentProfiles.AsNoTracking()
-            .Where(p => p.SupervisorId == user.UserId && p.ArchivedAt == null)
+            // Design 2026-09-27 §6.2: a direction manager is treated as a supervisor for the students
+            // whose topic is in their direction.
+            .Where(p => (p.SupervisorId == user.UserId
+                    || (p.Topic != null && p.Topic.Direction.ManagerId == user.UserId))
+                && p.ArchivedAt == null)
             .OrderBy(p => p.User.LastName)
             .ThenBy(p => p.User.FirstName)
             .Select(p => new SupervisedStudentRow
@@ -121,7 +125,8 @@ public class DashboardService : IDashboardService
         var totalStudents = await students.CountAsync();
         var withTopic = await students.CountAsync(p => p.TopicId != null);
         var withRequest = await students.CountAsync(p =>
-            p.TopicId == null && p.TopicReservations.Any(r => r.Status == ReservationStatus.Pending));
+            p.TopicId == null && p.TopicReservations.Any(r =>
+                r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Returned));
 
         // M14: agree with the review queue's own predicate - a student who moved groups while a
         // version was pending must not still count as waiting here.
@@ -186,9 +191,10 @@ public class DashboardService : IDashboardService
     ///
     /// Review I5: a REVIEWED group's figures still cover the whole group (unchanged - the teacher
     /// can open every row there). A group the teacher only supervises a student in narrows every
-    /// count to their own reviewable students in it (`SupervisorId == me`, the same rule
-    /// `IAccessScope.ReviewableStudents`/`OverdueStepsAsync` already use for a non-reviewed
-    /// group), so the row agrees with the teacher's own Overdue list and with the group page's
+    /// count to their own reviewable students in it (the students they supervise or whose topic is
+    /// in their direction, the same rule `IAccessScope.ReviewableStudents`/`OverdueStepsAsync`
+    /// already use for a non-reviewed group), so the row agrees with the teacher's own Overdue list
+    /// and with the group page's
     /// My students/Others split instead of showing figures about students they cannot act on.
     /// Expressed as one inlined condition rather than two branches of the same query, so an
     /// administrator (always whole-group) and a reviewed group (always whole-group) both take the
@@ -210,33 +216,33 @@ public class DashboardService : IDashboardService
                 AcademicYear = g.AcademicYear,
                 DepartmentName = g.Department.Name,
                 StudentCount = g.Students.Count(s => s.ArchivedAt == null
-                    && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || s.SupervisorId == me)),
+                    && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || s.SupervisorId == me || (s.Topic != null && s.Topic.Direction.ManagerId == me))),
                 ApprovedTopicCount = g.Students.Count(s => s.ArchivedAt == null && s.TopicId != null
-                    && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || s.SupervisorId == me)),
+                    && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || s.SupervisorId == me || (s.Topic != null && s.Topic.Direction.ManagerId == me))),
                 StepsApproved = g.GroupTasks
                     .SelectMany(gt => gt.StudentTasks)
                     .Count(t => t.StudentProfile.ArchivedAt == null && t.Status == StudentTaskStatus.Approved
-                        && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || t.StudentProfile.SupervisorId == me)),
+                        && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || t.StudentProfile.SupervisorId == me || (t.StudentProfile.Topic != null && t.StudentProfile.Topic.Direction.ManagerId == me))),
                 StepsTotal = g.GroupTasks
                     .SelectMany(gt => gt.StudentTasks)
                     .Count(t => t.StudentProfile.ArchivedAt == null
-                        && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || t.StudentProfile.SupervisorId == me)),
+                        && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || t.StudentProfile.SupervisorId == me || (t.StudentProfile.Topic != null && t.StudentProfile.Topic.Direction.ManagerId == me))),
                 WaitingReviews = g.GroupTasks
                     .SelectMany(gt => gt.StudentTasks)
                     .Count(t => t.StudentProfile.ArchivedAt == null && t.Status == StudentTaskStatus.Submitted
-                        && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || t.StudentProfile.SupervisorId == me)),
+                        && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || t.StudentProfile.SupervisorId == me || (t.StudentProfile.Topic != null && t.StudentProfile.Topic.Direction.ManagerId == me))),
                 LateSteps = g.GroupTasks
                     .SelectMany(gt => gt.StudentTasks)
                     .Count(t => t.StudentProfile.ArchivedAt == null
                         && t.Submissions.OrderByDescending(s => s.Version).Select(s => s.IsLate).FirstOrDefault()
-                        && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || t.StudentProfile.SupervisorId == me)),
+                        && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || t.StudentProfile.SupervisorId == me || (t.StudentProfile.Topic != null && t.StudentProfile.Topic.Direction.ManagerId == me))),
                 OverdueSteps = g.GroupTasks
                     .SelectMany(gt => gt.StudentTasks)
                     .Count(t => t.StudentProfile.ArchivedAt == null
                         && t.Status != StudentTaskStatus.Approved
                         && t.Status != StudentTaskStatus.Submitted
                         && t.GroupTask.Deadline < now
-                        && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || t.StudentProfile.SupervisorId == me))
+                        && (isAdmin || g.Reviewers.Any(r => r.ReviewerId == me) || t.StudentProfile.SupervisorId == me || (t.StudentProfile.Topic != null && t.StudentProfile.Topic.Direction.ManagerId == me)))
             })
             .ToListAsync();
     }

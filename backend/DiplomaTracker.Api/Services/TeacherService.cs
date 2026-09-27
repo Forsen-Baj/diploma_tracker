@@ -61,6 +61,8 @@ public class TeacherService : ITeacherService
             PasswordHash = _passwordHasher.HashPassword(request.Password),
             Role = "Teacher",
             IsActive = true,
+            IsDirectionManager = request.IsDirectionManager,
+            IsStandardsController = request.IsStandardsController,
             CreatedAt = now,
             UpdatedAt = now
         };
@@ -93,10 +95,25 @@ public class TeacherService : ITeacherService
             return (null, OnboardingErrors.EmailTaken);
         }
 
+        // §3: a capability in use cannot be taken away; the administrator reassigns first.
+        if (user.IsDirectionManager && !request.IsDirectionManager
+            && await _dbContext.Directions.AnyAsync(d => d.ManagerId == id))
+        {
+            return (null, StaffErrors.ManagesDirections);
+        }
+
+        if (user.IsStandardsController && !request.IsStandardsController
+            && await _dbContext.GroupTasks.AnyAsync(g => g.StandardsControllerId == id))
+        {
+            return (null, StaffErrors.ControlsSteps);
+        }
+
         user.FirstName = request.FirstName.Trim();
         user.LastName = request.LastName.Trim();
         user.Patronymic = IdentityNormalizer.Optional(request.Patronymic);
         user.Email = email;
+        user.IsDirectionManager = request.IsDirectionManager;
+        user.IsStandardsController = request.IsStandardsController;
         user.UpdatedAt = DateTime.UtcNow;
 
         try
@@ -118,6 +135,16 @@ public class TeacherService : ITeacherService
         if (user is null)
         {
             return (false, OnboardingErrors.TeacherNotFound);
+        }
+
+        if (await _dbContext.Directions.AnyAsync(d => d.ManagerId == id))
+        {
+            return (false, StaffErrors.ManagesDirections);
+        }
+
+        if (await _dbContext.GroupTasks.AnyAsync(g => g.StandardsControllerId == id))
+        {
+            return (false, StaffErrors.ControlsSteps);
         }
 
         user.IsActive = false;
@@ -153,10 +180,18 @@ public class TeacherService : ITeacherService
     private const int StaffSearchMaxLength = 100;
 
     /// Design 2026-09-24 §3.5: active teachers and administrators, for the extra-reviewer picker.
-    public async Task<IReadOnlyList<StaffOptionResponse>> SearchStaffAsync(string? search)
+    public async Task<IReadOnlyList<StaffOptionResponse>> SearchStaffAsync(string? search, StaffCapability? capability)
     {
         var query = _dbContext.Users.AsNoTracking()
             .Where(u => u.IsActive && (u.Role == "Teacher" || u.Role == "Admin"));
+
+        // Design 2026-09-27 §3: the direction-manager and standards-controller pickers.
+        query = capability switch
+        {
+            StaffCapability.DirectionManager => query.Where(u => u.Role == "Teacher" && u.IsDirectionManager),
+            StaffCapability.StandardsController => query.Where(u => u.Role == "Teacher" && u.IsStandardsController),
+            _ => query
+        };
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -197,6 +232,8 @@ public class TeacherService : ITeacherService
             Patronymic = user.Patronymic,
             Email = user.Email,
             IsActive = user.IsActive,
+            IsDirectionManager = user.IsDirectionManager,
+            IsStandardsController = user.IsStandardsController,
             CreatedAt = user.CreatedAt,
             UpdatedAt = user.UpdatedAt
         };

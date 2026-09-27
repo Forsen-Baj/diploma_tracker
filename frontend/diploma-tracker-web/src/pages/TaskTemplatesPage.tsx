@@ -15,10 +15,12 @@ import { DataTable, type DataTableColumn } from '../components/ui/DataTable'
 import { EmptyState } from '../components/ui/EmptyState'
 import { Modal } from '../components/ui/Modal'
 import { PageHeader } from '../components/ui/PageHeader'
+import { SegmentedControl } from '../components/ui/SegmentedControl'
 import { Select, type SelectOption } from '../components/ui/Select'
 import { Textarea } from '../components/ui/Textarea'
 import { TextField } from '../components/ui/TextField'
 import { useToast } from '../components/ui/useToast'
+import { GroupStepsSection } from '../components/workflow/GroupStepsSection'
 import type { Faculty, TaskTemplate } from '../api/types'
 
 type TemplateFormState = {
@@ -41,6 +43,7 @@ export function TaskTemplatesPage() {
   const [isLoadingFaculties, setIsLoadingFaculties] = useState(true)
   const [facultiesLoadError, setFacultiesLoadError] = useState('')
   const [selectedFacultyId, setSelectedFacultyId] = useState('')
+  const [section, setSection] = useState<'templates' | 'groupSteps'>('templates')
 
   const [templates, setTemplates] = useState<TaskTemplate[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -359,7 +362,7 @@ export function TaskTemplatesPage() {
     <>
       <PageHeader
         title={t('taskTemplates.title')}
-        actions={isAdmin ? <Button icon={Plus} onClick={openCreateTemplate} disabled={!selectedFacultyId}>{t('taskTemplates.add')}</Button> : undefined}
+        actions={isAdmin && section === 'templates' ? <Button icon={Plus} onClick={openCreateTemplate} disabled={!selectedFacultyId}>{t('taskTemplates.add')}</Button> : undefined}
       />
 
       <Card className="mb-6">
@@ -378,25 +381,43 @@ export function TaskTemplatesPage() {
         )}
       </Card>
 
-      <Card>
-        {loadError && <p className="text-sm text-danger">{loadError}</p>}
-        {!loadError && !selectedFacultyId && !isLoadingFaculties && (
-          <EmptyState message={t('taskTemplates.selectFaculty')} />
-        )}
-        {!loadError && selectedFacultyId && (
-          <>
-            {canReorder && <p className="mb-3 text-xs text-text-muted">{t('taskTemplates.reorderHint')}</p>}
-            <DataTable
-              columns={templateColumns}
-              rows={sortedTemplates}
-              getRowKey={(template) => template.id}
-              loading={isLoading}
-              emptyState={<EmptyState message={t('taskTemplates.noTemplates')} />}
-              rowProps={isAdmin ? templateRowProps : undefined}
-            />
-          </>
-        )}
-      </Card>
+      {isAdmin && (
+        <div className="mb-6">
+          <SegmentedControl
+            ariaLabel={t('taskTemplates.title')}
+            value={section}
+            onChange={(value) => setSection(value as 'templates' | 'groupSteps')}
+            options={[
+              { value: 'templates', label: t('taskTemplates.sections.templates') },
+              { value: 'groupSteps', label: t('taskTemplates.sections.groupSteps') }
+            ]}
+          />
+        </div>
+      )}
+
+      {section === 'templates' ? (
+        <Card>
+          {loadError && <p className="text-sm text-danger">{loadError}</p>}
+          {!loadError && !selectedFacultyId && !isLoadingFaculties && (
+            <EmptyState message={t('taskTemplates.selectFaculty')} />
+          )}
+          {!loadError && selectedFacultyId && (
+            <>
+              {canReorder && <p className="mb-3 text-xs text-text-muted">{t('taskTemplates.reorderHint')}</p>}
+              <DataTable
+                columns={templateColumns}
+                rows={sortedTemplates}
+                getRowKey={(template) => template.id}
+                loading={isLoading}
+                emptyState={<EmptyState message={t('taskTemplates.noTemplates')} />}
+                rowProps={isAdmin ? templateRowProps : undefined}
+              />
+            </>
+          )}
+        </Card>
+      ) : (
+        selectedFacultyId && <GroupStepsSection facultyId={selectedFacultyId} />
+      )}
 
       <Modal
         open={isTemplateModalOpen}

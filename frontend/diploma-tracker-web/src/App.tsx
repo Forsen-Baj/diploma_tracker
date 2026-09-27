@@ -30,6 +30,7 @@ import { DocumentsPage } from './pages/DocumentsPage'
 import { DocumentPage } from './pages/DocumentPage'
 import { ArchivePage } from './pages/ArchivePage'
 import { ArchivedGroupPage } from './pages/ArchivedGroupPage'
+import { DirectionsPage } from './pages/DirectionsPage'
 
 function App() {
   return (
@@ -66,6 +67,7 @@ function App() {
           <Route element={<ProtectedRoute allowedRoles={['Teacher']} />}>
             <Route path="teacher/dashboard" element={<TeacherDashboardPage />} />
             <Route path="teacher/topics" element={<TeacherTopicsPage />} />
+            <Route path="teacher/directions" element={<DirectionsPage />} />
             <Route path="teacher/groups" element={<TeacherGroupsPage />} />
             <Route path="teacher/groups/:groupId" element={<GroupProgressPage />} />
           </Route>

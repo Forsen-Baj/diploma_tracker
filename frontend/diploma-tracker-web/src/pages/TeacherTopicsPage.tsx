@@ -1,11 +1,11 @@
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getDepartments } from '../api/departmentsApi'
-import { approveReservation, getReservationsForDecision, rejectReservation, releaseReservation } from '../api/reservationsApi'
+import { getDirections } from '../api/directionsApi'
+import { getReservationsForDecision, releaseReservation } from '../api/reservationsApi'
 import { deleteTopic, getTopics } from '../api/topicsApi'
 import { useErrorMessage } from '../api/useErrorMessage'
-import { Badge } from '../components/ui/Badge'
+import { useAuth } from '../auth/useAuth'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
@@ -16,26 +16,22 @@ import { Tooltip } from '../components/ui/Tooltip'
 import { useToast } from '../components/ui/useToast'
 import { DecisionCommentModal } from '../components/topics/DecisionCommentModal'
 import { TopicFormModal } from '../components/topics/TopicFormModal'
+import { TopicRequestsTable } from '../components/topics/TopicRequestsTable'
 import { TopicStatusBadge } from '../components/topics/TopicStatusBadge'
-import type { Department, Reservation, Topic } from '../api/types'
+import type { Direction, Reservation, Topic } from '../api/types'
 
 export function TeacherTopicsPage() {
   const { t, i18n } = useTranslation()
   const errorMessage = useErrorMessage()
   const toast = useToast()
+  const { user } = useAuth()
 
   const [pendingRequests, setPendingRequests] = useState<Reservation[]>([])
   const [approvedStudents, setApprovedStudents] = useState<Reservation[]>([])
   const [ownTopics, setOwnTopics] = useState<Topic[]>([])
-  const [departments, setDepartments] = useState<Department[]>([])
+  const [directions, setDirections] = useState<Direction[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-
-  const [approving, setApproving] = useState<Reservation | null>(null)
-  const [isApproving, setIsApproving] = useState(false)
-
-  const [rejecting, setRejecting] = useState<Reservation | null>(null)
-  const [isRejecting, setIsRejecting] = useState(false)
 
   const [releasing, setReleasing] = useState<Reservation | null>(null)
   const [isReleasing, setIsReleasing] = useState(false)
@@ -55,21 +51,21 @@ export function TeacherTopicsPage() {
     setIsLoading(true)
     setLoadError('')
 
-    const [pendingResult, approvedResult, ownResult, departmentsResult] = await Promise.allSettled([
+    const [pendingResult, approvedResult, ownResult, directionsResult] = await Promise.allSettled([
       getReservationsForDecision('Pending'),
       getReservationsForDecision('Approved'),
       getTopics(),
-      getDepartments()
+      getDirections()
     ])
 
-    // A single failed call (typically the department lookup, only needed for the create-topic
+    // A single failed call (typically the direction lookup, only needed for the create-topic
     // modal) must not hide the requests the teacher still needs to decide on.
     if (pendingResult.status === 'fulfilled') setPendingRequests(pendingResult.value)
     if (approvedResult.status === 'fulfilled') setApprovedStudents(approvedResult.value)
     if (ownResult.status === 'fulfilled') setOwnTopics(ownResult.value)
-    if (departmentsResult.status === 'fulfilled') setDepartments(departmentsResult.value)
+    if (directionsResult.status === 'fulfilled') setDirections(directionsResult.value)
 
-    const failed = [pendingResult, approvedResult, ownResult, departmentsResult].find(
+    const failed = [pendingResult, approvedResult, ownResult, directionsResult].find(
       (result): result is PromiseRejectedResult => result.status === 'rejected'
     )
     if (failed) {
@@ -83,38 +79,6 @@ export function TeacherTopicsPage() {
     void loadAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  const confirmApprove = async () => {
-    if (!approving) return
-
-    setIsApproving(true)
-    try {
-      await approveReservation(approving.id)
-      setApproving(null)
-      toast.success(t('topics.approved'))
-      await loadAll()
-    } catch (err) {
-      toast.error(errorMessage(err))
-    } finally {
-      setIsApproving(false)
-    }
-  }
-
-  const confirmReject = async (comment?: string) => {
-    if (!rejecting) return
-
-    setIsRejecting(true)
-    try {
-      await rejectReservation(rejecting.id, comment)
-      setRejecting(null)
-      toast.success(t('topics.rejected'))
-      await loadAll()
-    } catch (err) {
-      toast.error(errorMessage(err))
-    } finally {
-      setIsRejecting(false)
-    }
-  }
 
   const confirmRelease = async (comment?: string) => {
     if (!releasing) return
@@ -166,46 +130,6 @@ export function TeacherTopicsPage() {
     }
   }
 
-  const requestColumns: DataTableColumn<Reservation>[] = [
-    {
-      key: 'student',
-      header: t('topics.student'),
-      render: (reservation) => (
-        <div>
-          <p>{reservation.studentName}</p>
-          <p className="text-xs text-text-muted">{reservation.groupCode}</p>
-        </div>
-      )
-    },
-    {
-      key: 'topic',
-      header: t('topics.title'),
-      render: (reservation) => (
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <span>{reservation.topicTitle}</span>
-            {reservation.origin === 'StudentProposal' && <Badge tone="neutral">{t('topics.proposalBadge')}</Badge>}
-            {reservation.currentTopicId && <Badge tone="warning">{t('topics.changeBadge')}</Badge>}
-          </div>
-          {reservation.currentTopicId && (
-            <p className="text-xs text-text-muted">{t('topics.currentTopicLabel', { title: reservation.currentTopicTitle })}</p>
-          )}
-        </div>
-      )
-    },
-    { key: 'requestedAt', header: t('topics.requestedAt'), render: (reservation) => dateFormat.format(new Date(reservation.createdAt)) },
-    {
-      key: 'actions',
-      header: t('common.actions'),
-      render: (reservation) => (
-        <div className="flex items-center gap-1">
-          <Button variant="primary" size="sm" onClick={() => setApproving(reservation)}>{t('topics.approve')}</Button>
-          <Button variant="secondary" size="sm" onClick={() => setRejecting(reservation)}>{t('topics.reject')}</Button>
-        </div>
-      )
-    }
-  ]
-
   const approvedColumns: DataTableColumn<Reservation>[] = [
     {
       key: 'student',
@@ -227,35 +151,34 @@ export function TeacherTopicsPage() {
       key: 'actions',
       header: t('common.actions'),
       render: (reservation) =>
-        reservation.hasSubmissions ? (
-          <Tooltip content={t('topics.hasSubmissionsHint')}>
-            <span tabIndex={0} className="inline-flex">
-              <Button variant="secondary" size="sm" disabled>{t('topics.release')}</Button>
-            </span>
-          </Tooltip>
-        ) : (
-          <Button variant="secondary" size="sm" onClick={() => setReleasing(reservation)}>{t('topics.release')}</Button>
-        )
+        reservation.canRelease ? (
+          reservation.hasSubmissions ? (
+            <Tooltip content={t('topics.hasSubmissionsHint')}>
+              <span tabIndex={0} className="inline-flex">
+                <Button variant="secondary" size="sm" disabled>{t('topics.release')}</Button>
+              </span>
+            </Tooltip>
+          ) : (
+            <Button variant="secondary" size="sm" onClick={() => setReleasing(reservation)}>{t('topics.release')}</Button>
+          )
+        ) : null
     }
   ]
 
   const ownTopicsColumns: DataTableColumn<Topic>[] = [
     { key: 'title', header: t('topics.title'), render: (topic) => topic.title },
-    { key: 'department', header: t('topics.department'), render: (topic) => topic.departmentName },
+    { key: 'direction', header: t('topics.direction'), render: (topic) => topic.directionName },
     { key: 'status', header: t('common.status'), render: (topic) => <TopicStatusBadge status={topic.status} /> },
     { key: 'student', header: t('topics.student'), render: (topic) => topic.studentName ?? '—' },
     {
       key: 'actions',
       header: t('common.actions'),
-      render: (topic) => {
-        const editable = topic.status === 'Available' && topic.origin === 'Catalogue'
-        return (
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" icon={Pencil} aria-label={t('common.edit')} onClick={() => openEditTopic(topic)} disabled={!editable} />
-            <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('common.delete')} onClick={() => setDeletingTopic(topic)} disabled={!editable} />
-          </div>
-        )
-      }
+      render: (topic) => (
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" icon={Pencil} aria-label={t('common.edit')} onClick={() => openEditTopic(topic)} disabled={!topic.canEdit} />
+          <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('common.delete')} onClick={() => setDeletingTopic(topic)} disabled={!topic.canDelete} />
+        </div>
+      )
     }
   ]
 
@@ -273,13 +196,7 @@ export function TeacherTopicsPage() {
       )}
 
       <Card title={t('topics.requestsTitle')} className="mb-6">
-        <DataTable
-          columns={requestColumns}
-          rows={pendingRequests}
-          getRowKey={(reservation) => reservation.id}
-          loading={isLoading}
-          emptyState={<EmptyState message={t('topics.noRequests')} />}
-        />
+        <TopicRequestsTable rows={pendingRequests} loading={isLoading} onChanged={() => void loadAll()} />
       </Card>
 
       <Card title={t('topics.approvedTitle')} className="mb-6">
@@ -295,7 +212,7 @@ export function TeacherTopicsPage() {
       <Card title={t('topics.catalogueCard')}>
         <DataTable
           columns={ownTopicsColumns}
-          rows={ownTopics}
+          rows={ownTopics.filter((topic) => topic.supervisorId === user?.id)}
           getRowKey={(topic) => topic.id}
           loading={isLoading}
           emptyState={<EmptyState message={t('topics.noOwnTopics')} />}
@@ -307,29 +224,11 @@ export function TeacherTopicsPage() {
         mode={editingTopic ? 'edit' : 'create'}
         initial={editingTopic}
         showSupervisor={false}
-        departments={departments}
-        teachers={[]}
+        directions={directions}
+        supervisors={[]}
+        canMoveDirection={false}
         onClose={closeTopicModal}
         onSaved={handleTopicSaved}
-      />
-
-      <ConfirmDialog
-        open={Boolean(approving)}
-        title={t('topics.approve')}
-        message={approving ? t('topics.approveConfirm', { title: approving.topicTitle, student: approving.studentName }) : ''}
-        tone="primary"
-        loading={isApproving}
-        onConfirm={() => void confirmApprove()}
-        onCancel={() => setApproving(null)}
-      />
-
-      <DecisionCommentModal
-        open={Boolean(rejecting)}
-        title={t('topics.rejectTitle')}
-        confirmLabel={t('topics.reject')}
-        loading={isRejecting}
-        onConfirm={(comment) => void confirmReject(comment)}
-        onClose={() => setRejecting(null)}
       />
 
       <DecisionCommentModal

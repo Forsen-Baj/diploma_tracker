@@ -84,7 +84,9 @@ export function ReviewPanelCard({ step, onChanged }: ReviewPanelCardProps) {
             <div className="flex items-center gap-2">
               {seat.reviewerId && !seat.isActive && <Badge tone="danger">{t('steps.inactiveReviewer')}</Badge>}
               <Badge tone={stateTones[seat.state]}>
-                {seat.state === 'Approved' ? t('steps.seatState.Approved', { mark: seat.mark ?? '—' }) : t(`steps.seatState.${seat.state}`)}
+                {seat.state === 'Approved'
+                  ? (seat.mark === null ? t('steps.seatState.ApprovedNoMark') : t('steps.seatState.Approved', { mark: seat.mark }))
+                  : t(`steps.seatState.${seat.state}`)}
               </Badge>
               {seat.canRemove && (
                 <Button variant="ghost" size="sm" icon={UserMinus} aria-label={t('steps.removeReviewer')} onClick={() => setRemoving(seat)} />

@@ -4,6 +4,7 @@ import type {
   AssignAllTaskTemplatesResponse,
   CreateGroupTaskRequest,
   GroupTask,
+  StandardsControllerChange,
   UpdateGroupTaskRequest
 } from './types'
 
@@ -35,5 +36,13 @@ export async function assignAllTaskTemplates(groupId: string, request: AssignAll
   return apiRequest<AssignAllTaskTemplatesResponse>(`/api/groups/${groupId}/assign-all-task-templates`, {
     method: 'POST',
     body: JSON.stringify(request)
+  })
+}
+
+/** `null` removes the group step's standards controller. Admin only. */
+export async function setStandardsController(groupTaskId: string, userId: string | null): Promise<StandardsControllerChange> {
+  return apiRequest<StandardsControllerChange>(`/api/group-tasks/${groupTaskId}/standards-controller`, {
+    method: 'PUT',
+    body: JSON.stringify({ userId })
   })
 }

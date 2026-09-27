@@ -4,6 +4,8 @@ export type CurrentUser = {
   lastName: string
   email: string
   role: 'Admin' | 'Teacher' | 'Student'
+  isDirectionManager: boolean
+  isStandardsController: boolean
 }
 
 export type LoginRequest = {
@@ -28,6 +30,8 @@ export type Teacher = {
   patronymic: string | null
   email: string
   isActive: boolean
+  isDirectionManager: boolean
+  isStandardsController: boolean
   createdAt: string
   updatedAt: string
 }
@@ -38,6 +42,8 @@ export type CreateTeacherRequest = {
   patronymic?: string
   email: string
   password: string
+  isDirectionManager: boolean
+  isStandardsController: boolean
 }
 
 export type UpdateTeacherRequest = {
@@ -45,6 +51,8 @@ export type UpdateTeacherRequest = {
   lastName: string
   patronymic?: string
   email: string
+  isDirectionManager: boolean
+  isStandardsController: boolean
 }
 
 export type Student = {
@@ -201,6 +209,14 @@ export type GroupTask = {
   createdAt: string
   updatedAt: string | null
   studentTaskCount: number
+  standardsControllerId: string | null
+  standardsControllerName: string | null
+  /** Students whose step the current standards controller has approved. */
+  standardsControlApproved: number
+  /** Students whose step the current standards controller checks (not approved before they were assigned). */
+  standardsControlTotal: number
+  /** Students whose step is approved now; a newly assigned controller leaves them alone. */
+  approvedStepCount: number
 }
 
 export type CreateGroupTaskRequest = {
@@ -346,7 +362,7 @@ export type ArchiveGroupStudentsResponse = {
 
 export type TopicStatus = 'Available' | 'Reserved' | 'Approved'
 export type TopicOrigin = 'Catalogue' | 'StudentProposal'
-export type ReservationStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | 'Released'
+export type ReservationStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | 'Released' | 'Returned'
 
 export type Topic = {
   id: string
@@ -357,6 +373,10 @@ export type Topic = {
   departmentId: string
   departmentName: string
   facultyName: string
+  directionId: string
+  directionName: string
+  directionManagerId: string
+  directionManagerName: string
   origin: TopicOrigin
   status: TopicStatus
   activeReservationId: string | null
@@ -366,6 +386,9 @@ export type Topic = {
   groupCode: string | null
   /** Set only for the topic's holder: whether releasing it would be refused (O1). */
   hasSubmissions: boolean
+  /** Whether the caller may open the topic form / delete the topic. */
+  canEdit: boolean
+  canDelete: boolean
   createdAt: string
   updatedAt: string
 }
@@ -373,7 +396,7 @@ export type Topic = {
 export type TopicRequest = {
   title: string
   description?: string
-  departmentId: string
+  directionId: string
   supervisorId?: string
 }
 
@@ -381,7 +404,64 @@ export type TopicQuery = {
   search?: string
   supervisorId?: string
   departmentId?: string
+  directionId?: string
   status?: TopicStatus
+}
+
+export type Direction = {
+  id: string
+  name: string
+  description: string | null
+  departmentId: string
+  departmentName: string
+  facultyId: string
+  facultyName: string
+  managerId: string
+  managerName: string
+  topicsAvailable: number
+  topicsReserved: number
+  topicsApproved: number
+  canManage: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type DirectionRequest = {
+  departmentId: string
+  name: string
+  description?: string
+  /** Administrators only. */
+  managerId?: string
+}
+
+export type DirectionQuery = {
+  departmentId?: string
+  managerId?: string
+  mine?: boolean
+}
+
+export type ApprovalSeatName = 'Administration' | 'Direction' | 'Supervision'
+
+export type ApprovalSeat = {
+  seat: ApprovalSeatName
+  holderName: string | null
+  isSatisfied: boolean
+  approvedByName: string | null
+  approvedAt: string | null
+}
+
+export type ReservationDecisionKind = 'Approved' | 'Returned' | 'Rejected' | 'Edited'
+
+export type ReservationDecision = {
+  kind: ReservationDecisionKind
+  deciderName: string
+  comment: string | null
+  decidedAt: string
+}
+
+export type WordingRequest = {
+  title: string
+  description?: string
 }
 
 export type Reservation = {
@@ -392,6 +472,9 @@ export type Reservation = {
   origin: TopicOrigin | null
   supervisorId: string | null
   supervisorName: string | null
+  directionId: string | null
+  directionName: string | null
+  directionManagerName: string | null
   studentProfileId: string
   studentName: string
   studentEmail: string
@@ -401,17 +484,27 @@ export type Reservation = {
   createdAt: string
   decidedAt: string | null
   canCancel: boolean
-  /** Set only on a pending change request: the topic the student holds today. */
+  /** Set only on an open request from a student who already holds a topic: that topic. */
   currentTopicId: string | null
   currentTopicTitle: string | null
   /** Whether releasing this reservation would be refused (O1). */
   hasSubmissions: boolean
+  /** The three seats of an open request; empty otherwise. */
+  seats: ApprovalSeat[]
+  timeline: ReservationDecision[]
+  returnComment: string | null
+  canDecide: boolean
+  canEditWording: boolean
+  canReject: boolean
+  canRelease: boolean
+  canResubmit: boolean
 }
 
 export type ProposeTopicRequest = {
   title: string
   description?: string
   supervisorId: string
+  directionId: string
 }
 
 export type TopicSelectionSettings = {
@@ -425,7 +518,7 @@ export type SupervisorOption = {
 
 export type StudentTaskStatus = 'Pending' | 'Submitted' | 'Approved' | 'Returned'
 
-export type ReviewSeat = 'Supervisor' | 'Extra'
+export type ReviewSeat = 'Supervisor' | 'DirectionManager' | 'Extra' | 'StandardsControl'
 
 export type PanelSeat = {
   seat: ReviewSeat
@@ -499,10 +592,20 @@ export type StepDetails = StudentStep & {
   groupCode: string
   canDecide: boolean
   pendingSubmissionId: string | null
+  /** The caller's seat when they can decide. */
+  mySeat: ReviewSeat | null
   canManagePanel: boolean
   panel: PanelSeat[]
   timeline: Submission[]
 }
+
+export type StandardsControllerChange = {
+  groupTaskId: string
+  affectedSteps: number
+  approvedSteps: number
+}
+
+export type StaffCapability = 'directionManager' | 'standardsController'
 
 export type ReviewQueueItem = {
   submissionId: string

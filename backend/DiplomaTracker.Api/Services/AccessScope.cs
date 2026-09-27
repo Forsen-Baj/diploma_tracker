@@ -5,6 +5,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DiplomaTracker.Api.Services;
 
+/// Design 2026-09-27 §6.2: a direction manager is treated as a supervisor for the students whose
+/// topic is in their direction; a standards controller as an extra reviewer on the steps they
+/// control, and nothing more.
 public class AccessScope : IAccessScope
 {
     private readonly AppDbContext _dbContext;
@@ -23,9 +26,11 @@ public class AccessScope : IAccessScope
 
         if (user.IsTeacher)
         {
+            var me = user.UserId;
             return _dbContext.Groups.Where(g =>
-                g.Reviewers.Any(r => r.ReviewerId == user.UserId)
-                || g.Students.Any(s => s.SupervisorId == user.UserId && s.ArchivedAt == null));
+                g.Reviewers.Any(r => r.ReviewerId == me)
+                || g.Students.Any(s => s.ArchivedAt == null
+                    && (s.SupervisorId == me || (s.Topic != null && s.Topic.Direction.ManagerId == me))));
         }
 
         return _dbContext.Groups.Where(_ => false);
@@ -45,9 +50,12 @@ public class AccessScope : IAccessScope
 
         if (user.IsTeacher)
         {
+            var me = user.UserId;
             return _dbContext.StudentProfiles.Where(s =>
                 s.ArchivedAt == null
-                && (s.SupervisorId == user.UserId || s.Group.Reviewers.Any(r => r.ReviewerId == user.UserId)));
+                && (s.SupervisorId == me
+                    || (s.Topic != null && s.Topic.Direction.ManagerId == me)
+                    || s.Group.Reviewers.Any(r => r.ReviewerId == me)));
         }
 
         return _dbContext.StudentProfiles.Where(_ => false);
@@ -67,11 +75,14 @@ public class AccessScope : IAccessScope
 
         if (user.IsTeacher)
         {
+            var me = user.UserId;
             return _dbContext.StudentProfiles.Where(s =>
                 s.ArchivedAt == null
-                && (s.SupervisorId == user.UserId
-                    || s.Group.Reviewers.Any(r => r.ReviewerId == user.UserId)
-                    || s.StudentTasks.Any(t => t.Reviewers.Any(r => r.ReviewerId == user.UserId))));
+                && (s.SupervisorId == me
+                    || (s.Topic != null && s.Topic.Direction.ManagerId == me)
+                    || s.Group.Reviewers.Any(r => r.ReviewerId == me)
+                    || s.StudentTasks.Any(t => t.Reviewers.Any(r => r.ReviewerId == me)
+                        || (t.GroupTask.StandardsControllerId == me && t.GroupTask.GroupId == s.GroupId))));
         }
 
         return _dbContext.StudentProfiles.Where(_ => false);
@@ -91,9 +102,11 @@ public class AccessScope : IAccessScope
             return Task.FromResult(false);
         }
 
+        var me = user.UserId;
         var reviewable = ReviewableStudents(user).Select(s => s.Id);
         return task.AnyAsync(t =>
             reviewable.Contains(t.StudentProfileId)
-            || (t.StudentProfile.ArchivedAt == null && t.Reviewers.Any(r => r.ReviewerId == user.UserId)));
+            || (t.StudentProfile.ArchivedAt == null
+                && (t.Reviewers.Any(r => r.ReviewerId == me) || t.GroupTask.StandardsControllerId == me)));
     }
 }

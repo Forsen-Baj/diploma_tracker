@@ -2,7 +2,8 @@ import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getDepartments } from '../api/departmentsApi'
-import { approveReservation, rejectReservation, releaseReservation } from '../api/reservationsApi'
+import { getDirections } from '../api/directionsApi'
+import { getReservationsForDecision, releaseReservation } from '../api/reservationsApi'
 import { getTeachers } from '../api/teachersApi'
 import { deleteTopic, getTopics } from '../api/topicsApi'
 import { useErrorMessage } from '../api/useErrorMessage'
@@ -18,9 +19,11 @@ import { TextField } from '../components/ui/TextField'
 import { Tooltip } from '../components/ui/Tooltip'
 import { useToast } from '../components/ui/useToast'
 import { DecisionCommentModal } from '../components/topics/DecisionCommentModal'
+import { DirectionsSection } from '../components/topics/DirectionsSection'
 import { TopicFormModal } from '../components/topics/TopicFormModal'
+import { TopicRequestsTable } from '../components/topics/TopicRequestsTable'
 import { TopicStatusBadge } from '../components/topics/TopicStatusBadge'
-import type { Department, Teacher, Topic, TopicStatus } from '../api/types'
+import type { Department, Direction, Reservation, Teacher, Topic, TopicStatus } from '../api/types'
 
 type StatusFilter = 'all' | TopicStatus
 
@@ -29,16 +32,25 @@ export function AdminTopicsPage() {
   const errorMessage = useErrorMessage()
   const toast = useToast()
 
+  const [section, setSection] = useState<'topics' | 'directions'>('topics')
+
   const [topics, setTopics] = useState<Topic[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
+  const [directions, setDirections] = useState<Direction[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [requests, setRequests] = useState<Reservation[]>([])
+  // Design 2026-09-27 §5.4: the administrator filters requests by the Administration seat -
+  // an administrator holds no other seat, so "waiting for me" is exactly that seat being open.
+  const [requestsFilter, setRequestsFilter] = useState<'waiting' | 'all'>('all')
   const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingRequests, setIsLoadingRequests] = useState(true)
   const [loadError, setLoadError] = useState('')
   const topicsRequestRef = useRef(0)
 
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [departmentId, setDepartmentId] = useState('')
+  const [directionId, setDirectionId] = useState('')
   const [supervisorId, setSupervisorId] = useState('')
   const [status, setStatus] = useState<StatusFilter>('all')
 
@@ -48,20 +60,15 @@ export function AdminTopicsPage() {
   const [deletingTopic, setDeletingTopic] = useState<Topic | null>(null)
   const [isDeletingTopic, setIsDeletingTopic] = useState(false)
 
-  const [approving, setApproving] = useState<Topic | null>(null)
-  const [isApproving, setIsApproving] = useState(false)
-
-  const [rejecting, setRejecting] = useState<Topic | null>(null)
-  const [isRejecting, setIsRejecting] = useState(false)
-
   const [releasing, setReleasing] = useState<Topic | null>(null)
   const [isReleasing, setIsReleasing] = useState(false)
 
   const loadFilters = async () => {
     try {
-      const [departmentsData, teachersData] = await Promise.all([getDepartments(), getTeachers()])
+      const [departmentsData, teachersData, directionsData] = await Promise.all([getDepartments(), getTeachers(), getDirections()])
       setDepartments(departmentsData)
       setTeachers(teachersData)
+      setDirections(directionsData)
     } catch (err) {
       setLoadError(errorMessage(err))
     }
@@ -75,6 +82,7 @@ export function AdminTopicsPage() {
       const data = await getTopics({
         search: search || undefined,
         departmentId: departmentId || undefined,
+        directionId: directionId || undefined,
         supervisorId: supervisorId || undefined,
         status: status === 'all' ? undefined : status
       })
@@ -88,8 +96,20 @@ export function AdminTopicsPage() {
     }
   }
 
+  const loadRequests = async (filter: 'waiting' | 'all' = requestsFilter) => {
+    setIsLoadingRequests(true)
+    try {
+      setRequests(await getReservationsForDecision('Pending', filter === 'waiting'))
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setIsLoadingRequests(false)
+    }
+  }
+
   useEffect(() => {
     void loadFilters()
+    void loadRequests()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -101,11 +121,16 @@ export function AdminTopicsPage() {
   useEffect(() => {
     void loadTopics()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, departmentId, supervisorId, status])
+  }, [search, departmentId, directionId, supervisorId, status])
 
   const departmentOptions: SelectOption[] = [
     { value: '', label: t('topics.allDepartments') },
     ...departments.map((department) => ({ value: department.id, label: `${department.name} · ${department.facultyName}` }))
+  ]
+
+  const directionOptions: SelectOption[] = [
+    { value: '', label: t('topics.allDirections') },
+    ...directions.map((d) => ({ value: d.id, label: `${d.name} · ${d.departmentName}` }))
   ]
 
   const supervisorOptions: SelectOption[] = [
@@ -141,6 +166,7 @@ export function AdminTopicsPage() {
     setIsTopicModalOpen(false)
     toast.success(t('common.savedToast'))
     void loadTopics()
+    void loadRequests()
   }
 
   const confirmDeleteTopic = async () => {
@@ -152,42 +178,11 @@ export function AdminTopicsPage() {
       setDeletingTopic(null)
       toast.success(t('common.deletedToast'))
       await loadTopics()
+      void loadRequests()
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
       setIsDeletingTopic(false)
-    }
-  }
-
-  const confirmApprove = async () => {
-    if (!approving?.activeReservationId) return
-
-    setIsApproving(true)
-    try {
-      await approveReservation(approving.activeReservationId)
-      setApproving(null)
-      toast.success(t('topics.approved'))
-      await loadTopics()
-    } catch (err) {
-      toast.error(errorMessage(err))
-    } finally {
-      setIsApproving(false)
-    }
-  }
-
-  const confirmReject = async (comment?: string) => {
-    if (!rejecting?.activeReservationId) return
-
-    setIsRejecting(true)
-    try {
-      await rejectReservation(rejecting.activeReservationId, comment)
-      setRejecting(null)
-      toast.success(t('topics.rejected'))
-      await loadTopics()
-    } catch (err) {
-      toast.error(errorMessage(err))
-    } finally {
-      setIsRejecting(false)
     }
   }
 
@@ -200,6 +195,7 @@ export function AdminTopicsPage() {
       setReleasing(null)
       toast.success(t('topics.released'))
       await loadTopics()
+      void loadRequests()
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
@@ -210,7 +206,7 @@ export function AdminTopicsPage() {
   const columns: DataTableColumn<Topic>[] = [
     { key: 'title', header: t('topics.title'), render: (topic) => topic.title },
     { key: 'supervisor', header: t('topics.supervisor'), render: (topic) => topic.supervisorName },
-    { key: 'department', header: t('topics.department'), render: (topic) => topic.departmentName },
+    { key: 'direction', header: t('topics.direction'), render: (topic) => `${topic.directionName} · ${topic.departmentName}` },
     { key: 'status', header: t('common.status'), render: (topic) => <TopicStatusBadge status={topic.status} /> },
     {
       key: 'student',
@@ -226,12 +222,6 @@ export function AdminTopicsPage() {
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="sm" icon={Pencil} aria-label={t('common.edit')} onClick={() => openEditTopic(topic)} />
             <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('common.delete')} onClick={() => setDeletingTopic(topic)} disabled={!deletable} />
-            {topic.activeReservationStatus === 'Pending' && (
-              <>
-                <Button variant="primary" size="sm" onClick={() => setApproving(topic)}>{t('topics.approve')}</Button>
-                <Button variant="secondary" size="sm" onClick={() => setRejecting(topic)}>{t('topics.reject')}</Button>
-              </>
-            )}
             {topic.activeReservationStatus === 'Approved' && (
               topic.hasSubmissions ? (
                 <Tooltip content={t('topics.hasSubmissionsHint')}>
@@ -253,42 +243,89 @@ export function AdminTopicsPage() {
     <>
       <PageHeader
         title={t('topics.adminTitle')}
-        actions={<Button icon={Plus} onClick={openCreateTopic}>{t('topics.addTopic')}</Button>}
+        actions={section === 'topics' ? <Button icon={Plus} onClick={openCreateTopic}>{t('topics.addTopic')}</Button> : undefined}
       />
 
-      <Card>
-        <div className="mb-4 flex flex-wrap items-end gap-3">
-          <div className="max-w-sm flex-1">
-            <TextField label={t('topics.search')} placeholder={t('topics.searchPlaceholder')} value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
-          </div>
-          <div className="max-w-xs flex-1">
-            <Select label={t('topics.department')} value={departmentId} onChange={setDepartmentId} options={departmentOptions} />
-          </div>
-          <div className="max-w-xs flex-1">
-            <Select label={t('topics.supervisor')} value={supervisorId} onChange={setSupervisorId} options={supervisorOptions} />
-          </div>
-          <SegmentedControl ariaLabel={t('common.status')} value={status} onChange={(value) => setStatus(value as StatusFilter)} options={statusOptions} />
-        </div>
+      <div className="mb-6">
+        <SegmentedControl
+          ariaLabel={t('topics.adminTitle')}
+          value={section}
+          onChange={(value) => setSection(value as 'topics' | 'directions')}
+          options={[
+            { value: 'topics', label: t('topics.sections.topics') },
+            { value: 'directions', label: t('topics.sections.directions') }
+          ]}
+        />
+      </div>
 
-        {loadError && <p className="text-sm text-danger">{loadError}</p>}
-        {!loadError && (
-          <DataTable
-            columns={columns}
-            rows={topics}
-            getRowKey={(topic) => topic.id}
-            loading={isLoading}
-            emptyState={<EmptyState message={t('topics.noTopics')} />}
-          />
-        )}
-      </Card>
+      {section === 'directions' ? (
+        <DirectionsSection mode="admin" onLoaded={setDirections} />
+      ) : (
+        <>
+          <Card
+            title={t('topics.requestsTitle')}
+            className="mb-6"
+            actions={
+              <SegmentedControl
+                ariaLabel={t('topics.requestsTitle')}
+                value={requestsFilter}
+                onChange={(value) => {
+                  const next = value as 'waiting' | 'all'
+                  setRequestsFilter(next)
+                  void loadRequests(next)
+                }}
+                options={[
+                  { value: 'waiting', label: t('topics.requestsWaitingForMe') },
+                  { value: 'all', label: t('topics.requestsAll') }
+                ]}
+              />
+            }
+          >
+            <TopicRequestsTable
+              rows={requests}
+              loading={isLoadingRequests}
+              onChanged={() => { void loadRequests(); void loadTopics() }}
+            />
+          </Card>
+
+          <Card>
+            <div className="mb-4 flex flex-wrap items-end gap-3">
+              <div className="max-w-sm flex-1">
+                <TextField label={t('topics.search')} placeholder={t('topics.searchPlaceholder')} value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
+              </div>
+              <div className="max-w-xs flex-1">
+                <Select label={t('topics.department')} value={departmentId} onChange={setDepartmentId} options={departmentOptions} />
+              </div>
+              <div className="max-w-xs flex-1">
+                <Select label={t('topics.direction')} value={directionId} onChange={setDirectionId} options={directionOptions} />
+              </div>
+              <div className="max-w-xs flex-1">
+                <Select label={t('topics.supervisor')} value={supervisorId} onChange={setSupervisorId} options={supervisorOptions} />
+              </div>
+              <SegmentedControl ariaLabel={t('common.status')} value={status} onChange={(value) => setStatus(value as StatusFilter)} options={statusOptions} />
+            </div>
+
+            {loadError && <p className="text-sm text-danger">{loadError}</p>}
+            {!loadError && (
+              <DataTable
+                columns={columns}
+                rows={topics}
+                getRowKey={(topic) => topic.id}
+                loading={isLoading}
+                emptyState={<EmptyState message={t('topics.noTopics')} />}
+              />
+            )}
+          </Card>
+        </>
+      )}
 
       <TopicFormModal
         open={isTopicModalOpen}
         mode={editingTopic ? 'edit' : 'create'}
         initial={editingTopic}
         showSupervisor
-        departments={departments}
-        teachers={teachers}
+        directions={directions}
+        supervisors={teachers.filter((teacher) => teacher.isActive).map((teacher) => ({ id: teacher.id, name: `${teacher.lastName} ${teacher.firstName}` }))}
         onClose={closeTopicModal}
         onSaved={handleTopicSaved}
       />
@@ -300,25 +337,6 @@ export function AdminTopicsPage() {
         loading={isDeletingTopic}
         onConfirm={() => void confirmDeleteTopic()}
         onCancel={() => setDeletingTopic(null)}
-      />
-
-      <ConfirmDialog
-        open={Boolean(approving)}
-        title={t('topics.approve')}
-        message={approving ? t('topics.approveConfirm', { title: approving.title, student: approving.studentName ?? '' }) : ''}
-        tone="primary"
-        loading={isApproving}
-        onConfirm={() => void confirmApprove()}
-        onCancel={() => setApproving(null)}
-      />
-
-      <DecisionCommentModal
-        open={Boolean(rejecting)}
-        title={t('topics.rejectTitle')}
-        confirmLabel={t('topics.reject')}
-        loading={isRejecting}
-        onConfirm={(comment) => void confirmReject(comment)}
-        onClose={() => setRejecting(null)}
       />
 
       <DecisionCommentModal

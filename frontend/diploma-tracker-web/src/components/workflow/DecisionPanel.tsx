@@ -30,9 +30,15 @@ export function DecisionPanel({ step, onDecided }: DecisionPanelProps) {
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null)
   const [isDeciding, setIsDeciding] = useState(false)
 
+  const needsMark = step.mySeat !== 'StandardsControl'
+
   const validateApprove = (): boolean => {
     setMarkError('')
     setCommentError('')
+
+    if (!needsMark) {
+      return true
+    }
 
     if (mark.trim() === '') {
       setMarkError(t('errors.review.markRequired'))
@@ -80,7 +86,7 @@ export function DecisionPanel({ step, onDecided }: DecisionPanelProps) {
     setIsDeciding(true)
     try {
       const details = confirmAction === 'approve'
-        ? await approveSubmission(step.pendingSubmissionId, Number(mark), comment.trim() || undefined)
+        ? await approveSubmission(step.pendingSubmissionId, needsMark ? Number(mark) : null, comment.trim() || undefined)
         : await returnSubmission(step.pendingSubmissionId, comment.trim())
       setConfirmAction(null)
       setMark('')
@@ -108,16 +114,20 @@ export function DecisionPanel({ step, onDecided }: DecisionPanelProps) {
   return (
     <Card title={t('steps.reviewTitle')}>
       <div className="flex flex-col gap-4">
-        <TextField
-          label={t('steps.mark')}
-          type="number"
-          min={0}
-          max={100}
-          step={1}
-          value={mark}
-          onChange={(event) => setMark(event.target.value)}
-          error={markError}
-        />
+        {needsMark ? (
+          <TextField
+            label={t('steps.mark')}
+            type="number"
+            min={0}
+            max={100}
+            step={1}
+            value={mark}
+            onChange={(event) => setMark(event.target.value)}
+            error={markError}
+          />
+        ) : (
+          <p className="text-sm text-text-muted">{t('steps.standardsControlHint')}</p>
+        )}
         <Textarea
           label={t('steps.comment')}
           value={comment}
@@ -135,7 +145,7 @@ export function DecisionPanel({ step, onDecided }: DecisionPanelProps) {
         title={t(confirmAction === 'return' ? 'steps.return' : 'steps.approve')}
         message={
           confirmAction === 'approve'
-            ? t('steps.approveConfirm', { mark })
+            ? (needsMark ? t('steps.approveConfirm', { mark }) : t('steps.approveConfirmNoMark'))
             : mark.trim() === ''
               ? t('steps.returnConfirm')
               : t('steps.returnConfirmMarkIgnored', { mark })

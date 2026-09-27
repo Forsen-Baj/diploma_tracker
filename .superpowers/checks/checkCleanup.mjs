@@ -81,13 +81,20 @@ export async function removeGroup(call, token, group) {
   return listed
 }
 
-// Work on the steps starts only once a student holds a topic. This gives one: a teacher creates a
-// catalogue topic in the student's department and an administrator assigns it. The topic is
-// deleted in the late phase, after the student's group - and with it the student's hold on the
-// topic - is gone. Returns the assignment's response.
+// Work on the steps starts only once a student holds a topic, and a topic is the student's only
+// once an administrator, the direction's manager and the supervisor have approved it (design
+// 2026-09-27 §5). This gives one in a single stroke: an administrator opens a direction in the
+// student's department managed by `teacher`, `teacher` creates the topic there - so their
+// direction and supervision seats start approved - and the administrator's assignment adds the
+// third. `teacher` must be a direction manager; the seeded teacher is. The topic and the direction
+// are removed in the late phase, after the student's group (and with it the student's hold on the
+// topic) is gone. Returns the assignment's response.
 export async function giveTopic(call, cleanup, { admin, teacher, departmentId, studentId, title }) {
-  const created = await call('POST', '/api/topics', { token: teacher, json: { title, departmentId } })
-  const topic = created.body ?? created.data
+  const payload = (response) => response.body ?? response.data
+  const me = payload(await call('GET', '/api/auth/me', { token: teacher }))
+  const direction = payload(await call('POST', '/api/directions', { token: admin, json: { departmentId, name: `Direction ${title}`, managerId: me.id } }))
+  cleanup.addLast(`direction ${title}`, () => call('DELETE', `/api/directions/${direction.id}`, { token: admin }))
+  const topic = payload(await call('POST', '/api/topics', { token: teacher, json: { title, directionId: direction.id } }))
   cleanup.addLast(`topic ${title}`, () => call('DELETE', `/api/topics/${topic.id}`, { token: admin }))
   return call('PUT', `/api/students/${studentId}/topic`, { token: admin, json: { topicId: topic.id } })
 }

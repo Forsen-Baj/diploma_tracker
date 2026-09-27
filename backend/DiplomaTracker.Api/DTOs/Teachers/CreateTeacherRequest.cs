@@ -19,4 +19,8 @@ public class CreateTeacherRequest
 
     [Required]
     public string Password { get; set; } = string.Empty;
+
+    /// Design 2026-09-27 §3.
+    public bool IsDirectionManager { get; set; }
+    public bool IsStandardsController { get; set; }
 }

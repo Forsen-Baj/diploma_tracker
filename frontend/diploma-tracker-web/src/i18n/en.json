@@ -44,6 +44,7 @@
     "review": "Review",
     "documents": "Documents",
     "archive": "Archive",
+    "directions": "Directions",
     "documentsWaiting_one": "{{count}} document waits for you",
     "documentsWaiting_other": "{{count}} documents wait for you"
   },
@@ -116,7 +117,25 @@
       "nameTaken": "A department with this name already exists in this faculty.",
       "shortNameTaken": "A department with this short name already exists in this faculty.",
       "hasGroups": "Cannot delete the department because groups belong to it.",
-      "facultyNotFound": "The selected faculty does not exist."
+      "facultyNotFound": "The selected faculty does not exist.",
+      "hasDirections": "The department cannot be deleted while it has directions."
+    },
+    "direction": {
+      "notFound": "Direction not found.",
+      "invalid": "Choose a direction of your department.",
+      "nameTaken": "A direction with this name already exists in the department.",
+      "hasTopics": "The direction still has topics.",
+      "notManager": "You do not manage this direction.",
+      "managerInvalid": "Choose an active teacher who is a direction manager.",
+      "departmentInvalid": "The selected department does not exist."
+    },
+    "approval": {
+      "notApprover": "You do not approve this topic request.",
+      "seatSatisfied": "Your approval of this request is already recorded."
+    },
+    "staff": {
+      "managesDirections": "This teacher manages a direction. Hand it to another manager first.",
+      "controlsSteps": "This teacher is the standards controller of a group step. Assign someone else first."
     },
     "group": {
       "notFound": "Group not found.",
@@ -151,7 +170,8 @@
       "alreadyAssigned": "This step is already assigned to the group.",
       "noTemplates": "Select at least one step.",
       "duplicateTemplates": "The request lists a step more than once.",
-      "hasProgress": "Cannot delete the step because students have already started it."
+      "hasProgress": "Cannot delete the step because students have already started it.",
+      "controllerInvalid": "Choose an active teacher who is a standards controller."
     },
     "studentTask": {
       "notFound": "Step not found.",
@@ -226,7 +246,6 @@
       "notEditable": "Only available catalogue topics can be changed or deleted.",
       "notOwner": "You can change only your own topics.",
       "alreadyYours": "This is already your topic.",
-      "departmentInvalid": "The selected department does not exist.",
       "supervisorInvalid": "The supervisor must be an active teacher.",
       "studentProfileRequired": "Only students with a profile can do this."
     },
@@ -238,9 +257,9 @@
       "alreadyActive": "You already have a request awaiting a decision.",
       "invalidState": "This action is not possible for the reservation in its current state.",
       "notYours": "This reservation belongs to another student.",
-      "notSupervisor": "Only the topic's supervisor can decide.",
       "hasSubmissions": "The student has already submitted work on this topic; the topic cannot be removed.",
-      "topicHeld": "You already have an approved topic. Ask your supervisor or an administrator to change it."
+      "topicHeld": "You already have an approved topic. Ask your supervisor or an administrator to change it.",
+      "changed": "Someone else acted on this request first. Reload and try again."
     },
     "selection": {
       "closed": "The topic selection deadline has passed."
@@ -521,7 +540,7 @@
     "resetAccess": "Reset access",
     "resetConfirm": "Reset access for {{name}}? Their password is removed and only this student will be able to claim the account again, even while registration is closed.",
     "inactiveSupervisor": "{{name}} (inactive)",
-    "supervisorFollowsTopic": "Follows the diploma topic and changes when it does.",
+    "supervisorFollowsTopic": "Follows the diploma topic. A new topic's supervisor takes over once its request is approved.",
     "noStudents": "No students yet.",
     "noArchivedStudents": "No archived students.",
     "viewSwitch": "View",
@@ -553,9 +572,29 @@
     "passwordUpdated": "Password updated for {{name}}.",
     "deactivate": "Deactivate",
     "deactivateConfirm": "Deactivate teacher {{name}}?",
-    "noTeachers": "No teachers yet."
+    "noTeachers": "No teachers yet.",
+    "responsibilities": "Responsibilities",
+    "isDirectionManager": "Direction manager",
+    "isStandardsController": "Standards controller"
   },
   "taskTemplates": {
+    "sections": { "templates": "Templates", "groupSteps": "Group steps" },
+    "group": "Group",
+    "selectGroup": "Select a group to see its steps.",
+    "noGroupSteps": "This group has no steps yet.",
+    "deadline": "Deadline",
+    "standardsController": "Standards controller",
+    "standardsPassed": "Passed standards control",
+    "passedCount": "{{passed}} of {{total}}",
+    "setController": "Set standards controller",
+    "changeController": "Change",
+    "removeController": "Remove standards controller",
+    "controllerTitle": "Standards controller for «{{step}}»",
+    "noControllers": "No teacher is a standards controller yet. Tick the responsibility on the Teachers page.",
+    "controllerConfirm": "{{name}} will check «{{step}}». Applies to {{students}} students on this step; {{approved}} already approved keep their result.",
+    "removeHint": "Removing the controller approves at once any step that was waiting only for them.",
+    "controllerSet": "Standards controller assigned",
+    "controllerRemoved": "Standards controller removed",
     "title": "Diploma work steps",
     "add": "Add step",
     "edit": "Edit step",
@@ -630,14 +669,16 @@
     "comment": "Comment",
     "approve": "Approve",
     "approveConfirm": "Approve with mark {{mark}}?",
+    "approveConfirmNoMark": "Approve this version?",
     "approved": "Step approved",
     "return": "Return",
     "returnConfirm": "Return the work for revision?",
     "returnConfirmMarkIgnored": "Return the work for revision? The mark {{mark}} will not be saved: a return keeps only the comment.",
     "returned": "Work returned",
     "panelTitle": "Reviewers",
-    "seat": { "Supervisor": "Supervisor", "Extra": "Extra reviewer" },
-    "seatState": { "Approved": "Approved — {{mark}}", "Returned": "Returned", "Waiting": "Waiting" },
+    "seat": { "Supervisor": "Supervisor", "DirectionManager": "Direction manager", "Extra": "Extra reviewer", "StandardsControl": "Standards control" },
+    "seatState": { "Approved": "Approved — {{mark}}", "ApprovedNoMark": "Approved", "Returned": "Returned", "Waiting": "Waiting" },
+    "standardsControlHint": "Standards control: approve the formatting, or return it with a comment. No mark is given.",
     "noSupervisor": "No supervisor",
     "inactiveReviewer": "Deactivated",
     "addReviewer": "Add reviewer",
@@ -714,6 +755,25 @@
     "deactivateConfirm": "Deactivate administrator {{name}}?",
     "noAdmins": "No administrators yet."
   },
+  "directions": {
+    "title": "Directions",
+    "myTitle": "My directions",
+    "add": "Add direction",
+    "edit": "Edit direction",
+    "name": "Name",
+    "description": "Description",
+    "department": "Department",
+    "manager": "Direction manager",
+    "topicCounts": "{{available}} available · {{reserved}} reserved · {{approved}} approved",
+    "deleteTitle": "Delete direction",
+    "deleteConfirm": "Delete the direction «{{name}}»?",
+    "none": "No directions yet.",
+    "addTopic": "Add topic",
+    "topicsTitle": "Topics in my directions",
+    "noTopics": "No topics in your directions yet.",
+    "managerHint": "Open topic requests and step reviews in this direction move to the new manager.",
+    "noManagers": "No teacher is a direction manager yet. Tick the responsibility on the Teachers page."
+  },
   "topics": {
     "catalogueTitle": "Diploma topics",
     "myTopicsTitle": "My topics",
@@ -724,6 +784,27 @@
     "title": "Title",
     "description": "Description",
     "department": "Department",
+    "direction": "Direction",
+    "allDirections": "All directions",
+    "sections": { "topics": "Topics", "directions": "Directions" },
+    "seat": { "Administration": "Administration", "Direction": "Direction manager", "Supervision": "Supervisor" },
+    "approvalsLabel": "Approvals",
+    "waitingForStudent": "Waiting for the student",
+    "return": "Return for changes",
+    "returnTitle": "Return the request for changes",
+    "returnComment": "What should the student change?",
+    "returnedToast": "The request was returned to the student",
+    "editWording": "Edit wording",
+    "editWordingHint": "Your edit counts as your approval; the other approvers approve the new wording again.",
+    "wordingSaved": "Wording saved",
+    "approvalRecorded": "Your approval is recorded",
+    "returnedNotice": "Your request was returned for changes",
+    "resubmit": "Edit and resubmit",
+    "resubmitHint": "After you resubmit, every approver approves the new wording again.",
+    "resubmitted": "Request sent again",
+    "history": "History",
+    "decisionKind": { "Approved": "approved", "Returned": "returned for changes", "Rejected": "rejected", "Edited": "edited the wording" },
+    "noDirectionsForProposal": "Your department has no directions yet.",
     "supervisor": "Supervisor",
     "allSupervisors": "All supervisors",
     "allDepartments": "All departments",
@@ -740,14 +821,14 @@
       "Approved": "Approved"
     },
     "reserve": "Reserve",
-    "reserveConfirm": "Reserve \"{{title}}\"? You cannot reserve another topic until the supervisor decides.",
+    "reserveConfirm": "Reserve \"{{title}}\"? It becomes yours once the administration, the direction manager and the supervisor approve it; until then you cannot reserve another topic.",
     "reserveDisabledPending": "You already have a request awaiting a decision",
     "reserveDisabledClosed": "The topic selection deadline has passed",
     "topicHeldNotice": "You already have an approved topic. Ask your supervisor or an administrator to change it.",
     "reserved": "Topic reserved",
     "propose": "Propose my own topic",
     "proposeTitle": "Your own topic",
-    "proposeHint": "The chosen teacher receives the proposal; once they accept, it becomes your topic.",
+    "proposeHint": "The chosen teacher, the direction manager and the administration receive the proposal; once all three approve, it becomes your topic.",
     "teacher": "Teacher",
     "noTeachersAvailable": "No active teachers.",
     "proposed": "Proposal sent",
@@ -768,6 +849,8 @@
     "noTopics": "No available topics in your department.",
     "noOwnTopics": "You have not added any topics yet.",
     "requestsTitle": "Requests awaiting decision",
+    "requestsWaitingForMe": "Waiting for me",
+    "requestsAll": "All",
     "noRequests": "No new requests.",
     "approvedTitle": "Approved students",
     "noApproved": "No approved students.",
@@ -783,15 +866,16 @@
     "released": "Topic released",
     "hasSubmissionsHint": "Student has already submitted work",
     "comment": "Comment for the student",
-    "assigned": "Topic assigned",
+    "assigned": "Topic assigned. It becomes the student's once every approver has approved it.",
     "noTopic": "No topic",
     "replaceTitle": "Replace topic?",
     "clearTitle": "Clear topic?",
-    "replaceConfirm": "Replace \"{{current}}\" with \"{{next}}\"? The previous topic is released.",
+    "replaceConfirm": "Assign \"{{next}}\" instead of \"{{current}}\"? The current topic stays the student's until the new one is approved.",
     "clearConfirm": "Clear the current topic \"{{current}}\"? The student's supervisor is cleared along with it.",
     "changeRequested": "Change requested",
     "changeBadge": "Change",
     "currentTopicLabel": "Current topic: {{title}}",
+    "directionLocked": "Only an administrator can move a topic to another direction.",
     "supervisorMoveWarning": "A student already holds this topic. Changing the supervisor changes theirs too."
   },
   "reservations": {
@@ -800,7 +884,8 @@
       "Approved": "Approved",
       "Rejected": "Rejected",
       "Cancelled": "Cancelled",
-      "Released": "Released"
+      "Released": "Released",
+      "Returned": "Returned for changes"
     }
   },
   "settings": {

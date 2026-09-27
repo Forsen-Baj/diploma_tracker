@@ -1,3 +1,4 @@
+using DiplomaTracker.Api.DTOs.Teachers;
 using DiplomaTracker.Api.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -16,8 +17,8 @@ public class StaffController : ApiControllerBase
     }
 
     [HttpGet("options")]
-    public async Task<IActionResult> Options([FromQuery] string? search)
+    public async Task<IActionResult> Options([FromQuery] string? search, [FromQuery] StaffCapability? capability)
     {
-        return Ok(await _teachers.SearchStaffAsync(search));
+        return Ok(await _teachers.SearchStaffAsync(search, capability));
     }
 }

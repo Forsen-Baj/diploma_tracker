@@ -68,6 +68,12 @@ public static class SecurityLog
             "Topic assigned: StudentProfileId={StudentProfileId}, AdministratorId={AdministratorId}, TopicId={TopicId}",
             studentProfileId, administratorId, topicId);
 
+    /// Action is Approved, Returned, Rejected, Edited, Resubmitted or Completed.
+    public static void TopicRequestAction(ILogger logger, Guid actorUserId, string action, Guid reservationId) =>
+        logger.LogInformation(
+            "Topic request {Action}: ActorUserId={ActorUserId}, ReservationId={ReservationId}",
+            action, actorUserId, reservationId);
+
     public static void SubmissionDecided(ILogger logger, Guid reviewerId, Guid submissionId, string decision, int? mark) =>
         logger.LogInformation(
             "Submission decided: ReviewerId={ReviewerId}, SubmissionId={SubmissionId}, Decision={Decision}, Mark={Mark}",

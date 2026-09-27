@@ -24,6 +24,8 @@ public static class ErrorCatalog
             OnboardingErrors.All,
             AdminErrors.All,
             TopicErrors.All,
+            DirectionErrors.All,
+            StaffErrors.All,
             WorkflowErrors.All,
             TemplateErrors.All,
             ArchiveErrors.All,

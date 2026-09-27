@@ -9,6 +9,8 @@ export type NavItem = {
   labelKey: NavLabelKey
   /** Shows the number of documents waiting for the signed-in user. */
   badge?: 'documents'
+  /** Shown only to a teacher with this capability. */
+  requires?: 'directionManager'
 }
 
 export const dashboardRouteByRole: Record<Role, string> = {
@@ -37,6 +39,7 @@ export const navigationByRole: Record<Role, NavItem[]> = {
     { to: '/review', labelKey: 'nav.review' },
     { to: '/teacher/groups', labelKey: 'nav.groups' },
     { to: '/teacher/topics', labelKey: 'nav.myTopics' },
+    { to: '/teacher/directions', labelKey: 'nav.directions', requires: 'directionManager' },
     { to: '/documents', labelKey: 'nav.documents', badge: 'documents' },
     { to: '/archive', labelKey: 'nav.archive' },
     { to: '/task-templates', labelKey: 'nav.taskTemplates' }

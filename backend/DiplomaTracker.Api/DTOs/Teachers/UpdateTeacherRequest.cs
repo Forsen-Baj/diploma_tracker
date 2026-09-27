@@ -16,4 +16,8 @@ public class UpdateTeacherRequest
 
     [Required, ValidEmail, MaxLength(256)]
     public string Email { get; set; } = string.Empty;
+
+    /// Design 2026-09-27 §3.
+    public bool IsDirectionManager { get; set; }
+    public bool IsStandardsController { get; set; }
 }

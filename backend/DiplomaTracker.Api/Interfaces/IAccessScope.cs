@@ -18,12 +18,16 @@ public interface IAccessScope
     /// step - an extra seat on step 2 lists the student even while their current step is step 3,
     /// which the caller cannot open. Callers must run CanSeeStudentTaskAsync's own rule (or its
     /// equivalent) per row against the actual step being linked to, never infer openability from
-    /// membership in this query.
+    /// membership in this query. A direction manager counts as a supervisor for the students of
+    /// their directions; a standards controller as an extra reviewer on the steps they control
+    /// (design 2026-09-27 §6.2).
     IQueryable<StudentProfile> ReviewOverviewStudents(UserContext user);
 
     /// Design 2026-09-24 §3.4: who may open one student step. Today's rule (the student's
     /// supervisor, a reviewer of their group, an administrator), or an extra seat on that very step.
     /// An extra seat grants nothing else - not the group, not the student's other steps. This is
-    /// the narrower, per-task rule ReviewOverviewStudents' own doc comment above points back to.
+    /// the narrower, per-task rule ReviewOverviewStudents' own doc comment above points back to. A
+    /// direction manager counts as a supervisor for the students of their directions; a standards
+    /// controller as an extra reviewer on the steps they control (design 2026-09-27 §6.2).
     Task<bool> CanSeeStudentTaskAsync(UserContext user, Guid studentTaskId);
 }

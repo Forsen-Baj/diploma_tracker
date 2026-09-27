@@ -199,6 +199,8 @@ const admin = await login('admin@diploma.local', 'Admin123!')
 const teacher = await login('teacher@diploma.local', 'Teacher123!')
 const groups = (await call('GET', '/api/groups', { token: admin })).body
 const seedGroup = groups.find((g) => g.code === 'SEED-A')
+// Design 2026-09-27: a topic belongs to a direction; the seeded department has one.
+const seedDirection = (await call('GET', `/api/directions?departmentId=${seedGroup.departmentId}`, { token: admin })).body.find((d) => d.name === 'Software Engineering')
 const teacherId = (await call('GET', '/api/teachers', { token: admin })).body.find((t) => t.email === 'teacher@diploma.local').id
 
 // The students this script creates live in two groups of its own, removed with them at the end;
@@ -224,9 +226,9 @@ const outsiderEmail = `outsider.${stamp}@student.local`
 const outsider = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Out', lastName: 'Sider', email: outsiderEmail, studentNumber: `O${stamp}`, password: 'Password1!', groupId: otherGroup.id } })).body
 const outsiderToken = await login(outsiderEmail, 'Password1!')
 
-const topicA = (await call('POST', '/api/topics', { token: teacher, json: { title: `Тема A ${stamp}`, departmentId: seedGroup.departmentId } })).body
+const topicA = (await call('POST', '/api/topics', { token: teacher, json: { title: `Тема A ${stamp}`, directionId: seedDirection.id } })).body
 cleanup.add(`topic ${topicA.title}`, () => call('DELETE', `/api/topics/${topicA.id}`, { token: teacher }))
-const topicB = (await call('POST', '/api/topics', { token: teacher, json: { title: `Тема B ${stamp}`, departmentId: seedGroup.departmentId } })).body
+const topicB = (await call('POST', '/api/topics', { token: teacher, json: { title: `Тема B ${stamp}`, directionId: seedDirection.id } })).body
 cleanup.add(`topic ${topicB.title}`, () => call('DELETE', `/api/topics/${topicB.id}`, { token: teacher }))
 
 // Fix wave I2 / M17: topicA's description carries a manual line break (\v), a C0 control
@@ -237,7 +239,7 @@ cleanup.add(`topic ${topicB.title}`, () => call('DELETE', `/api/topics/${topicB.
 // literal newline that Word would render as one glyph. topicA (not topicB) is used because a
 // student may now only name their own topic - see check 22d below.
 const multilineDescription = 'Перший рядок\nДругий рядоктретій\tТаб'
-await call('PUT', `/api/topics/${topicA.id}`, { token: teacher, json: { title: topicA.title, description: multilineDescription, departmentId: seedGroup.departmentId } })
+await call('PUT', `/api/topics/${topicA.id}`, { token: teacher, json: { title: topicA.title, description: multilineDescription, directionId: seedDirection.id } })
 
 // The deadline is read before it is changed so cleanup can restore the exact original value.
 const originalDeadline = (await call('GET', '/api/settings/topic-selection', { token: admin })).body.deadline

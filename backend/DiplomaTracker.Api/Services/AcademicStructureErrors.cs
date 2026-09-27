@@ -14,6 +14,7 @@ public static class AcademicStructureErrors
     public const string DepartmentNameTaken = "department.nameTaken";
     public const string DepartmentShortNameTaken = "department.shortNameTaken";
     public const string DepartmentHasGroups = "department.hasGroups";
+    public const string DepartmentHasDirections = "department.hasDirections";
     public const string DepartmentFacultyNotFound = "department.facultyNotFound";
 
     public static readonly ErrorDefinition[] All =
@@ -27,6 +28,7 @@ public static class AcademicStructureErrors
         new(DepartmentNameTaken, StatusCodes.Status409Conflict, "Department with the same name already exists in this faculty."),
         new(DepartmentShortNameTaken, StatusCodes.Status409Conflict, "Department with the same short name already exists in this faculty."),
         new(DepartmentHasGroups, StatusCodes.Status409Conflict, "Cannot delete department because groups are assigned."),
+        new(DepartmentHasDirections, StatusCodes.Status409Conflict, "Cannot delete department because directions are assigned."),
         new(DepartmentFacultyNotFound, StatusCodes.Status400BadRequest, "The selected faculty does not exist.")
     ];
 }

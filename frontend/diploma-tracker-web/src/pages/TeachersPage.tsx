@@ -7,6 +7,7 @@ import { PASSWORD_MAX, isPasswordLengthValid } from '../auth/passwordPolicy'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
+import { Checkbox } from '../components/ui/Checkbox'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { DataTable, type DataTableColumn } from '../components/ui/DataTable'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -23,6 +24,8 @@ type TeacherFormState = {
   patronymic: string
   email: string
   password: string
+  isDirectionManager: boolean
+  isStandardsController: boolean
 }
 
 const emptyForm: TeacherFormState = {
@@ -30,7 +33,9 @@ const emptyForm: TeacherFormState = {
   lastName: '',
   patronymic: '',
   email: '',
-  password: ''
+  password: '',
+  isDirectionManager: false,
+  isStandardsController: false
 }
 
 export function TeachersPage() {
@@ -94,7 +99,9 @@ export function TeachersPage() {
       lastName: teacher.lastName,
       patronymic: teacher.patronymic ?? '',
       email: teacher.email,
-      password: ''
+      password: '',
+      isDirectionManager: teacher.isDirectionManager,
+      isStandardsController: teacher.isStandardsController
     })
     setPasswordError('')
     setIsTeacherModalOpen(true)
@@ -123,7 +130,9 @@ export function TeachersPage() {
           firstName: teacherForm.firstName.trim(),
           lastName: teacherForm.lastName.trim(),
           patronymic: optional(teacherForm.patronymic),
-          email: teacherForm.email.trim()
+          email: teacherForm.email.trim(),
+          isDirectionManager: teacherForm.isDirectionManager,
+          isStandardsController: teacherForm.isStandardsController
         })
       } else {
         await createTeacher({
@@ -131,7 +140,9 @@ export function TeachersPage() {
           lastName: teacherForm.lastName.trim(),
           patronymic: optional(teacherForm.patronymic),
           email: teacherForm.email.trim(),
-          password: teacherForm.password
+          password: teacherForm.password,
+          isDirectionManager: teacherForm.isDirectionManager,
+          isStandardsController: teacherForm.isStandardsController
         })
       }
       setIsTeacherModalOpen(false)
@@ -203,6 +214,18 @@ export function TeachersPage() {
       key: 'name',
       header: t('teachers.lastName'),
       render: (teacher) => `${teacher.lastName} ${teacher.firstName}${teacher.patronymic ? ` ${teacher.patronymic}` : ''}`
+    },
+    {
+      key: 'capabilities',
+      header: t('teachers.responsibilities'),
+      render: (teacher) => (
+        teacher.isDirectionManager || teacher.isStandardsController ? (
+          <div className="flex flex-wrap gap-1">
+            {teacher.isDirectionManager && <Badge tone="info">{t('teachers.isDirectionManager')}</Badge>}
+            {teacher.isStandardsController && <Badge tone="info">{t('teachers.isStandardsController')}</Badge>}
+          </div>
+        ) : '—'
+      )
     },
     { key: 'email', header: t('teachers.email'), render: (teacher) => teacher.email },
     {
@@ -294,6 +317,13 @@ export function TeachersPage() {
               required
             />
           )}
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1 text-sm font-medium text-heading">{t('teachers.responsibilities')}</legend>
+            <Checkbox label={t('teachers.isDirectionManager')} checked={teacherForm.isDirectionManager}
+              onChange={(checked) => setTeacherForm((prev) => ({ ...prev, isDirectionManager: checked }))} />
+            <Checkbox label={t('teachers.isStandardsController')} checked={teacherForm.isStandardsController}
+              onChange={(checked) => setTeacherForm((prev) => ({ ...prev, isStandardsController: checked }))} />
+          </fieldset>
         </form>
       </Modal>
 

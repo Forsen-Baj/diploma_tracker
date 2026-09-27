@@ -172,6 +172,11 @@ public class DepartmentService : IDepartmentService
             return (false, AcademicStructureErrors.DepartmentHasGroups);
         }
 
+        if (await _dbContext.Directions.AnyAsync(d => d.DepartmentId == id))
+        {
+            return (false, AcademicStructureErrors.DepartmentHasDirections);
+        }
+
         _dbContext.Departments.Remove(department);
 
         try

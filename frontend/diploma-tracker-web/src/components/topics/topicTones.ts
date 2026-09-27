@@ -12,5 +12,6 @@ export const reservationStatusTone: Record<ReservationStatus, BadgeTone> = {
   Approved: 'success',
   Rejected: 'danger',
   Cancelled: 'neutral',
-  Released: 'neutral'
+  Released: 'neutral',
+  Returned: 'warning'
 }

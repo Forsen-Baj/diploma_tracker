@@ -28,15 +28,34 @@ public class ReservationsController : ApiControllerBase
     public Task<IActionResult> Propose([FromBody] ProposeTopicRequest request) =>
         Run(user => _reservationService.ProposeAsync(user, request));
 
+    [HttpGet("{id:guid}")]
+    public Task<IActionResult> Get(Guid id) =>
+        Run(user => _reservationService.GetAsync(user, id));
+
     [Authorize(Roles = "Admin,Teacher")]
     [HttpPost("{id:guid}/approve")]
     public Task<IActionResult> Approve(Guid id) =>
         Run(user => _reservationService.ApproveAsync(user, id));
 
     [Authorize(Roles = "Admin,Teacher")]
+    [HttpPost("{id:guid}/return")]
+    public Task<IActionResult> Return(Guid id, [FromBody] ReturnReservationRequest request) =>
+        Run(user => _reservationService.ReturnAsync(user, id, request));
+
+    [Authorize(Roles = "Admin,Teacher")]
     [HttpPost("{id:guid}/reject")]
     public Task<IActionResult> Reject(Guid id, [FromBody] DecisionRequest? request) =>
         Run(user => _reservationService.RejectAsync(user, id, request ?? new DecisionRequest()));
+
+    [Authorize(Roles = "Admin,Teacher")]
+    [HttpPut("{id:guid}/wording")]
+    public Task<IActionResult> EditWording(Guid id, [FromBody] WordingRequest request) =>
+        Run(user => _reservationService.EditWordingAsync(user, id, request));
+
+    [Authorize(Roles = "Student")]
+    [HttpPost("{id:guid}/resubmit")]
+    public Task<IActionResult> Resubmit(Guid id, [FromBody] WordingRequest request) =>
+        Run(user => _reservationService.ResubmitAsync(user, id, request));
 
     [Authorize(Roles = "Student")]
     [HttpPost("{id:guid}/cancel")]
@@ -63,14 +82,16 @@ public class ReservationsController : ApiControllerBase
 
     [Authorize(Roles = "Admin,Teacher")]
     [HttpGet("pending")]
-    public async Task<IActionResult> ForDecision([FromQuery] ReservationStatus status = ReservationStatus.Pending)
+    public async Task<IActionResult> ForDecision(
+        [FromQuery] ReservationStatus status = ReservationStatus.Pending,
+        [FromQuery] bool waitingForMe = false)
     {
         if (!TryGetCurrentUser(out var user))
         {
             return ErrorResult(CommonErrors.Forbidden);
         }
 
-        return Ok(await _reservationService.GetForDecisionAsync(user, status));
+        return Ok(await _reservationService.GetForDecisionAsync(user, status, waitingForMe));
     }
 
     private async Task<IActionResult> Run(Func<Services.UserContext, Task<(ReservationResponse? reservation, string? error)>> action)
