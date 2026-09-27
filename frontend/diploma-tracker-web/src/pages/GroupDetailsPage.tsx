@@ -514,8 +514,7 @@ export function GroupDetailsPage() {
               </div>
               <div className="max-w-xs flex-1">
                 <TextField
-                  label={t('groupDetails.startDate')}
-                  hint={t('common.optional')}
+                  label={`${t('groupDetails.startDate')} (${t('common.optional')})`}
                   type="datetime-local"
                   value={newTaskStartDate}
                   onChange={(e) => setNewTaskStartDate(e.target.value)}
@@ -611,8 +610,7 @@ export function GroupDetailsPage() {
       >
         <form id="edit-task-deadline-form" onSubmit={handleSaveTaskDeadline} className="flex flex-col gap-4">
           <TextField
-            label={t('groupDetails.startDate')}
-            hint={t('common.optional')}
+            label={`${t('groupDetails.startDate')} (${t('common.optional')})`}
             type="datetime-local"
             value={editingTaskStartDate}
             onChange={(e) => setEditingTaskStartDate(e.target.value)}

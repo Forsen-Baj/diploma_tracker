@@ -1,5 +1,5 @@
 import { ListPlus, Pencil, Plus, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getDepartments } from '../../api/departmentsApi'
 import { deleteDirection, getDirections } from '../../api/directionsApi'
@@ -23,7 +23,14 @@ type DirectionsSectionProps = {
   onLoaded?: (directions: Direction[]) => void
 }
 
-export function DirectionsSection({ mode, onAddTopic, onLoaded }: DirectionsSectionProps) {
+/** C: an imperative handle so pages showing this section alongside a topic list (which can
+ *  change topic counts through create/edit/delete/approve) can force a fresh reload. */
+export type DirectionsSectionHandle = { reload: () => void }
+
+export const DirectionsSection = forwardRef<DirectionsSectionHandle, DirectionsSectionProps>(function DirectionsSection(
+  { mode, onAddTopic, onLoaded },
+  ref
+) {
   const { t } = useTranslation()
   const errorMessage = useErrorMessage()
   const toast = useToast()
@@ -63,6 +70,8 @@ export function DirectionsSection({ mode, onAddTopic, onLoaded }: DirectionsSect
   useEffect(() => {
     void load()
   }, [load])
+
+  useImperativeHandle(ref, () => ({ reload: () => void load() }), [load])
 
   const openCreate = () => {
     setEditing(undefined)
@@ -171,4 +180,4 @@ export function DirectionsSection({ mode, onAddTopic, onLoaded }: DirectionsSect
       />
     </Card>
   )
-}
+})

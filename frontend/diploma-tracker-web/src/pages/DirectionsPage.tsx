@@ -1,5 +1,5 @@
 import { Pencil, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Navigate } from 'react-router-dom'
 import { deleteTopic, getTopics, getTopicSupervisors } from '../api/topicsApi'
@@ -12,9 +12,11 @@ import { DataTable, type DataTableColumn } from '../components/ui/DataTable'
 import { EmptyState } from '../components/ui/EmptyState'
 import { PageHeader } from '../components/ui/PageHeader'
 import { useToast } from '../components/ui/useToast'
-import { DirectionsSection } from '../components/topics/DirectionsSection'
+import { DirectionsSection, type DirectionsSectionHandle } from '../components/topics/DirectionsSection'
+import { TopicApproveButton } from '../components/topics/TopicApproveButton'
 import { TopicFormModal } from '../components/topics/TopicFormModal'
 import { TopicStatusBadge } from '../components/topics/TopicStatusBadge'
+import { useWaitingApprovals } from '../components/topics/useWaitingApprovals'
 import type { Direction, SupervisorOption, Topic } from '../api/types'
 
 /** Design 2026-09-27 §8: a direction manager's directions, and the topics in them. */
@@ -34,6 +36,8 @@ export function DirectionsPage() {
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [deletingTopic, setDeletingTopic] = useState<Topic | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const directionsSectionRef = useRef<DirectionsSectionHandle>(null)
+  const { waitingByTopicId, refreshWaiting } = useWaitingApprovals()
 
   const loadTopics = useCallback(async () => {
     setIsLoading(true)
@@ -66,11 +70,19 @@ export function DirectionsPage() {
       setDeletingTopic(null)
       toast.success(t('common.deletedToast'))
       await loadTopics()
+      void refreshWaiting()
+      directionsSectionRef.current?.reload()
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
       setIsDeleting(false)
     }
+  }
+
+  const handleTopicApproved = () => {
+    void loadTopics()
+    void refreshWaiting()
+    directionsSectionRef.current?.reload()
   }
 
   const columns: DataTableColumn<Topic>[] = [
@@ -82,14 +94,18 @@ export function DirectionsPage() {
     {
       key: 'actions',
       header: t('common.actions'),
-      render: (topic) => (
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" icon={Pencil} aria-label={t('common.edit')} disabled={!topic.canEdit}
-            onClick={() => { setEditingTopic(topic); setFormDirectionId(undefined); setIsFormOpen(true) }} />
-          <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('common.delete')} disabled={!topic.canDelete}
-            onClick={() => setDeletingTopic(topic)} />
-        </div>
-      )
+      render: (topic) => {
+        const waitingReservation = waitingByTopicId[topic.id]
+        return (
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" icon={Pencil} aria-label={t('common.edit')} disabled={!topic.canEdit}
+              onClick={() => { setEditingTopic(topic); setFormDirectionId(undefined); setIsFormOpen(true) }} />
+            <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('common.delete')} disabled={!topic.canDelete}
+              onClick={() => setDeletingTopic(topic)} />
+            {waitingReservation && <TopicApproveButton reservation={waitingReservation} onChanged={handleTopicApproved} />}
+          </div>
+        )
+      }
     }
   ]
 
@@ -98,6 +114,7 @@ export function DirectionsPage() {
       <PageHeader title={t('directions.myTitle')} />
 
       <DirectionsSection
+        ref={directionsSectionRef}
         mode="manager"
         onLoaded={setDirections}
         onAddTopic={(direction) => {
@@ -132,6 +149,8 @@ export function DirectionsPage() {
           setIsFormOpen(false)
           toast.success(t('common.savedToast'))
           void loadTopics()
+          void refreshWaiting()
+          directionsSectionRef.current?.reload()
         }}
       />
 

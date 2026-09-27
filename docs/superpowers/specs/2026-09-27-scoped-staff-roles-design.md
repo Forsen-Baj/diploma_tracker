@@ -25,6 +25,7 @@ Administrators and students stay outside this system; their account roles do not
 | Teacher role | Everything a teacher does today, limited to their scope |
 | Interface | A role switcher: the user acts as one role at a time, and each role keeps its own tabs and dashboard |
 | Who assigns | Administrators only |
+| Group reviewers | Removed. Every duty they had belongs to a supervisor, a direction manager, a standards controller or an administrator (§4.1) |
 
 ## 3. Model
 
@@ -53,13 +54,34 @@ Administrators and students stay outside this system; their account roles do not
   - Publish topics under directions of covered departments.
   - Be the supervisor of a topic in a covered department. A student's proposal picker lists
     only teachers who cover the student's group.
-  - Be a group reviewer of a covered group, and an extra reviewer on steps of students in
-    covered groups.
-  - Visibility is unchanged: a teacher sees the groups they review or supervise in. Scope
-    limits what they may take on, not what they are shown.
+  - Be an extra reviewer on steps of students in covered groups.
+  - Visibility: a teacher sees the students they supervise or sit on a panel for, and the
+    groups those students are in. Scope limits what they may take on, not what they are shown.
 - **Direction manager.** Create and manage directions in covered departments. Everything
   else follows from managing a direction, as in phase 11.
 - **Standards controller.** Can be assigned to the steps of covered groups.
+
+### 4.1 Group reviewers are removed
+
+Until phase 11 an administrator could attach teachers to a group as *group reviewers*. Since
+phase 9 they decide nothing: they watch the whole group (progress, every student's step pages
+and files, the dashboard figures), add and remove extra reviewers on its panels, and keep read
+access to the group's archive. Phase 11's direction managers and standards controllers, and
+phase 12's scoped roles, cover what is still needed, so the role goes:
+
+- The `GroupReviewers` and `ArchivedGroupReviewers` tables, their endpoints
+  (`/api/groups/{id}/reviewers`), the group page's *Reviewers* section and the security events
+  that log them are removed.
+- **Panels.** Extra reviewers are added and removed by the student's supervisor, the direction
+  manager of the student's topic and administrators.
+- **Visibility.** `IAccessScope` drops the group-reviewer clause. A teacher's groups are the
+  groups of students they supervise, manage through a direction, or sit on a panel for; within
+  such a group a row counts only those students. A teacher no longer opens other students of
+  the group read-only.
+- **Dashboards.** The teacher's group figures count only the caller's own students.
+- **Archive.** An archived group is read by administrators, and by the supervisors recorded in
+  it for their own students.
+- The demo data and check scripts stop creating group reviewers.
 
 ## 5. Acting role
 
@@ -79,7 +101,7 @@ Administrators and students stay outside this system; their account roles do not
 - The Teachers page becomes *Staff*. Each person's page lists their assignments, with *Add
   role* (role plus a faculty, department or group picker) and *Remove*.
 - Removing an assignment is refused while it is in use in that scope: supervising a student,
-  reviewing a group, managing a direction, or controlling a group step there. The refusal
+  managing a direction, or controlling a group step there. The refusal
   lists what blocks it, and the administrator reassigns first. This matches every other
   deletion in the system.
 - A staff member with no assignments can still sign in, but sees only *Account* and

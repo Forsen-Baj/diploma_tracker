@@ -15,9 +15,11 @@ import { PageHeader } from '../components/ui/PageHeader'
 import { Tooltip } from '../components/ui/Tooltip'
 import { useToast } from '../components/ui/useToast'
 import { DecisionCommentModal } from '../components/topics/DecisionCommentModal'
+import { TopicApproveButton } from '../components/topics/TopicApproveButton'
 import { TopicFormModal } from '../components/topics/TopicFormModal'
 import { TopicRequestsTable } from '../components/topics/TopicRequestsTable'
 import { TopicStatusBadge } from '../components/topics/TopicStatusBadge'
+import { useWaitingApprovals } from '../components/topics/useWaitingApprovals'
 import type { Direction, Reservation, Topic } from '../api/types'
 
 export function TeacherTopicsPage() {
@@ -32,6 +34,7 @@ export function TeacherTopicsPage() {
   const [directions, setDirections] = useState<Direction[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const { waitingByTopicId, refreshWaiting } = useWaitingApprovals()
 
   const [releasing, setReleasing] = useState<Reservation | null>(null)
   const [isReleasing, setIsReleasing] = useState(false)
@@ -112,6 +115,7 @@ export function TeacherTopicsPage() {
     setIsTopicModalOpen(false)
     toast.success(t('common.savedToast'))
     void loadAll()
+    void refreshWaiting()
   }
 
   const confirmDeleteTopic = async () => {
@@ -123,11 +127,17 @@ export function TeacherTopicsPage() {
       setDeletingTopic(null)
       toast.success(t('common.deletedToast'))
       await loadAll()
+      void refreshWaiting()
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
       setIsDeletingTopic(false)
     }
+  }
+
+  const handleTopicApproved = () => {
+    void loadAll()
+    void refreshWaiting()
   }
 
   const approvedColumns: DataTableColumn<Reservation>[] = [
@@ -173,12 +183,16 @@ export function TeacherTopicsPage() {
     {
       key: 'actions',
       header: t('common.actions'),
-      render: (topic) => (
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" icon={Pencil} aria-label={t('common.edit')} onClick={() => openEditTopic(topic)} disabled={!topic.canEdit} />
-          <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('common.delete')} onClick={() => setDeletingTopic(topic)} disabled={!topic.canDelete} />
-        </div>
-      )
+      render: (topic) => {
+        const waitingReservation = waitingByTopicId[topic.id]
+        return (
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" icon={Pencil} aria-label={t('common.edit')} onClick={() => openEditTopic(topic)} disabled={!topic.canEdit} />
+            <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('common.delete')} onClick={() => setDeletingTopic(topic)} disabled={!topic.canDelete} />
+            {waitingReservation && <TopicApproveButton reservation={waitingReservation} onChanged={handleTopicApproved} />}
+          </div>
+        )
+      }
     }
   ]
 
@@ -196,7 +210,7 @@ export function TeacherTopicsPage() {
       )}
 
       <Card title={t('topics.requestsTitle')} className="mb-6">
-        <TopicRequestsTable rows={pendingRequests} loading={isLoading} onChanged={() => void loadAll()} />
+        <TopicRequestsTable rows={pendingRequests} loading={isLoading} onChanged={handleTopicApproved} />
       </Card>
 
       <Card title={t('topics.approvedTitle')} className="mb-6">

@@ -209,7 +209,7 @@ export function MyTopicCard({ reservations: controlledReservations, loading: con
               )}
             </div>
           )}
-          <RequestTimeline timeline={open.timeline} />
+          <RequestTimeline timeline={open.timeline} contentChangedAt={open.contentChangedAt} createdAt={open.createdAt} studentName={open.studentName} />
         </div>
       )}
 
@@ -235,7 +235,7 @@ export function MyTopicCard({ reservations: controlledReservations, loading: con
               )}
             </div>
           )}
-          <RequestTimeline timeline={open.timeline} />
+          <RequestTimeline timeline={open.timeline} contentChangedAt={open.contentChangedAt} createdAt={open.createdAt} studentName={open.studentName} />
         </div>
       )}
 

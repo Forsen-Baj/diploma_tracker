@@ -1090,6 +1090,7 @@ public class ReservationService : IReservationService
             DecisionComment = row.DecisionComment,
             CreatedAt = row.CreatedAt,
             DecidedAt = row.DecidedAt,
+            ContentChangedAt = row.ContentChangedAt,
             CanCancel = canCancel,
             HasSubmissions = row.HasSubmissions,
             CurrentTopicId = isChangeRequest ? row.StudentCurrentTopicId : null,

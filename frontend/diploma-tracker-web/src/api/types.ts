@@ -483,6 +483,9 @@ export type Reservation = {
   decisionComment: string | null
   createdAt: string
   decidedAt: string | null
+  /** Phase 11 follow-up D: when the wording last changed while the request was open - decisions
+   *  decided before this no longer count, and a resubmission line belongs here in the timeline. */
+  contentChangedAt: string
   canCancel: boolean
   /** Set only on an open request from a student who already holds a topic: that topic. */
   currentTopicId: string | null

@@ -23,6 +23,12 @@ public class ReservationResponse
     public string? DecisionComment { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? DecidedAt { get; set; }
+
+    /// Phase 11 follow-up D: when the wording last changed while the request was open (set when
+    /// made, on every approver's edit and on the student's resubmission) - decisions older than
+    /// this no longer count, and the timeline shows a resubmission line here when it follows a
+    /// Returned decision.
+    public DateTime ContentChangedAt { get; set; }
     public bool CanCancel { get; set; }
 
     /// True when the student has at least one Submission on any of their steps - releasing this

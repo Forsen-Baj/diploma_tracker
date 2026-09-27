@@ -19,10 +19,12 @@ import { TextField } from '../components/ui/TextField'
 import { Tooltip } from '../components/ui/Tooltip'
 import { useToast } from '../components/ui/useToast'
 import { DecisionCommentModal } from '../components/topics/DecisionCommentModal'
-import { DirectionsSection } from '../components/topics/DirectionsSection'
+import { DirectionsSection, type DirectionsSectionHandle } from '../components/topics/DirectionsSection'
+import { TopicApproveButton } from '../components/topics/TopicApproveButton'
 import { TopicFormModal } from '../components/topics/TopicFormModal'
 import { TopicRequestsTable } from '../components/topics/TopicRequestsTable'
 import { TopicStatusBadge } from '../components/topics/TopicStatusBadge'
+import { useWaitingApprovals } from '../components/topics/useWaitingApprovals'
 import type { Department, Direction, Reservation, Teacher, Topic, TopicStatus } from '../api/types'
 
 type StatusFilter = 'all' | TopicStatus
@@ -46,6 +48,8 @@ export function AdminTopicsPage() {
   const [isLoadingRequests, setIsLoadingRequests] = useState(true)
   const [loadError, setLoadError] = useState('')
   const topicsRequestRef = useRef(0)
+  const directionsSectionRef = useRef<DirectionsSectionHandle>(null)
+  const { waitingByTopicId, refreshWaiting } = useWaitingApprovals()
 
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
@@ -167,6 +171,8 @@ export function AdminTopicsPage() {
     toast.success(t('common.savedToast'))
     void loadTopics()
     void loadRequests()
+    void refreshWaiting()
+    directionsSectionRef.current?.reload()
   }
 
   const confirmDeleteTopic = async () => {
@@ -179,6 +185,8 @@ export function AdminTopicsPage() {
       toast.success(t('common.deletedToast'))
       await loadTopics()
       void loadRequests()
+      void refreshWaiting()
+      directionsSectionRef.current?.reload()
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
@@ -196,11 +204,20 @@ export function AdminTopicsPage() {
       toast.success(t('topics.released'))
       await loadTopics()
       void loadRequests()
+      void refreshWaiting()
+      directionsSectionRef.current?.reload()
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
       setIsReleasing(false)
     }
+  }
+
+  const handleTopicApproved = () => {
+    void loadTopics()
+    void loadRequests()
+    void refreshWaiting()
+    directionsSectionRef.current?.reload()
   }
 
   const columns: DataTableColumn<Topic>[] = [
@@ -218,10 +235,12 @@ export function AdminTopicsPage() {
       header: t('common.actions'),
       render: (topic) => {
         const deletable = topic.status === 'Available' && topic.origin === 'Catalogue'
+        const waitingReservation = waitingByTopicId[topic.id]
         return (
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="sm" icon={Pencil} aria-label={t('common.edit')} onClick={() => openEditTopic(topic)} />
             <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('common.delete')} onClick={() => setDeletingTopic(topic)} disabled={!deletable} />
+            {waitingReservation && <TopicApproveButton reservation={waitingReservation} onChanged={handleTopicApproved} />}
             {topic.activeReservationStatus === 'Approved' && (
               topic.hasSubmissions ? (
                 <Tooltip content={t('topics.hasSubmissionsHint')}>
@@ -259,7 +278,7 @@ export function AdminTopicsPage() {
       </div>
 
       {section === 'directions' ? (
-        <DirectionsSection mode="admin" onLoaded={setDirections} />
+        <DirectionsSection ref={directionsSectionRef} mode="admin" onLoaded={setDirections} />
       ) : (
         <>
           <Card
@@ -284,7 +303,7 @@ export function AdminTopicsPage() {
             <TopicRequestsTable
               rows={requests}
               loading={isLoadingRequests}
-              onChanged={() => { void loadRequests(); void loadTopics() }}
+              onChanged={handleTopicApproved}
             />
           </Card>
 

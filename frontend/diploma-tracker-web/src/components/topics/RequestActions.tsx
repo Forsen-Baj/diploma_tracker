@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ApiError } from '../../api/apiClient'
-import { approveReservation, editReservationWording, rejectReservation, returnReservation } from '../../api/reservationsApi'
+import { editReservationWording, rejectReservation, returnReservation } from '../../api/reservationsApi'
 import { useErrorMessage } from '../../api/useErrorMessage'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
@@ -9,10 +9,11 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { useToast } from '../ui/useToast'
 import { DecisionCommentModal } from './DecisionCommentModal'
 import { RequiredCommentModal } from './RequiredCommentModal'
+import { useApproveReservation } from './useApproveReservation'
 import { WordingModal } from './WordingModal'
 import type { Reservation } from '../../api/types'
 
-type Action = 'approve' | 'return' | 'reject' | 'wording' | null
+type Action = 'return' | 'reject' | 'wording' | null
 
 type RequestActionsProps = {
   reservation: Reservation
@@ -26,6 +27,7 @@ export function RequestActions({ reservation, onChanged }: RequestActionsProps) 
   const toast = useToast()
   const [action, setAction] = useState<Action>(null)
   const [isBusy, setIsBusy] = useState(false)
+  const approval = useApproveReservation(onChanged)
 
   const run = async (work: () => Promise<Reservation>, success: (result: Reservation) => string) => {
     setIsBusy(true)
@@ -69,7 +71,7 @@ export function RequestActions({ reservation, onChanged }: RequestActionsProps) 
     <div className="flex flex-wrap items-center gap-1">
       {reservation.canDecide && (
         <>
-          <Button size="sm" onClick={() => setAction('approve')}>{t('topics.approve')}</Button>
+          <Button size="sm" onClick={() => approval.open(reservation)}>{t('topics.approve')}</Button>
           <Button variant="secondary" size="sm" onClick={() => setAction('return')}>{t('topics.return')}</Button>
         </>
       )}
@@ -81,13 +83,13 @@ export function RequestActions({ reservation, onChanged }: RequestActionsProps) 
       )}
 
       <ConfirmDialog
-        open={action === 'approve'}
+        open={approval.target?.id === reservation.id}
         title={t('topics.approve')}
         message={t('topics.approveConfirm', { title: reservation.topicTitle, student: reservation.studentName })}
         tone="primary"
-        loading={isBusy}
-        onConfirm={() => void run(() => approveReservation(reservation.id), (result) => t(result.status === 'Approved' ? 'topics.approved' : 'topics.approvalRecorded'))}
-        onCancel={() => setAction(null)}
+        loading={approval.isBusy}
+        onConfirm={() => void approval.confirm()}
+        onCancel={approval.close}
       />
       <RequiredCommentModal
         open={action === 'return'}

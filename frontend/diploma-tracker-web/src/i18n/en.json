@@ -803,6 +803,8 @@
     "resubmitHint": "After you resubmit, every approver approves the new wording again.",
     "resubmitted": "Request sent again",
     "history": "History",
+    "resubmittedEntry": "{{student}} — resubmitted",
+    "decisionStale": "no longer counts — the wording changed after it",
     "decisionKind": { "Approved": "approved", "Returned": "returned for changes", "Rejected": "rejected", "Edited": "edited the wording" },
     "noDirectionsForProposal": "Your department has no directions yet.",
     "supervisor": "Supervisor",
