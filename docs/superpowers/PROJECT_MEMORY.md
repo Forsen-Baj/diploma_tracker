@@ -35,10 +35,12 @@ management) sits between 2 and 3.
 | 4 Topics and reservation | Done — commit `Implement thesis topics and reservation` | `2026-09-17-topics-and-reservation-design.md` (amended 2026-09-18) | `2026-09-17-topics-and-reservation.md` |
 | 5 Submission and review | Done — commits `Added basic submission workflow`, `Complete submission and review` | `2026-09-17-submission-and-review-design.md` | `2026-09-17-submission-and-review.md` |
 | 6 Document templates | Done — commit `Implement document templates` | `2026-09-17-document-templates-design.md` (amended 2026-09-19) | `2026-09-17-document-templates.md` |
-| 7 Document preview and commenting | Deferred by the owner; the last increment, after phase 10 | — | — |
+| 7 Document preview and commenting | Deferred by the owner; the last increment, after phase 12 | — | — |
 | 8 Hardening and polish | Done — commit `Implement hardening and polish` (line endings pinned separately in `Normalise line endings`), follow-ups `Fix test project and check scripts`, `Apply whole-plan review fixes` | `2026-09-21-hardening-and-polish-design.md` | `2026-09-21-hardening-and-polish.md` |
 | 9 Review panels | Done — commit `Implement review panels` (branch `feature-dms`) | `2026-09-24-review-panels-and-document-routing-design.md` §3 | `2026-09-24-review-panels.md` |
 | 10 Document routing | Done — commit `Implement document routing` (branch `feature-dms`) | same, §4 | `2026-09-24-document-routing.md` |
+| 11 Directions, topic approval and standards control | Designed (branch `phase11-12`) | `2026-09-27-directions-topic-approval-and-standards-control-design.md` | `2026-09-27-directions-topic-approval-and-standards-control.md` |
+| 12 Scoped staff roles | Designed only; planned after phase 11 is delivered and tested | `2026-09-27-scoped-staff-roles-design.md` | — |
 
 Build order: onboarding → 3 → 4 → 5 → 6 → 8. Specs live in `docs/superpowers/specs/`, plans in
 `docs/superpowers/plans/`. Each plan assumes the previous ones are implemented; execute them
