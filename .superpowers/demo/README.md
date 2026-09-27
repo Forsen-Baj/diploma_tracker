@@ -55,7 +55,20 @@ A student can submit work only while holding an approved topic, so every student
 - *Review queue*: page controls, the group filter and the late filter.
 
 **Teacher** (Петренко; Коваленко for overdue)
-- Dashboard: waiting reviews and groups tiles; the five latest submissions to review; overdue steps with days overdue (Коваленко); supervised students; the group breakdown; group progress.
+- Dashboard: waiting reviews and groups tiles (Петренко's groups tile now counts every group she
+  reviews or supervises a student in — ІП-21 plus whichever other group holds one of her
+  supervised students, not reviewed groups alone); the five latest submissions to review; overdue
+  steps with days overdue (Коваленко) — *Overdue steps* lists a step nobody has submitted **or**
+  one still `Returned` past its deadline, never a `Submitted` one; a **Waiting for review past the
+  deadline** block for a `Submitted` step already past its deadline (the case *Overdue steps*
+  deliberately excludes) — each row shows *Submitted late* only when the submission itself was
+  late, otherwise "waiting N days past the deadline" for a submission that was on time and is only
+  late because nobody has decided it yet; supervised students; the group breakdown (a group she
+  only supervises a student in, not reviews, now counts just her own students, so the row agrees
+  with her *Overdue steps* list and the group page's split); group progress. The *Your decision*
+  tag on the Review tab only ever marks a step where the caller is the supervisor or an extra
+  reviewer with an undecided seat — never a group reviewer's watch access, and never an
+  administrator standing in to decide.
 - Archive: ІП-11 without a purge button (Петренко).
 - Steps: the list without drag handles.
 - Review: return a submission with a comment, approve one with a mark.
@@ -67,5 +80,20 @@ A student can submit work only while holding an approved topic, so every student
   - Олійник's is pending.
 - *My steps* (Кравченко): no submit form, just the message that work starts once the topic is approved.
 - *Topics* (Захарченко, who has no topic): leave the page open past the selection deadline and *Reserve* disappears by itself. To see this quickly, move the deadline to a minute ahead on the administrator's *Settings* page.
+- *Topics* (any student with an approved topic, e.g. Бондаренко): neither *Reserve* nor *Propose* is offered any more — a short note explains that only an administrator can change an approved topic now (`PUT /api/students/{id}/topic` is Admin-only; a supervisor cannot).
 
 **Progress matrix** (any role that can see it): ІП-22 shows red *Overdue* badges for Руденко and Павленко, with the five-state legend under the table.
+
+### Review panels
+
+- Бондаренко Максим, step 2: Петренко (supervisor) approved with 90; Коваленко, an extra reviewer, still has to decide. *My work* shows "1 of 2 approved"; Коваленко finds it in the review queue.
+- Мельник Дмитро, step 1: Петренко (extra) approved version 1, the supervisor Коваленко returned it, and version 2 completed the panel. The mark is the average, 87. Петренко's approval of version 1 still counted.
+- Лисенко Катерина, step 2: approved by Коваленко (92) and Шевчук (89), mark 91. Step 3 waits for Петренко and Шевчук after Коваленко's approval ("1 of 3").
+- A group's reviewer (for ІП-21, Петренко) sees the group's progress and every step page, and can add extra reviewers, but decides only where they sit on the panel. The group's **progress matrix** (not the plain student list further down the page, which still lists everyone unsplit) now splits into **My students** (Петренко's own supervised students, or any student whose step she sits on the panel for) and **Others** — the others still open read-only: no Approve/Return form and no *Your decision* tag. If a reviewer supervises nobody in the group and sits on no panel there, only the **Others** table shows — no empty *My students* table above it.
+
+### Documents
+
+- Петренко: *For signing* holds Бондаренко's topic application; the navigation shows a badge.
+- Лисенко: *My documents* shows the assignment sheet **Completed**. Its history reads: sent to Коваленко for signing, passed to Петренко with the signed copy, marked done with the final version.
+- Мельник: *My documents* shows the request sent back by Коваленко with the remark at the top.
+- Шевчук: *For signing* holds the department minute, which came via Коваленко's review.

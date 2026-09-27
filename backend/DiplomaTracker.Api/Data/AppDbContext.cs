@@ -23,10 +23,16 @@ public class AppDbContext : DbContext
     public DbSet<TopicReservation> TopicReservations => Set<TopicReservation>();
     public DbSet<Submission> Submissions => Set<Submission>();
     public DbSet<SubmissionFile> SubmissionFiles => Set<SubmissionFile>();
+    public DbSet<StudentTaskReviewer> StudentTaskReviewers => Set<StudentTaskReviewer>();
+    public DbSet<SubmissionReview> SubmissionReviews => Set<SubmissionReview>();
     public DbSet<DocumentTemplate> DocumentTemplates => Set<DocumentTemplate>();
     public DbSet<ArchivedGroup> ArchivedGroups => Set<ArchivedGroup>();
     public DbSet<ArchivedGroupReviewer> ArchivedGroupReviewers => Set<ArchivedGroupReviewer>();
     public DbSet<ArchivedFile> ArchivedFiles => Set<ArchivedFile>();
+    public DbSet<ArchivedReview> ArchivedReviews => Set<ArchivedReview>();
+    public DbSet<RoutedDocument> RoutedDocuments => Set<RoutedDocument>();
+    public DbSet<DocumentVersion> DocumentVersions => Set<DocumentVersion>();
+    public DbSet<DocumentEvent> DocumentEvents => Set<DocumentEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -251,7 +257,6 @@ public class AppDbContext : DbContext
         submission.HasKey(x => x.Id);
         submission.Property(x => x.Message).HasMaxLength(2000);
         submission.Property(x => x.Decision).HasConversion<string>().HasMaxLength(50);
-        submission.Property(x => x.ReviewerComment).HasMaxLength(2000);
         submission.Property(x => x.SubmittedAt).IsRequired();
         submission.HasIndex(x => new { x.StudentTaskId, x.Version }).IsUnique();
         submission.HasIndex(x => new { x.Decision, x.SubmittedAt });
@@ -259,10 +264,43 @@ public class AppDbContext : DbContext
             .WithMany(x => x.Submissions)
             .HasForeignKey(x => x.StudentTaskId)
             .OnDelete(DeleteBehavior.Cascade);
-        submission.HasOne(x => x.Reviewer)
-            .WithMany(x => x.ReviewedSubmissions)
+
+        var studentTaskReviewer = modelBuilder.Entity<StudentTaskReviewer>();
+        studentTaskReviewer.ToTable("StudentTaskReviewers");
+        studentTaskReviewer.HasKey(x => x.Id);
+        studentTaskReviewer.Property(x => x.AddedAt).IsRequired();
+        studentTaskReviewer.HasIndex(x => new { x.StudentTaskId, x.ReviewerId }).IsUnique();
+        studentTaskReviewer.HasIndex(x => x.ReviewerId);
+        studentTaskReviewer.HasOne(x => x.StudentTask)
+            .WithMany(x => x.Reviewers)
+            .HasForeignKey(x => x.StudentTaskId)
+            .OnDelete(DeleteBehavior.Cascade);
+        studentTaskReviewer.HasOne(x => x.Reviewer)
+            .WithMany()
             .HasForeignKey(x => x.ReviewerId)
-            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+        studentTaskReviewer.HasOne(x => x.AddedBy)
+            .WithMany()
+            .HasForeignKey(x => x.AddedById)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        var submissionReview = modelBuilder.Entity<SubmissionReview>();
+        submissionReview.ToTable("SubmissionReviews");
+        submissionReview.HasKey(x => x.Id);
+        submissionReview.Property(x => x.Seat).HasConversion<string>().HasMaxLength(50).IsRequired();
+        submissionReview.Property(x => x.Decision).HasConversion<string>().HasMaxLength(50).IsRequired();
+        submissionReview.Property(x => x.Comment).HasMaxLength(2000);
+        submissionReview.Property(x => x.DecidedAt).IsRequired();
+        // A reviewer decides once per version; this index is what holds under a race.
+        submissionReview.HasIndex(x => new { x.SubmissionId, x.ReviewerId }).IsUnique();
+        submissionReview.HasIndex(x => x.ReviewerId);
+        submissionReview.HasOne(x => x.Submission)
+            .WithMany(x => x.Reviews)
+            .HasForeignKey(x => x.SubmissionId)
+            .OnDelete(DeleteBehavior.Cascade);
+        submissionReview.HasOne(x => x.Reviewer)
+            .WithMany()
+            .HasForeignKey(x => x.ReviewerId)
             .OnDelete(DeleteBehavior.Restrict);
 
         var submissionFile = modelBuilder.Entity<SubmissionFile>();
@@ -348,8 +386,6 @@ public class AppDbContext : DbContext
         archivedFile.Property(x => x.StudentNumber).HasMaxLength(32).IsRequired();
         archivedFile.Property(x => x.StepTitle).HasMaxLength(300).IsRequired();
         archivedFile.Property(x => x.Decision).HasMaxLength(50);
-        archivedFile.Property(x => x.ReviewerName).HasMaxLength(300);
-        archivedFile.Property(x => x.ReviewerComment).HasMaxLength(2000);
         archivedFile.Property(x => x.Kind).HasMaxLength(50).IsRequired();
         archivedFile.Property(x => x.OriginalName).HasMaxLength(255).IsRequired();
         archivedFile.Property(x => x.ContentType).HasMaxLength(200).IsRequired();
@@ -364,5 +400,98 @@ public class AppDbContext : DbContext
             .WithMany(x => x.Files)
             .HasForeignKey(x => x.ArchivedGroupId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        var archivedReview = modelBuilder.Entity<ArchivedReview>();
+        archivedReview.ToTable("ArchivedReviews");
+        archivedReview.HasKey(x => x.Id);
+        // Last + first + patronymic, each up to 100 characters, plus two separating spaces: 302.
+        archivedReview.Property(x => x.StudentName).HasMaxLength(302).IsRequired();
+        archivedReview.Property(x => x.StudentNumber).HasMaxLength(32).IsRequired();
+        archivedReview.Property(x => x.StepTitle).HasMaxLength(300).IsRequired();
+        archivedReview.Property(x => x.ReviewerName).HasMaxLength(302).IsRequired();
+        archivedReview.Property(x => x.Seat).HasMaxLength(50).IsRequired();
+        archivedReview.Property(x => x.Decision).HasMaxLength(50).IsRequired();
+        archivedReview.Property(x => x.Comment).HasMaxLength(2000);
+        archivedReview.Property(x => x.ArchivedAt).IsRequired();
+        // A second archiving event for the same group skips reviews it already copied; this index is
+        // what makes that hold under a race.
+        archivedReview.HasIndex(x => new { x.ArchivedGroupId, x.SourceReviewId }).IsUnique();
+        archivedReview.HasOne(x => x.ArchivedGroup)
+            .WithMany(x => x.Reviews)
+            .HasForeignKey(x => x.ArchivedGroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        var routedDocument = modelBuilder.Entity<RoutedDocument>();
+        routedDocument.ToTable("RoutedDocuments");
+        routedDocument.HasKey(x => x.Id);
+        routedDocument.Property(x => x.Title).HasMaxLength(200).IsRequired();
+        routedDocument.Property(x => x.Description).HasMaxLength(2000);
+        routedDocument.Property(x => x.State).HasConversion<string>().HasMaxLength(50).IsRequired();
+        routedDocument.Property(x => x.Purpose).HasConversion<string>().HasMaxLength(50);
+        routedDocument.Property(x => x.CreatedAt).IsRequired();
+        routedDocument.Property(x => x.UpdatedAt).IsRequired();
+        routedDocument.Property(x => x.RowVersion).IsRowVersion();
+        routedDocument.HasIndex(x => new { x.HolderId, x.State, x.Purpose });
+        routedDocument.HasIndex(x => x.OwnerId);
+        routedDocument.HasOne(x => x.Owner)
+            .WithMany()
+            .HasForeignKey(x => x.OwnerId)
+            .OnDelete(DeleteBehavior.Restrict);
+        routedDocument.HasOne(x => x.Holder)
+            .WithMany()
+            .HasForeignKey(x => x.HolderId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        var documentVersion = modelBuilder.Entity<DocumentVersion>();
+        documentVersion.ToTable("DocumentVersions");
+        documentVersion.HasKey(x => x.Id);
+        // Last + first + patronymic, each up to 100 characters, plus two separating spaces: 302.
+        documentVersion.Property(x => x.UploadedByName).HasMaxLength(302).IsRequired();
+        documentVersion.Property(x => x.OriginalName).HasMaxLength(255).IsRequired();
+        documentVersion.Property(x => x.StorageKey).HasMaxLength(300).IsRequired();
+        documentVersion.Property(x => x.ContentType).HasMaxLength(200).IsRequired();
+        documentVersion.Property(x => x.UploadedAt).IsRequired();
+        documentVersion.HasIndex(x => new { x.DocumentId, x.Number }).IsUnique();
+        documentVersion.HasIndex(x => x.UploadedById);
+        documentVersion.HasOne(x => x.Document)
+            .WithMany(x => x.Versions)
+            .HasForeignKey(x => x.DocumentId)
+            .OnDelete(DeleteBehavior.Cascade);
+        // No database action: SQL Server refuses a second cascading path from Users, so the
+        // account-deletion path nulls these ids itself (DocumentService.ReleaseForDeletedAccountsAsync).
+        documentVersion.HasOne<AppUser>()
+            .WithMany()
+            .HasForeignKey(x => x.UploadedById)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.ClientSetNull);
+
+        var documentEvent = modelBuilder.Entity<DocumentEvent>();
+        documentEvent.ToTable("DocumentEvents");
+        documentEvent.HasKey(x => x.Id);
+        documentEvent.Property(x => x.Kind).HasConversion<string>().HasMaxLength(50).IsRequired();
+        documentEvent.Property(x => x.Purpose).HasConversion<string>().HasMaxLength(50);
+        documentEvent.Property(x => x.ActorName).HasMaxLength(302).IsRequired();
+        documentEvent.Property(x => x.RecipientName).HasMaxLength(302);
+        documentEvent.Property(x => x.Comment).HasMaxLength(2000);
+        documentEvent.Property(x => x.At).IsRequired();
+        // One line per number: two writers who both read sequence 7 cannot both write 8.
+        documentEvent.HasIndex(x => new { x.DocumentId, x.Sequence }).IsUnique();
+        documentEvent.HasIndex(x => x.ActorId);
+        documentEvent.HasIndex(x => x.RecipientId);
+        documentEvent.HasOne(x => x.Document)
+            .WithMany(x => x.Events)
+            .HasForeignKey(x => x.DocumentId)
+            .OnDelete(DeleteBehavior.Cascade);
+        documentEvent.HasOne<AppUser>()
+            .WithMany()
+            .HasForeignKey(x => x.ActorId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.ClientSetNull);
+        documentEvent.HasOne<AppUser>()
+            .WithMany()
+            .HasForeignKey(x => x.RecipientId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.ClientSetNull);
     }
 }

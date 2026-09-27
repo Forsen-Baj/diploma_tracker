@@ -62,7 +62,7 @@ async function createStudent(suffix) {
 const s1 = await createStudent('A')
 const s2 = await createStudent('B')
 const s3 = await createStudent('C')
-const s4 = await createStudent('D') // used only for the change-request sequence
+const s4 = await createStudent('D') // used only for the topicHeld-refusal sequence (checks 40-48)
 
 const teacher2Email = `teacher2.${stamp}@diploma.local`
 const teacher2Id = (await call('POST', '/api/teachers', { token: admin, json: { firstName: 'Second', lastName: 'Teacher', email: teacher2Email, password: 'Teacher456!' } })).body.id
@@ -178,60 +178,57 @@ check('37 clearing the topic', (await call('PUT', `/api/students/${loser.id}/top
 check('38 student has no topic', (await call('GET', `/api/students/${loser.id}`, { token: admin })).body.topicId, null)
 check('39 the cleared topic is available again', (await call('GET', `/api/topics/${t5.id}`, { token: admin })).body.status, 'Available')
 
-// Change requests: a student with an approved topic asks for another one
+// Bug 9 (task 7): a student holding an approved topic can no longer file ANY new request through
+// the student-initiated flow - reserve and propose are both refused up front with
+// reservation.topicHeld, checked before any topic-specific rule (even reserving the exact topic
+// already held now gives topicHeld, not topic.alreadyYours - that code stays reachable only
+// through the administrator's PUT /api/students/{id}/topic used below, which this bug leaves
+// untouched).
+// Review M9: assert the status too, not just body.code - a 200 response that happened to carry a
+// stray "code" field could never fail a body.code-only comparison. refused() reads as "409
+// reservation.topicHeld" or similar, composed from both fields in one check.
+const refused = (res) => `${res.status} ${res.body?.code}`
 const ch1 = (await call('POST', `/api/topics/${t6.id}/reserve`, { token: s4.token })).body
 await call('POST', `/api/reservations/${ch1.id}/approve`, { token: teacher })
-check('40 change request allowed while holding a topic', (await call('POST', `/api/topics/${t7.id}/reserve`, { token: s4.token })).status, 200)
-const ch2 = (await call('GET', '/api/reservations/mine', { token: s4.token })).body.find((r) => r.status === 'Pending')
+check('40 reserving another topic while holding one is refused', refused(await call('POST', `/api/topics/${t7.id}/reserve`, { token: s4.token })), '409 reservation.topicHeld')
 check('41 the held topic is still approved', (await call('GET', `/api/topics/${t6.id}`, { token: admin })).body.status, 'Approved')
-check('42 only one request at a time', (await call('POST', `/api/topics/${t8.id}/reserve`, { token: s4.token })).body.code, 'reservation.alreadyActive')
-check('43 rejecting a change leaves the old topic', (await call('POST', `/api/reservations/${ch2.id}/reject`, { token: teacher, json: { comment: 'Not my field' } })).body.status, 'Rejected')
-check('44 student keeps the original topic', (await call('GET', `/api/students/${s4.id}`, { token: admin })).body.topicId, t6.id)
-check('45 requesting the topic already held refused', (await call('POST', `/api/topics/${t6.id}/reserve`, { token: s4.token })).body.code, 'topic.alreadyYours')
-const ch3 = (await call('POST', `/api/topics/${t7.id}/reserve`, { token: s4.token })).body
-check('46 approving a change moves the student', (await call('POST', `/api/reservations/${ch3.id}/approve`, { token: teacher })).body.status, 'Approved')
-check('47 the old topic returns to the catalogue', (await call('GET', `/api/topics/${t6.id}`, { token: admin })).body.status, 'Available')
-check('48 student now holds the new topic', (await call('GET', `/api/students/${s4.id}`, { token: admin })).body.topicId, t7.id)
-check('49 the old reservation is Released', (await call('GET', '/api/reservations/mine', { token: s4.token })).body.some((r) => r.topicId === t6.id && r.status === 'Released'), true)
+check('42 proposing while holding a topic is refused the same way', refused(await call('POST', '/api/topics/proposals', { token: s4.token, json: { title: 'Unreachable proposal', supervisorId: teacherId } })), '409 reservation.topicHeld')
+check('43 reserving the topic already held gives topicHeld, not alreadyYours', refused(await call('POST', `/api/topics/${t6.id}/reserve`, { token: s4.token })), '409 reservation.topicHeld')
+await call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: '2000-01-01T00:00:00Z' } })
+check('44 closed selection still gives topicHeld, not selection.closed', refused(await call('POST', `/api/topics/${t8.id}/reserve`, { token: s4.token })), '409 reservation.topicHeld')
+await call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: null } })
+check('45 student still holds the original topic', (await call('GET', `/api/students/${s4.id}`, { token: admin })).body.topicId, t6.id)
 
-// Approving a change request releases one reservation and approves another, both keyed by the
-// same student under IX_TopicReservations_ApprovedPerStudent. A single-save implementation
-// violates that index only when EF happens to order the statements badly, so one pass proves
-// nothing — repeat the swap enough times to catch it.
+// A change still happens the way it always did when someone else initiates it: the supervisor or
+// an administrator replaces the topic directly (SetStudentTopicAsync) instead of through a
+// competing Pending reservation, which reserve/propose can no longer create for this student.
+// SetStudentTopicAsync carries "the same two-phase rule as ApproveAsync" per its own comment
+// (the released row and the created row are both this student's under
+// IX_TopicReservations_ApprovedPerStudent) - repeat the swap enough times to catch an ordering
+// bug, the same way the old six-swap loop used to for the student-approved path this bug makes
+// unreachable. An odd count (7) starting from t6 lands back on t7, matching what "52 approved
+// list for teacher" below already expects.
 let swapsOk = true
-let held = t7.id
-for (let i = 0; i < 6 && swapsOk; i++) {
-  const wanted = held === t7.id ? t6.id : t7.id
-  const req = (await call('POST', `/api/topics/${wanted}/reserve`, { token: s4.token })).body
-  const decided = await call('POST', `/api/reservations/${req.id}/approve`, { token: teacher })
-  if (decided.body.status !== 'Approved') {
+let held = t6.id
+for (let i = 0; i < 7 && swapsOk; i++) {
+  const wanted = held === t6.id ? t7.id : t6.id
+  const result = await call('PUT', `/api/students/${s4.id}/topic`, { token: admin, json: { topicId: wanted } })
+  if (result.body.topicId !== wanted) {
     swapsOk = false
-    console.log(`    swap ${i + 1} failed:`, JSON.stringify(decided.body))
+    console.log(`    swap ${i + 1} failed:`, JSON.stringify(result.body))
     break
   }
   held = wanted
 }
-check('49a six consecutive topic changes all approve', swapsOk, true)
-check('49b student holds the last topic asked for', (await call('GET', `/api/students/${s4.id}`, { token: admin })).body.topicId, held)
+check('46 seven consecutive admin-driven topic swaps all succeed', swapsOk, true)
+check('47 student holds the last topic asked for', (await call('GET', `/api/students/${s4.id}`, { token: admin })).body.topicId, held)
+check('48 the other topic returns to the catalogue', (await call('GET', `/api/topics/${held === t6.id ? t7.id : t6.id}`, { token: admin })).body.status, 'Available')
 
-// The deadline closes first-time selection but not changes
-await call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: '2000-01-01T00:00:00Z' } })
-check('50 closed selection still allows a change request', (await call('POST', `/api/topics/${t8.id}/reserve`, { token: s4.token })).status, 200)
-await call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: null } })
-
-// t6/t7/t8 are left in a tangle: s4 holds one of t6/t7 Approved (six swaps back and forth) and a
-// still-undecided Pending change-request on t8. Both must be resolved back to Available before any
-// of the three can be deleted.
-cleanup.add('topics six/seven/eight (change-request tangle)', async () => {
-  const mine = (await call('GET', '/api/reservations/mine', { token: s4.token })).body
-  const pendingT8 = mine.find((r) => r.status === 'Pending' && r.topicId === t8.id)
-  if (pendingT8) {
-    await call('POST', `/api/reservations/${pendingT8.id}/cancel`, { token: s4.token })
-  }
-  const approvedHeld = mine.find((r) => r.status === 'Approved' && (r.topicId === t6.id || r.topicId === t7.id))
-  if (approvedHeld) {
-    await call('POST', `/api/reservations/${approvedHeld.id}/release`, { token: teacher, json: { comment: 'check cleanup' } })
-  }
+// t6/t7/t8 are left in a tangle: s4 holds one of t6/t7 Approved (seven swaps back and forth) and
+// t8 was never successfully reserved by anyone. All three must be resolved back to Available
+// before any of them can be deleted.
+cleanup.add('topics six/seven/eight (task 7 bug 9)', async () => {
+  await call('PUT', `/api/students/${s4.id}/topic`, { token: admin, json: { topicId: null } })
   await call('DELETE', `/api/topics/${t6.id}`, { token: admin })
   await call('DELETE', `/api/topics/${t7.id}`, { token: admin })
   return call('DELETE', `/api/topics/${t8.id}`, { token: admin })
@@ -247,19 +244,24 @@ check('54 teacher deletes own available topic', (await call('DELETE', `/api/topi
 // StudentProposal topic while StudentProfiles.TopicId still referenced it, which is a
 // DeleteBehavior.Restrict foreign key — every one of the three paths below 500'd before the fix.
 
-// C1a: approving a change request away from an approved topic that is the student's own
-// accepted proposal (the proposal topic is deleted by ReturnOrRemoveTopic in the same phase-1
-// save that must first clear StudentProfiles.TopicId/SupervisorId).
+// C1a (bug 9 update, task 7): this used to approve a change request away from an approved
+// *proposal* - that specific path (ApproveAsync deciding a second Pending reservation for a
+// student who already holds one) is no longer reachable at all: reserve/propose refuse before
+// such a competing Pending row can ever exist. What remains meaningful here is confirming the
+// same reservation.topicHeld refusal applies when the held topic is the student's own accepted
+// proposal, not just a catalogue reservation (CheckStudentMayRequestAsync only looks at
+// StudentProfile.TopicId, never the topic's origin). The original 500-on-delete regression this
+// block guarded (a displaced StudentProposal topic deleted while a FK still pointed at it) is
+// still covered below by C1b and C1c, both of which go through the still-reachable admin path.
 const s5 = await createStudent('E')
 const t9 = (await call('POST', '/api/topics', { token: teacher, json: { title: `Topic Nine ${stamp}`, departmentId } })).body
 const propC1a = (await call('POST', '/api/topics/proposals', { token: s5.token, json: { title: `Proposal C1a ${stamp}`, supervisorId: teacherId } })).body
 check('55 proposal approved as the student\'s topic', (await call('POST', `/api/reservations/${propC1a.id}/approve`, { token: teacher })).body.status, 'Approved')
-const changeC1a = (await call('POST', `/api/topics/${t9.id}/reserve`, { token: s5.token })).body
-check('56 approving a change away from an approved proposal succeeds', (await call('POST', `/api/reservations/${changeC1a.id}/approve`, { token: teacher })).status, 200)
-check('57 student now holds the catalogue topic', (await call('GET', `/api/students/${s5.id}`, { token: admin })).body.topicId, t9.id)
-check('58 the accepted proposal topic is gone', (await call('GET', `/api/topics/${propC1a.topicId}`, { token: admin })).status, 404)
+check('56 reserving a catalogue topic while holding an approved proposal is refused', refused(await call('POST', `/api/topics/${t9.id}/reserve`, { token: s5.token })), '409 reservation.topicHeld')
+check('57 proposing again while holding an approved proposal is refused', refused(await call('POST', '/api/topics/proposals', { token: s5.token, json: { title: 'Unreachable proposal', supervisorId: teacherId } })), '409 reservation.topicHeld')
+check('58 the accepted proposal is still the student\'s topic', (await call('GET', `/api/students/${s5.id}`, { token: admin })).body.topicTitle, `Proposal C1a ${stamp}`)
 cleanup.add(`topic ${t9.title} (C1a)`, async () => {
-  await call('POST', `/api/reservations/${changeC1a.id}/release`, { token: teacher, json: { comment: 'check cleanup' } })
+  await call('PUT', `/api/students/${s5.id}/topic`, { token: admin, json: { topicId: null } })
   return call('DELETE', `/api/topics/${t9.id}`, { token: admin })
 })
 

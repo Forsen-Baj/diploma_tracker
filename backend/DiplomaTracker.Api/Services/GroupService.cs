@@ -16,19 +16,22 @@ public class GroupService : IGroupService
     private readonly IAccessScope _accessScope;
     private readonly IArchiveService _archive;
     private readonly IReservationService _reservationService;
+    private readonly IDocumentService _documents;
 
     public GroupService(
         AppDbContext dbContext,
         ILogger<GroupService> logger,
         IAccessScope accessScope,
         IArchiveService archive,
-        IReservationService reservationService)
+        IReservationService reservationService,
+        IDocumentService documents)
     {
         _dbContext = dbContext;
         _logger = logger;
         _accessScope = accessScope;
         _archive = archive;
         _reservationService = reservationService;
+        _documents = documents;
     }
 
     /// Phase 8 §8: the API returns exactly the columns it sends. This used to materialise a
@@ -224,6 +227,11 @@ public class GroupService : IGroupService
         }
         await _dbContext.SaveChangesAsync(cancellationToken);
 
+        // Design 2026-09-24 §4.5: documents go before the accounts do. A student's own documents
+        // are deleted, one they hold for someone else returns to its owner, and their names stay
+        // in other people's timelines as text. Stored files are removed only after the commit.
+        var releasedKeys = await _documents.ReleaseForDeletedAccountsAsync(profiles.Select(p => p.UserId).ToList(), cancellationToken);
+
         // Deleting the user cascades to the profile, its reservations and its student tasks;
         // student tasks cascade to submissions and submission files. The group's own cascade
         // takes its reviewers, group tasks and template links.
@@ -242,6 +250,8 @@ public class GroupService : IGroupService
         }
 
         await transaction.CommitAsync(cancellationToken);
+
+        await _documents.DeleteStoredFilesAsync(releasedKeys);
 
         SecurityLog.GroupDeleted(_logger, administratorId, id, groupCode, archivedFileCount, profiles.Count);
         return (true, null);
@@ -271,11 +281,18 @@ public class GroupService : IGroupService
 
         var fileCount = await _archive.CountFilesForGroupDeletionAsync(groupId, cancellationToken);
 
+        var archivedUserIds = await _dbContext.StudentProfiles.AsNoTracking()
+            .Where(p => p.GroupId == groupId && p.ArchivedAt != null)
+            .Select(p => p.UserId)
+            .ToListAsync(cancellationToken);
+        var documentCount = await _documents.CountOwnedByAsync(archivedUserIds, cancellationToken);
+
         return (new GroupDeletionPreviewResponse
         {
             ActiveStudentCount = counts?.Active ?? 0,
             ArchivedStudentCount = counts?.Archived ?? 0,
-            FileCount = fileCount
+            FileCount = fileCount,
+            DocumentCount = documentCount
         }, null);
     }
 

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { approveSubmission, returnSubmission } from '../../api/workflowApi'
+import { ApiError } from '../../api/apiClient'
+import { approveSubmission, getStep, returnSubmission } from '../../api/workflowApi'
 import { useErrorMessage } from '../../api/useErrorMessage'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
@@ -84,9 +85,20 @@ export function DecisionPanel({ step, onDecided }: DecisionPanelProps) {
       setConfirmAction(null)
       setMark('')
       setComment('')
-      toast.success(t(confirmAction === 'approve' ? 'steps.approved' : 'steps.returned'))
+      toast.success(t(confirmAction === 'return' ? 'steps.returned' : details.status === 'Approved' ? 'steps.approved' : 'steps.approvalRecorded'))
       onDecided(details)
     } catch (err) {
+      // M4: a 409 here (submission.alreadyDecided, review.seatSatisfied) means the step moved on
+      // without this reviewer - re-fetch it so the page reflects reality instead of still showing
+      // a decision form for a seat or version that is no longer open.
+      if (err instanceof ApiError && err.status === 409) {
+        setConfirmAction(null)
+        try {
+          onDecided(await getStep(step.id))
+        } catch {
+          // Ignore - the toast below still explains the original failure.
+        }
+      }
       toast.error(errorMessage(err))
     } finally {
       setIsDeciding(false)
@@ -121,7 +133,13 @@ export function DecisionPanel({ step, onDecided }: DecisionPanelProps) {
       <ConfirmDialog
         open={confirmAction !== null}
         title={t(confirmAction === 'return' ? 'steps.return' : 'steps.approve')}
-        message={confirmAction === 'approve' ? t('steps.approveConfirm', { mark }) : t('steps.returnConfirm')}
+        message={
+          confirmAction === 'approve'
+            ? t('steps.approveConfirm', { mark })
+            : mark.trim() === ''
+              ? t('steps.returnConfirm')
+              : t('steps.returnConfirmMarkIgnored', { mark })
+        }
         tone="primary"
         loading={isDeciding}
         onConfirm={() => void confirmDecision()}

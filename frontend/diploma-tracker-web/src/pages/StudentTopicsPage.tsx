@@ -1,6 +1,7 @@
 import { CalendarX, Lightbulb } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ApiError } from '../api/apiClient'
 import { getMyReservations, proposeTopic, reserveTopic } from '../api/reservationsApi'
 import { getTopicSelectionSettings } from '../api/settingsApi'
 import { getTopics, getTopicSupervisors } from '../api/topicsApi'
@@ -168,6 +169,14 @@ export function StudentTopicsPage() {
       await Promise.all([loadContext(), loadTopics()])
     } catch (err) {
       toast.error(errorMessage(err))
+      // Review M6 (task 7 fix round 1): a page left open since before the topic was approved
+      // still offered Reserve; the server's topicHeld refusal used to show only as a toast, with
+      // the stale Reserve button still sitting there. Refresh so hasTopic catches up and the
+      // catalogue re-renders without it.
+      if (err instanceof ApiError && err.code === 'reservation.topicHeld') {
+        setReservingTopic(null)
+        refreshAfterChange()
+      }
     } finally {
       setIsReserving(false)
     }
@@ -222,39 +231,43 @@ export function StudentTopicsPage() {
     },
     { key: 'supervisor', header: t('topics.supervisor'), render: (topic) => topic.supervisorName },
     { key: 'status', header: t('common.status'), render: (topic) => <TopicStatusBadge status={topic.status} /> },
-    {
-      key: 'actions',
-      header: t('common.actions'),
-      render: (topic) => {
-        const isOwnCurrentTopic = topic.id === approvedReservation?.topicId
-        const disabled = hasPending || isOwnCurrentTopic || (!hasTopic && selectionClosedRaw)
-        const reason: ReactNode = !disabled
-          ? undefined
-          : isOwnCurrentTopic
-            ? t('topics.reserveDisabledOwnTopic')
-            : hasPending
-              ? t('topics.reserveDisabledPending')
-              : t('topics.reserveDisabledClosed')
+    // Review M6 (task 7 fix round 1): dropping the whole column when hasTopic - rather than just
+    // returning null from every row's render - avoids an "Actions" header sitting over a column
+    // of empty cells.
+    ...(hasTopic
+      ? []
+      : [
+          {
+            key: 'actions',
+            header: t('common.actions'),
+            render: (topic: Topic) => {
+              const disabled = hasPending || selectionClosedRaw
+              const reason: ReactNode = !disabled
+                ? undefined
+                : hasPending
+                  ? t('topics.reserveDisabledPending')
+                  : t('topics.reserveDisabledClosed')
 
-        const actionButton = (
-          <Button variant="primary" size="sm" onClick={() => openReserveConfirm(topic)} disabled={disabled}>
-            {t(hasTopic ? 'topics.requestChange' : 'topics.reserve')}
-          </Button>
-        )
+              const actionButton = (
+                <Button variant="primary" size="sm" onClick={() => openReserveConfirm(topic)} disabled={disabled}>
+                  {t('topics.reserve')}
+                </Button>
+              )
 
-        if (!disabled) {
-          return actionButton
-        }
+              if (!disabled) {
+                return actionButton
+              }
 
-        return (
-          <Tooltip content={reason}>
-            <span tabIndex={0} className="inline-flex rounded-control">
-              {actionButton}
-            </span>
-          </Tooltip>
-        )
-      }
-    }
+              return (
+                <Tooltip content={reason}>
+                  <span tabIndex={0} className="inline-flex rounded-control">
+                    {actionButton}
+                  </span>
+                </Tooltip>
+              )
+            }
+          }
+        ])
   ]
 
   return (
@@ -269,7 +282,9 @@ export function StudentTopicsPage() {
               : t('topics.noDeadline')
         }
         actions={
-          !pageLoading && !noTopicAndClosed ? (
+          // Bug 9 (task 7): Propose is hidden entirely once the student holds an approved topic,
+          // same as Reserve below - filing a change request is no longer offered anywhere.
+          !pageLoading && !noTopicAndClosed && !hasTopic ? (
             <Button
               variant="secondary"
               icon={Lightbulb}
@@ -277,13 +292,19 @@ export function StudentTopicsPage() {
               disabled={hasPending}
               className="[&>svg]:transition [&>svg]:duration-200 hover:[&>svg]:text-glow hover:[&>svg]:drop-shadow-[0_0_var(--glow-radius)_var(--color-glow)] focus-visible:[&>svg]:text-glow focus-visible:[&>svg]:drop-shadow-[0_0_var(--glow-radius)_var(--color-glow)] motion-reduce:[&>svg]:transition-none"
             >
-              {t(hasTopic ? 'topics.proposeDifferent' : 'topics.propose')}
+              {t('topics.propose')}
             </Button>
           ) : undefined
         }
       />
 
       {!loadError && <MyTopicCard reservations={reservations} loading={pageLoading} onChanged={refreshAfterChange} />}
+
+      {!pageLoading && !loadError && hasTopic && (
+        <Card className="mb-6">
+          <EmptyState message={t('topics.topicHeldNotice')} />
+        </Card>
+      )}
 
       {pageLoading && (
         <div className="flex justify-center py-10">
@@ -337,14 +358,8 @@ export function StudentTopicsPage() {
 
       <ConfirmDialog
         open={Boolean(reservingTopic)}
-        title={t(hasTopic ? 'topics.requestChange' : 'topics.reserve')}
-        message={
-          reservingTopic
-            ? hasTopic && approvedReservation
-              ? t('topics.changeConfirm', { next: reservingTopic.title, current: approvedReservation.topicTitle })
-              : t('topics.reserveConfirm', { title: reservingTopic.title })
-            : ''
-        }
+        title={t('topics.reserve')}
+        message={reservingTopic ? t('topics.reserveConfirm', { title: reservingTopic.title }) : ''}
         tone="primary"
         loading={isReserving}
         onConfirm={() => void confirmReserve()}

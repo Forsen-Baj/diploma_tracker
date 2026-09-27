@@ -1,7 +1,7 @@
 import { ArrowLeft } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { getGroupStudents } from '../api/groupsApi'
 import { getGroupProgress } from '../api/workflowApi'
 import { useErrorMessage } from '../api/useErrorMessage'
@@ -13,12 +13,14 @@ import { EmptyState } from '../components/ui/EmptyState'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Spinner } from '../components/ui/Spinner'
 import { GroupProgressMatrix } from '../components/workflow/GroupProgressMatrix'
+import { stepBackNavigation } from '../utils/reviewStepBack'
 import type { GroupProgress, GroupStudent } from '../api/types'
 
 export function GroupProgressPage() {
   const { t } = useTranslation()
   const errorMessage = useErrorMessage()
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
   const { groupId } = useParams<{ groupId: string }>()
 
@@ -108,7 +110,10 @@ export function GroupProgressPage() {
           <PageHeader title={progress.groupCode} />
 
           <Card title={t('progress.title')} className="mb-6">
-            <GroupProgressMatrix progress={progress} onOpenStep={(studentTaskId) => navigate(`/review/steps/${studentTaskId}`)} />
+            <GroupProgressMatrix
+              progress={progress}
+              onOpenStep={(studentTaskId) => navigate(`/review/steps/${studentTaskId}`, stepBackNavigation(location, 'group'))}
+            />
           </Card>
 
           <Card title={t('groupDetails.students')}>

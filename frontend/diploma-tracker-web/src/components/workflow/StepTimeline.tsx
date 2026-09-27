@@ -76,15 +76,29 @@ export function StepTimeline({ timeline }: StepTimelineProps) {
             </div>
           )}
 
+          {submission.reviews.length > 0 && (
+            <div className="mt-4 flex flex-col gap-3">
+              {submission.reviews.map((review) => (
+                <div
+                  key={review.id}
+                  className={cn('border-l-2 pl-4', review.decision === 'Approved' ? 'border-success' : 'border-warning')}
+                >
+                  <p className="text-sm font-semibold text-heading">
+                    {t(`steps.decision.${review.decision}`)}
+                    {review.mark !== null ? ` · ${review.mark}` : ''}
+                  </p>
+                  <p className="text-xs text-text-muted">
+                    {review.reviewerName} · {t(`steps.seat.${review.seat}`)} · {dateTimeFormat.format(new Date(review.decidedAt))}
+                  </p>
+                  {review.comment && <p className="mt-1 whitespace-pre-line text-sm text-text-strong">{review.comment}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+
           {submission.decision && (
-            <div className={cn('mt-4 border-l-2 pl-4', submission.decision === 'Approved' ? 'border-success' : 'border-warning')}>
-              <p className="text-sm font-semibold text-heading">{t(`steps.decision.${submission.decision}`)}</p>
-              <p className="text-xs text-text-muted">
-                {submission.reviewerName}
-                {submission.decidedAt ? ` · ${dateTimeFormat.format(new Date(submission.decidedAt))}` : ''}
-              </p>
-              {submission.mark !== null && <p className="mt-1 text-sm text-text-strong">{t('steps.markValue', { mark: submission.mark })}</p>}
-              {submission.reviewerComment && <p className="mt-1 whitespace-pre-line text-sm text-text-strong">{submission.reviewerComment}</p>}
+            <div className="mt-3">
+              <Badge tone={submission.decision === 'Approved' ? 'success' : 'warning'}>{t(`steps.outcome.${submission.decision}`)}</Badge>
             </div>
           )}
         </div>

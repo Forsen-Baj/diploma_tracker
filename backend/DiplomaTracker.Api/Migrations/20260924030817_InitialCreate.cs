@@ -95,8 +95,6 @@ namespace DiplomaTracker.Api.Migrations
                     IsLate = table.Column<bool>(type: "bit", nullable: false),
                     Decision = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
                     Mark = table.Column<int>(type: "int", nullable: true),
-                    ReviewerName = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: true),
-                    ReviewerComment = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
                     DecidedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                     Kind = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
                     OriginalName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
@@ -130,6 +128,37 @@ namespace DiplomaTracker.Api.Migrations
                     table.PrimaryKey("PK_ArchivedGroupReviewers", x => x.Id);
                     table.ForeignKey(
                         name: "FK_ArchivedGroupReviewers_ArchivedGroups_ArchivedGroupId",
+                        column: x => x.ArchivedGroupId,
+                        principalTable: "ArchivedGroups",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ArchivedReviews",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ArchivedGroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    SourceReviewId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    StudentName = table.Column<string>(type: "nvarchar(302)", maxLength: 302, nullable: false),
+                    StudentNumber = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
+                    StepTitle = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
+                    StepOrder = table.Column<int>(type: "int", nullable: false),
+                    Version = table.Column<int>(type: "int", nullable: false),
+                    ReviewerName = table.Column<string>(type: "nvarchar(302)", maxLength: 302, nullable: false),
+                    Seat = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Decision = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Mark = table.Column<int>(type: "int", nullable: true),
+                    Comment = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    DecidedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    ArchivedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ArchivedReviews", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ArchivedReviews_ArchivedGroups_ArchivedGroupId",
                         column: x => x.ArchivedGroupId,
                         principalTable: "ArchivedGroups",
                         principalColumn: "Id",
@@ -204,6 +233,38 @@ namespace DiplomaTracker.Api.Migrations
                     table.PrimaryKey("PK_DocumentTemplates", x => x.Id);
                     table.ForeignKey(
                         name: "FK_DocumentTemplates_Users_OwnerId",
+                        column: x => x.OwnerId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "RoutedDocuments",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    OwnerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Title = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    State = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    HolderId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    Purpose = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RoutedDocuments", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_RoutedDocuments_Users_HolderId",
+                        column: x => x.HolderId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_RoutedDocuments_Users_OwnerId",
                         column: x => x.OwnerId,
                         principalTable: "Users",
                         principalColumn: "Id",
@@ -287,6 +348,75 @@ namespace DiplomaTracker.Api.Migrations
                         principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "DocumentEvents",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    DocumentId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Sequence = table.Column<int>(type: "int", nullable: false),
+                    Kind = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    ActorId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    ActorName = table.Column<string>(type: "nvarchar(302)", maxLength: 302, nullable: false),
+                    RecipientId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    RecipientName = table.Column<string>(type: "nvarchar(302)", maxLength: 302, nullable: true),
+                    Purpose = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    Comment = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    VersionNumber = table.Column<int>(type: "int", nullable: true),
+                    At = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_DocumentEvents", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_DocumentEvents_RoutedDocuments_DocumentId",
+                        column: x => x.DocumentId,
+                        principalTable: "RoutedDocuments",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_DocumentEvents_Users_ActorId",
+                        column: x => x.ActorId,
+                        principalTable: "Users",
+                        principalColumn: "Id");
+                    table.ForeignKey(
+                        name: "FK_DocumentEvents_Users_RecipientId",
+                        column: x => x.RecipientId,
+                        principalTable: "Users",
+                        principalColumn: "Id");
+                });
+
+            migrationBuilder.CreateTable(
+                name: "DocumentVersions",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    DocumentId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Number = table.Column<int>(type: "int", nullable: false),
+                    UploadedById = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    UploadedByName = table.Column<string>(type: "nvarchar(302)", maxLength: 302, nullable: false),
+                    OriginalName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
+                    StorageKey = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
+                    ContentType = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    SizeBytes = table.Column<long>(type: "bigint", nullable: false),
+                    UploadedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_DocumentVersions", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_DocumentVersions_RoutedDocuments_DocumentId",
+                        column: x => x.DocumentId,
+                        principalTable: "RoutedDocuments",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_DocumentVersions_Users_UploadedById",
+                        column: x => x.UploadedById,
+                        principalTable: "Users",
+                        principalColumn: "Id");
                 });
 
             migrationBuilder.CreateTable(
@@ -474,6 +604,39 @@ namespace DiplomaTracker.Api.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "StudentTaskReviewers",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    StudentTaskId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ReviewerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    AddedById = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    AddedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_StudentTaskReviewers", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_StudentTaskReviewers_StudentTasks_StudentTaskId",
+                        column: x => x.StudentTaskId,
+                        principalTable: "StudentTasks",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_StudentTaskReviewers_Users_AddedById",
+                        column: x => x.AddedById,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_StudentTaskReviewers_Users_ReviewerId",
+                        column: x => x.ReviewerId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Submissions",
                 columns: table => new
                 {
@@ -484,9 +647,6 @@ namespace DiplomaTracker.Api.Migrations
                     SubmittedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     IsLate = table.Column<bool>(type: "bit", nullable: false),
                     Decision = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    ReviewerId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
-                    ReviewerComment = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
-                    Mark = table.Column<int>(type: "int", nullable: true),
                     DecidedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
                 },
                 constraints: table =>
@@ -498,12 +658,6 @@ namespace DiplomaTracker.Api.Migrations
                         principalTable: "StudentTasks",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_Submissions_Users_ReviewerId",
-                        column: x => x.ReviewerId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -527,6 +681,36 @@ namespace DiplomaTracker.Api.Migrations
                         principalTable: "Submissions",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "SubmissionReviews",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    SubmissionId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ReviewerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Seat = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Decision = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Mark = table.Column<int>(type: "int", nullable: true),
+                    Comment = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    DecidedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SubmissionReviews", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_SubmissionReviews_Submissions_SubmissionId",
+                        column: x => x.SubmissionId,
+                        principalTable: "Submissions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_SubmissionReviews_Users_ReviewerId",
+                        column: x => x.ReviewerId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.InsertData(
@@ -568,6 +752,12 @@ namespace DiplomaTracker.Api.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_ArchivedReviews_ArchivedGroupId_SourceReviewId",
+                table: "ArchivedReviews",
+                columns: new[] { "ArchivedGroupId", "SourceReviewId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Departments_FacultyId_Name",
                 table: "Departments",
                 columns: new[] { "FacultyId", "Name" },
@@ -596,6 +786,22 @@ namespace DiplomaTracker.Api.Migrations
                 column: "Title");
 
             migrationBuilder.CreateIndex(
+                name: "IX_DocumentEvents_ActorId",
+                table: "DocumentEvents",
+                column: "ActorId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentEvents_DocumentId_Sequence",
+                table: "DocumentEvents",
+                columns: new[] { "DocumentId", "Sequence" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentEvents_RecipientId",
+                table: "DocumentEvents",
+                column: "RecipientId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_DocumentTemplateGroups_GroupId",
                 table: "DocumentTemplateGroups",
                 column: "GroupId");
@@ -609,6 +815,17 @@ namespace DiplomaTracker.Api.Migrations
                 name: "IX_DocumentTemplateTeachers_TeacherId",
                 table: "DocumentTemplateTeachers",
                 column: "TeacherId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentVersions_DocumentId_Number",
+                table: "DocumentVersions",
+                columns: new[] { "DocumentId", "Number" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentVersions_UploadedById",
+                table: "DocumentVersions",
+                column: "UploadedById");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Faculties_Name",
@@ -656,6 +873,16 @@ namespace DiplomaTracker.Api.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_RoutedDocuments_HolderId_State_Purpose",
+                table: "RoutedDocuments",
+                columns: new[] { "HolderId", "State", "Purpose" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RoutedDocuments_OwnerId",
+                table: "RoutedDocuments",
+                column: "OwnerId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_StudentProfiles_GroupId",
                 table: "StudentProfiles",
                 column: "GroupId");
@@ -685,6 +912,22 @@ namespace DiplomaTracker.Api.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_StudentTaskReviewers_AddedById",
+                table: "StudentTaskReviewers",
+                column: "AddedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_StudentTaskReviewers_ReviewerId",
+                table: "StudentTaskReviewers",
+                column: "ReviewerId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_StudentTaskReviewers_StudentTaskId_ReviewerId",
+                table: "StudentTaskReviewers",
+                columns: new[] { "StudentTaskId", "ReviewerId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_StudentTasks_GroupTaskId",
                 table: "StudentTasks",
                 column: "GroupTaskId");
@@ -701,14 +944,20 @@ namespace DiplomaTracker.Api.Migrations
                 column: "SubmissionId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_SubmissionReviews_ReviewerId",
+                table: "SubmissionReviews",
+                column: "ReviewerId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_SubmissionReviews_SubmissionId_ReviewerId",
+                table: "SubmissionReviews",
+                columns: new[] { "SubmissionId", "ReviewerId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Submissions_Decision_SubmittedAt",
                 table: "Submissions",
                 columns: new[] { "Decision", "SubmittedAt" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Submissions_ReviewerId",
-                table: "Submissions",
-                column: "ReviewerId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Submissions_StudentTaskId_Version",
@@ -769,10 +1018,19 @@ namespace DiplomaTracker.Api.Migrations
                 name: "ArchivedGroupReviewers");
 
             migrationBuilder.DropTable(
+                name: "ArchivedReviews");
+
+            migrationBuilder.DropTable(
+                name: "DocumentEvents");
+
+            migrationBuilder.DropTable(
                 name: "DocumentTemplateGroups");
 
             migrationBuilder.DropTable(
                 name: "DocumentTemplateTeachers");
+
+            migrationBuilder.DropTable(
+                name: "DocumentVersions");
 
             migrationBuilder.DropTable(
                 name: "GroupReviewers");
@@ -781,7 +1039,13 @@ namespace DiplomaTracker.Api.Migrations
                 name: "PlatformSettings");
 
             migrationBuilder.DropTable(
+                name: "StudentTaskReviewers");
+
+            migrationBuilder.DropTable(
                 name: "SubmissionFiles");
+
+            migrationBuilder.DropTable(
+                name: "SubmissionReviews");
 
             migrationBuilder.DropTable(
                 name: "TopicReservations");
@@ -791,6 +1055,9 @@ namespace DiplomaTracker.Api.Migrations
 
             migrationBuilder.DropTable(
                 name: "DocumentTemplates");
+
+            migrationBuilder.DropTable(
+                name: "RoutedDocuments");
 
             migrationBuilder.DropTable(
                 name: "Submissions");

@@ -440,3 +440,68 @@ its review completes.
 - **`TopicSettingsService`**: one query per scope when read repeatedly; the cache is reset after `SetDeadlineAsync`.
 - **Last-active-administrator guard**: after refinements checks 28/29 were rewritten, nothing reaches it through the API. It needs a unit test at the service level.
 - **`request.tooLarge`**: confirm that a body over the limit on a multipart form actually reaches the exception handler as a 413. `BadHttpRequestException` derives from `IOException`, and form model binding may turn it into a 400 `validation.failed`. No check script covers it.
+
+## Phase 9 — Review panels
+
+- `ReviewPanel.Evaluate`: the supervisor seat is satisfied by the current supervisor or an administrator, not by a former supervisor, and a null supervisor leaves it to an administrator. An extra seat ignores approvals older than its `AddedAt` (the equal case counts). An extra row naming the supervisor is absorbed. Rounding is half away from zero (85.5 → 86, 86.5 → 87), including one seat and the 1/3 and 2/3 cases.
+- `ReviewPanel.SeatFor`: the caller's own supervisor seat first, then their extra seat, then an administrator's stand-in; null for a group reviewer or a teacher with no seat.
+- Decisions (SQL Server): the last open seat completes the step with the average; a return keeps earlier approvals; `review.seatSatisfied` for a satisfied seat, including an administrator once the supervisor seat is satisfied; two concurrent decisions (approvals or returns) yield one success and one `submission.alreadyDecided`; a decision racing a panel change; an administrator's stand-in return. A reviewer who is removed and re-added after approving the pending version re-decides, and the new decision overwrites their row.
+- Resubmission: a new version that finds every seat already approved (the returning reviewer was removed while `Returned`) is approved at once with the average. A submission that races a panel change answers `panel.changed`.
+- Panel changes: refused on an approved step, for an archived student and for a moved step; `panel.notAllowed` for an extra reviewer and for a group reviewer adding themselves; `submission.notFound`/`studentTask.notFound` for an outsider; `panel.reviewerInvalid` for a deactivated user, a student or an unknown id; a removal that completes a submitted step approves it; the unique index turns a racing duplicate into `panel.reviewerExists`; a deactivated reviewer can be removed.
+- Supervisor change mid-panel: the former supervisor's approval stops counting; an extra who becomes the supervisor is absorbed; a released topic leaves the seat to an administrator.
+- Visibility: `CanSeeStudentTaskAsync` grants an extra reviewer that step only (page, files, queue item), and nothing once the student is archived, until they are restored; no `/students/{id}/progress` or group progress for an extra; a group reviewer's queue is empty but their step pages work; `GET /student-tasks/{id}/reviewers` equals the step detail's panel for every role; no decision on an archived student's step.
+- Queue and dashboards: a teacher's queue lists only open seats; an extra who became the supervisor appears once; students who moved group are left out of the queue and the administrator's waiting count; a teacher's `waitingReviews` equals their queue total; the student's latest decision is the newest `SubmissionReview`, attributed to its reviewer.
+- Archive: `ArchivedReview` rows copied once across two archiving events (`SourceReviewId` dedupe); `ArchivedFile.Mark` is the step mark on the approving version only; purging deletes the reviews. Group deletion cascades `StudentTaskReviewer` and `SubmissionReview` rows away while the referenced staff users remain.
+- Staff search: `%`, `_` and `[` escaped; terms over 100 characters cut; inactive users and students excluded; at most 20 results.
+- Frontend: a 409 refreshes the step; `canDecide` hides the decision form for a satisfied seat; `canManagePanel` hides add and remove for extras and students; the "1 of 3" text in *My work* and the queue; the Add reviewer dialog drops a selection the list no longer shows.
+
+## Phase 10 — Document routing
+
+- `DocumentRules.SignedCopyMissing`: only on a signing turn; a version added before the current hand-off does not count; one added by someone else does not count.
+- `DocumentRules.RejectCandidates`: excludes the holder; default is the hand-off's actor, else the owner; a document forwarded to its owner offers only earlier holders.
+- `DocumentRules.LastPurposeOf`: the purpose of the latest hand-off to that person; Review when none.
+- Writes: each refused on a stale `expectedSequence`; recipient rules (student → student refused, archived student refused, self refused); delete refused once sent; owner edit only while `WithOwner`; version upload allowed to the holder and to the owner while `WithOwner`/`Completed`.
+- Concurrency: two holders' writes on the same sequence yield one success and one `document.changed`; the files stored by the loser are deleted.
+- Visibility: a non-participant (administrators included) gets `document.notFound` for the document and its versions.
+- Account deletion (needs SQL Server or SQLite - InMemory cannot run `ExecuteDelete`): own documents and blobs removed after commit; held documents returned with a `Recalled` event with no actor id; ids nulled, names kept.
+- Frontend: default section chooses review, then signing, then mine; the badge keeps its last value on a failed read.
+
+From the whole-phase review:
+
+Behaviours the check script does not cover yet:
+
+1. **Recipient rules:** sending to an archived student is refused, and sending to yourself is
+   refused (both give `document.recipientInvalid`). A deactivated teacher is refused.
+2. **The concurrency race:** two writes with the same `expectedSequence`, fired in parallel,
+   give one 200 and one `document.changed`, and the loser's stored blob is gone from
+   `App_Data`.
+3. **Version rights:** the owner cannot add a version while someone else holds the document
+   (`document.notHolder`). The owner can add one while the document is `Completed`. A
+   non-holder participant is refused.
+4. **Edit:** refused for a non-owner (`document.notOwner`) and outside `WithOwner`
+   (`document.wrongState`).
+5. **Recall:** refused while `WithOwner`/`Completed`, and refused when the owner is the holder
+   (forwarded back to the owner).
+6. **Forward and Done with a file in the same request** satisfy the signing rule, and the version
+   count goes up by one.
+7. **A file error on Forward/Done:** a bad file with a valid recipient gives `file.*`, and
+   nothing is stored.
+8. **Reject:** a deactivated earlier participant is not offered as a target, the owner is
+   always offered, and rejecting to a non-owner restores that person's last purpose (the
+   Signing case).
+9. **An administrator is not a participant:** an admin gets `document.notFound` for someone
+   else's document, and the version download returns 404.
+10. **Account deletion:** the blobs of the deleted student's own documents are removed from
+    storage after the commit. The `UploadedById`, `ActorId` and `RecipientId` of the removed
+    account are null while the names are kept (check this for a *version* the student uploaded
+    to someone else's document).
+11. **Download content type:** an image version is served as `application/octet-stream`, and the
+    `.pdf`/`.docx` types are served as themselves.
+12. **Unit candidates for `DocumentRules`** (pure, cheap): `SignedCopyMissing` across
+    Sent → VersionAdded → Rejected → back; `RejectCandidates` with a repeated recipient, a
+    deleted recipient (null id) and an owner who holds the document; `LastPurposeOf` falling
+    back to `Review`.
+13. **Frontend:** stale-view handling in the dialogs, the badge keeping its
+    value when `/counts` fails, and the default section choice in `DocumentsPage`.
+
+---

@@ -165,7 +165,11 @@ const queue = (await call('GET', '/api/review/queue', { token: teacher })).body.
 const queued = queue.find((item) => item.studentTaskId === steps[0].id)
 check('14 queue contains submission', Boolean(queued), true)
 check('15 unrelated teacher queue empty for it', (await call('GET', '/api/review/queue', { token: otherTeacher })).body.items.some((item) => item.studentTaskId === steps[0].id), false)
-check('16 unrelated teacher cannot decide', (await call('POST', `/api/submissions/${queued.submissionId}/return`, { token: otherTeacher, json: { comment: 'x' } })).body.code, 'submission.notReviewer')
+// M3: otherTeacher has no seat on this group at all (not a reviewer, not the supervisor), so the
+// step is invisible to them - the same 404 a missing submission gets, not the 403 that used to
+// leak that the submission exists. `review.notOnPanel` is reserved for a caller who CAN see the
+// step but holds no seat (a group reviewer - covered by review-panels-check.mjs #13).
+check('16 unrelated teacher cannot decide', (await call('POST', `/api/submissions/${queued.submissionId}/return`, { token: otherTeacher, json: { comment: 'x' } })).body.code, 'submission.notFound')
 check('17 return requires comment', (await call('POST', `/api/submissions/${queued.submissionId}/return`, { token: teacher, json: {} })).body.code, 'review.commentRequired')
 const returned = await call('POST', `/api/submissions/${queued.submissionId}/return`, { token: teacher, json: { comment: 'Add references' } })
 check('18 returned', returned.body.status, 'Returned')

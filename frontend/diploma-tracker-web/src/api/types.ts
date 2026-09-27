@@ -61,6 +61,7 @@ export type Student = {
   claimReopened: boolean
   topicId: string | null
   topicTitle: string | null
+  hasSubmissions: boolean
   groupId: string | null
   groupCode: string | null
   supervisorId: string | null
@@ -124,6 +125,7 @@ export type GroupDeletionPreview = {
   activeStudentCount: number
   archivedStudentCount: number
   fileCount: number
+  documentCount: number
 }
 
 export type GroupReviewer = {
@@ -362,6 +364,8 @@ export type Topic = {
   studentProfileId: string | null
   studentName: string | null
   groupCode: string | null
+  /** Set only for the topic's holder: whether releasing it would be refused (O1). */
+  hasSubmissions: boolean
   createdAt: string
   updatedAt: string
 }
@@ -400,6 +404,8 @@ export type Reservation = {
   /** Set only on a pending change request: the topic the student holds today. */
   currentTopicId: string | null
   currentTopicTitle: string | null
+  /** Whether releasing this reservation would be refused (O1). */
+  hasSubmissions: boolean
 }
 
 export type ProposeTopicRequest = {
@@ -419,6 +425,36 @@ export type SupervisorOption = {
 
 export type StudentTaskStatus = 'Pending' | 'Submitted' | 'Approved' | 'Returned'
 
+export type ReviewSeat = 'Supervisor' | 'Extra'
+
+export type PanelSeat = {
+  seat: ReviewSeat
+  /** Null only for a supervisor seat whose student has no supervisor. */
+  reviewerId: string | null
+  reviewerName: string | null
+  isActive: boolean
+  state: 'Approved' | 'Returned' | 'Waiting'
+  mark: number | null
+  canRemove: boolean
+}
+
+export type SubmissionReview = {
+  id: string
+  reviewerName: string
+  seat: ReviewSeat
+  decision: 'Approved' | 'Returned'
+  mark: number | null
+  comment: string | null
+  decidedAt: string
+}
+
+export type StaffOption = {
+  id: string
+  name: string
+  role: 'Admin' | 'Teacher'
+  email: string
+}
+
 export type StudentStep = {
   id: string
   groupTaskId: string
@@ -433,6 +469,8 @@ export type StudentStep = {
   latestSubmittedAt: string | null
   canSubmit: boolean
   blockReason: string | null
+  panelSize: number
+  panelApproved: number
 }
 
 export type SubmissionFileInfo = {
@@ -448,11 +486,10 @@ export type Submission = {
   message: string | null
   submittedAt: string
   isLate: boolean
+  /** The version's outcome: null while the panel decides. */
   decision: 'Approved' | 'Returned' | null
-  reviewerName: string | null
-  reviewerComment: string | null
-  mark: number | null
   decidedAt: string | null
+  reviews: SubmissionReview[]
   files: SubmissionFileInfo[]
 }
 
@@ -460,8 +497,10 @@ export type StepDetails = StudentStep & {
   studentProfileId: string
   studentName: string
   groupCode: string
-  canReview: boolean
+  canDecide: boolean
   pendingSubmissionId: string | null
+  canManagePanel: boolean
+  panel: PanelSeat[]
   timeline: Submission[]
 }
 
@@ -477,7 +516,33 @@ export type ReviewQueueItem = {
   version: number
   submittedAt: string
   isLate: boolean
+  panelSize: number
+  panelApproved: number
 }
+
+/** O3: one row of the Review tab's overview - a student and where they are. */
+export type ReviewStudentItem = {
+  studentProfileId: string
+  studentName: string
+  groupId: string
+  groupCode: string
+  /** Null when the student has no steps at all - the row shows "No steps" and has no link. */
+  studentTaskId: string | null
+  stepTitle: string | null
+  stepOrder: number | null
+  status: StudentTaskStatus | null
+  /** Whether the caller could actually open studentTaskId - false (and no link) when it's null, too. */
+  canOpen: boolean
+  version: number | null
+  submittedAt: string | null
+  isLate: boolean
+  isOverdue: boolean
+  panelSize: number | null
+  panelApproved: number | null
+  isMyDecision: boolean
+}
+
+export type ReviewStateFilter = 'All' | 'Waiting' | 'NotStarted' | 'Submitted' | 'Returned' | 'Approved'
 
 export type GroupProgress = {
   groupId: string
@@ -486,6 +551,8 @@ export type GroupProgress = {
   students: {
     studentProfileId: string
     name: string
+    canOpen: boolean
+    isMine: boolean
     cells: {
       groupTaskId: string
       studentTaskId: string
@@ -493,6 +560,8 @@ export type GroupProgress = {
       mark: number | null
       isLate: boolean
       isOverdue: boolean
+      panelApproved: number | null
+      panelSize: number | null
     }[]
   }[]
 }
@@ -606,6 +675,23 @@ export type OverdueStepRow = {
   daysOverdue: number
 }
 
+/** Task 7 bug 5: a late submission (submitted after its deadline, or still waiting past it) that
+ *  is also waiting for the caller's own decision (R1). Teacher-dashboard-only. */
+export type LateAwaitingReviewRow = {
+  studentTaskId: string
+  studentProfileId: string
+  studentName: string
+  groupId: string
+  groupCode: string
+  stepTitle: string
+  stepOrder: number
+  version: number
+  submittedAt: string
+  deadline: string
+  daysOverdue: number
+  isLate: boolean
+}
+
 export type SupervisedStudentRow = {
   studentProfileId: string
   studentName: string
@@ -621,6 +707,7 @@ export type TeacherDashboard = {
   waitingReviews: number
   latestForReview: ReviewQueueItem[]
   overdueSteps: OverdueStepRow[]
+  lateAwaitingReview: LateAwaitingReviewRow[]
   supervisedStudents: SupervisedStudentRow[]
   groups: DashboardGroupRow[]
 }
@@ -679,21 +766,120 @@ export type ArchivedFile = {
   isLate: boolean
   decision: 'Approved' | 'Returned' | null
   mark: number | null
-  reviewerName: string | null
-  reviewerComment: string | null
   decidedAt: string | null
   kind: 'Main' | 'Supporting'
   originalName: string
   sizeBytes: number
 }
 
+export type ArchivedReview = {
+  id: string
+  studentName: string
+  studentNumber: string
+  stepTitle: string
+  stepOrder: number
+  version: number
+  reviewerName: string
+  seat: ReviewSeat
+  decision: 'Approved' | 'Returned'
+  mark: number | null
+  comment: string | null
+  decidedAt: string
+}
+
 export type ArchivedGroupDetails = ArchivedGroupSummary & {
   reviewerNames: string[]
   files: ArchivedFile[]
+  reviews: ArchivedReview[]
 }
 
 export type ArchiveUsage = {
   groupCount: number
   fileCount: number
   totalSizeBytes: number
+}
+
+export type DocumentState = 'WithOwner' | 'InCirculation' | 'Completed'
+export type DocumentPurpose = 'Review' | 'Signing'
+export type DocumentBoxName = 'review' | 'signing' | 'mine' | 'handled'
+export type DocumentEventKind = 'Created' | 'VersionAdded' | 'Sent' | 'Forwarded' | 'Done' | 'Rejected' | 'Recalled'
+
+export type DocumentListItem = {
+  id: string
+  title: string
+  ownerName: string
+  state: DocumentState
+  purpose: DocumentPurpose | null
+  holderName: string | null
+  fromName: string | null
+  comment: string | null
+  since: string | null
+  updatedAt: string
+  isRejected: boolean
+}
+
+export type DocumentCounts = {
+  review: number
+  signing: number
+}
+
+export type DocumentVersion = {
+  id: string
+  number: number
+  uploadedByName: string
+  originalName: string
+  sizeBytes: number
+  uploadedAt: string
+}
+
+export type DocumentEvent = {
+  sequence: number
+  kind: DocumentEventKind
+  actorName: string
+  actorRemoved: boolean
+  recipientName: string | null
+  purpose: DocumentPurpose | null
+  comment: string | null
+  versionNumber: number | null
+  at: string
+}
+
+export type DocumentPerson = {
+  id: string
+  name: string
+  isDefault: boolean
+}
+
+export type DocumentDetails = {
+  id: string
+  title: string
+  description: string | null
+  ownerName: string
+  isOwner: boolean
+  state: DocumentState
+  purpose: DocumentPurpose | null
+  holderName: string | null
+  isHolder: boolean
+  sequence: number
+  completedByName: string | null
+  rejection: { fromName: string; comment: string | null; at: string } | null
+  versions: DocumentVersion[]
+  events: DocumentEvent[]
+  canEdit: boolean
+  canDelete: boolean
+  canSend: boolean
+  canAddVersion: boolean
+  canForward: boolean
+  canReject: boolean
+  canDone: boolean
+  canRecall: boolean
+  signedCopyRequired: boolean
+  rejectTargets: DocumentPerson[]
+}
+
+export type DocumentRecipient = {
+  id: string
+  name: string
+  role: 'Admin' | 'Teacher' | 'Student'
+  groupCode: string | null
 }

@@ -15,11 +15,12 @@ public class ArchivedFile
     public DateTime SubmittedAt { get; set; }
     public bool IsLate { get; set; }
 
-    /// "Approved", "Returned" or null for a submission that was never decided.
+    /// The version's outcome: "Approved", "Returned" or null for a version that was never decided.
     public string? Decision { get; set; }
+
+    /// The step mark, on the version whose outcome is Approved. Each reviewer's own mark is in
+    /// ArchivedReview.
     public int? Mark { get; set; }
-    public string? ReviewerName { get; set; }
-    public string? ReviewerComment { get; set; }
     public DateTime? DecidedAt { get; set; }
 
     /// "Main" or "Supporting".

@@ -27,6 +27,7 @@ import { ReviewStepPage } from './pages/ReviewStepPage'
 import { TeacherGroupsPage } from './pages/TeacherGroupsPage'
 import { GroupProgressPage } from './pages/GroupProgressPage'
 import { DocumentsPage } from './pages/DocumentsPage'
+import { DocumentPage } from './pages/DocumentPage'
 import { ArchivePage } from './pages/ArchivePage'
 import { ArchivedGroupPage } from './pages/ArchivedGroupPage'
 
@@ -42,6 +43,7 @@ function App() {
           <Route path="health" element={<HealthPage />} />
           <Route path="account" element={<AccountPage />} />
           <Route path="documents" element={<DocumentsPage />} />
+          <Route path="documents/:id" element={<DocumentPage />} />
           <Route element={<ProtectedRoute allowedRoles={['Admin', 'Teacher']} />}>
             <Route path="task-templates" element={<TaskTemplatesPage />} />
             <Route path="review" element={<ReviewQueuePage />} />

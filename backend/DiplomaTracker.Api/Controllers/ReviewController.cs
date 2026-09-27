@@ -31,4 +31,21 @@ public class ReviewController : ApiControllerBase
 
         return Ok(await _workflow.GetReviewQueueAsync(user, groupId, late, page, pageSize));
     }
+
+    [HttpGet("students")]
+    public async Task<IActionResult> Students(
+        [FromQuery] Guid? groupId,
+        [FromQuery] bool? late,
+        [FromQuery] string? state,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = StudentWorkflowService.ReviewQueueDefaultPageSize)
+    {
+        if (!TryGetCurrentUser(out var user))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (result, error) = await _workflow.GetReviewStudentsAsync(user, groupId, late, state, page, pageSize);
+        return result is null ? ErrorResult(error) : Ok(result);
+    }
 }

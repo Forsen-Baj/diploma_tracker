@@ -75,6 +75,7 @@ builder.Services.AddScoped<IStudentWorkflowService, StudentWorkflowService>();
 builder.Services.AddScoped<IDocumentTemplateService, DocumentTemplateService>();
 builder.Services.AddScoped<IArchiveService, ArchiveService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<SessionStateValidator>();
 
 builder.Services.AddSingleton<IFileStorage>(serviceProvider =>

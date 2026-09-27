@@ -294,6 +294,7 @@ export function GroupsPage() {
             <p>{t('groups.deleteAccounts', { count: deletionPreview.archivedStudentCount })}</p>
           )}
           {deletionPreview.fileCount > 0 && <p>{t('groups.deleteFiles', { count: deletionPreview.fileCount })}</p>}
+          {deletionPreview.documentCount > 0 && <p>{t('groups.deleteDocuments', { count: deletionPreview.documentCount })}</p>}
         </>
       )}
     </>

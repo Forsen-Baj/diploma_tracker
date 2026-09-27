@@ -127,11 +127,44 @@ public class ArchiveService : IArchiveService
                 f.Submission.SubmittedAt,
                 f.Submission.IsLate,
                 f.Submission.Decision,
-                f.Submission.Mark,
-                ReviewerLastName = f.Submission.Reviewer != null ? f.Submission.Reviewer.LastName : null,
-                ReviewerFirstName = f.Submission.Reviewer != null ? f.Submission.Reviewer.FirstName : null,
-                f.Submission.ReviewerComment,
+                // The step mark, on the version that completed the panel (design 2026-09-24 §3.6).
+                Mark = f.Submission.Decision == SubmissionDecision.Approved ? f.Submission.StudentTask.Mark : null,
                 f.Submission.DecidedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        var reviewsQuery = markGroupDeleted
+            ? _dbContext.SubmissionReviews.AsNoTracking()
+                .Where(r => r.Submission.StudentTask.GroupTask.GroupId == groupId
+                    || r.Submission.StudentTask.StudentProfile.GroupId == groupId)
+            : _dbContext.SubmissionReviews.AsNoTracking()
+                .Where(r => r.Submission.StudentTask.StudentProfile.GroupId == groupId
+                    && r.Submission.StudentTask.GroupTask.GroupId == groupId);
+
+        if (studentProfileIds is not null)
+        {
+            reviewsQuery = reviewsQuery.Where(r => studentProfileIds.Contains(r.Submission.StudentTask.StudentProfileId));
+        }
+
+        var reviewRows = await reviewsQuery
+            .Select(r => new
+            {
+                r.Id,
+                StudentLastName = r.Submission.StudentTask.StudentProfile.User.LastName,
+                StudentFirstName = r.Submission.StudentTask.StudentProfile.User.FirstName,
+                StudentPatronymic = r.Submission.StudentTask.StudentProfile.User.Patronymic,
+                r.Submission.StudentTask.StudentProfile.StudentNumber,
+                StepTitle = r.Submission.StudentTask.GroupTask.DiplomaTaskTemplate.Title,
+                StepOrder = r.Submission.StudentTask.GroupTask.DiplomaTaskTemplate.Order,
+                r.Submission.Version,
+                ReviewerLastName = r.Reviewer.LastName,
+                ReviewerFirstName = r.Reviewer.FirstName,
+                ReviewerPatronymic = r.Reviewer.Patronymic,
+                r.Seat,
+                r.Decision,
+                r.Mark,
+                r.Comment,
+                r.DecidedAt
             })
             .ToListAsync(cancellationToken);
 
@@ -225,11 +258,6 @@ public class ArchiveService : IArchiveService
                 IsLate = row.IsLate,
                 Decision = row.Decision != null ? row.Decision.ToString() : null,
                 Mark = row.Mark,
-                ReviewerName = row.ReviewerLastName == null
-                    ? null
-                    : string.Join(' ', new[] { row.ReviewerLastName, row.ReviewerFirstName }
-                        .Where(part => !string.IsNullOrWhiteSpace(part))),
-                ReviewerComment = row.ReviewerComment,
                 DecidedAt = row.DecidedAt,
                 Kind = row.Kind.ToString(),
                 OriginalName = row.OriginalName,
@@ -239,6 +267,41 @@ public class ArchiveService : IArchiveService
                 ArchivedAt = now
             });
             added++;
+        }
+
+        var copiedReviewIds = (await _dbContext.ArchivedReviews.AsNoTracking()
+                .Where(r => r.ArchivedGroupId == archive.Id)
+                .Select(r => r.SourceReviewId)
+                .ToListAsync(cancellationToken))
+            .ToHashSet();
+
+        foreach (var review in reviewRows)
+        {
+            if (!copiedReviewIds.Add(review.Id))
+            {
+                continue;
+            }
+
+            // Added through the set: a child with a preset Guid reached only through a tracked
+            // archive's collection would be taken for an existing row and updated.
+            _dbContext.ArchivedReviews.Add(new ArchivedReview
+            {
+                Id = Guid.NewGuid(),
+                ArchivedGroupId = archive.Id,
+                SourceReviewId = review.Id,
+                StudentName = JoinName(review.StudentLastName, review.StudentFirstName, review.StudentPatronymic),
+                StudentNumber = review.StudentNumber,
+                StepTitle = review.StepTitle,
+                StepOrder = review.StepOrder,
+                Version = review.Version,
+                ReviewerName = JoinName(review.ReviewerLastName, review.ReviewerFirstName, review.ReviewerPatronymic),
+                Seat = review.Seat.ToString(),
+                Decision = review.Decision.ToString(),
+                Mark = review.Mark,
+                Comment = review.Comment,
+                DecidedAt = review.DecidedAt,
+                ArchivedAt = now
+            });
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -337,12 +400,31 @@ public class ArchiveService : IArchiveService
                         IsLate = f.IsLate,
                         Decision = f.Decision,
                         Mark = f.Mark,
-                        ReviewerName = f.ReviewerName,
-                        ReviewerComment = f.ReviewerComment,
                         DecidedAt = f.DecidedAt,
                         Kind = f.Kind,
                         OriginalName = f.OriginalName,
                         SizeBytes = f.SizeBytes
+                    })
+                    .ToList(),
+                Reviews = a.Reviews
+                    .OrderBy(r => r.StudentName)
+                    .ThenBy(r => r.StepOrder)
+                    .ThenBy(r => r.Version)
+                    .ThenBy(r => r.DecidedAt)
+                    .Select(r => new ArchivedReviewResponse
+                    {
+                        Id = r.Id,
+                        StudentName = r.StudentName,
+                        StudentNumber = r.StudentNumber,
+                        StepTitle = r.StepTitle,
+                        StepOrder = r.StepOrder,
+                        Version = r.Version,
+                        ReviewerName = r.ReviewerName,
+                        Seat = r.Seat,
+                        Decision = r.Decision,
+                        Mark = r.Mark,
+                        Comment = r.Comment,
+                        DecidedAt = r.DecidedAt
                     })
                     .ToList()
             })
@@ -443,4 +525,7 @@ public class ArchiveService : IArchiveService
         SecurityLog.ArchivePurged(_logger, administratorId, id, fileCount, bytes);
         return (true, null);
     }
+
+    private static string JoinName(params string?[] parts) =>
+        string.Join(' ', parts.Where(part => !string.IsNullOrWhiteSpace(part)));
 }

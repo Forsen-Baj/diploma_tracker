@@ -63,7 +63,18 @@ export function StudentMyTasksPage() {
         </span>
       )
     },
-    { key: 'status', header: t('common.status'), render: (step) => <StepStatusBadge status={step.status} isLate={step.isLate} /> },
+    {
+      key: 'status',
+      header: t('common.status'),
+      render: (step) => (
+        <div className="flex flex-col items-start gap-1">
+          <StepStatusBadge status={step.status} isLate={step.isLate} />
+          {step.status === 'Submitted' && step.panelSize > 1 && (
+            <span className="text-xs text-text-muted">{t('steps.panelProgress', { approved: step.panelApproved, total: step.panelSize })}</span>
+          )}
+        </div>
+      )
+    },
     { key: 'mark', header: t('steps.mark'), render: (step) => step.mark ?? '—' },
     {
       key: 'actions',

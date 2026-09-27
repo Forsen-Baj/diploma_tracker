@@ -377,6 +377,9 @@ public class TopicService : ITopicService
             StudentProfileId = showStudent ? party?.StudentProfileId : null,
             StudentName = showStudent ? party?.Name : null,
             GroupCode = showStudent ? party?.GroupCode : null,
+            // O1: only meaningful for the holder (release action) - a pending request has
+            // nothing to submit against yet, so it is always false there.
+            HasSubmissions = row.Holder?.HasSubmissions ?? false,
             CreatedAt = row.CreatedAt,
             UpdatedAt = row.UpdatedAt
         };
@@ -413,7 +416,8 @@ public class TopicService : ITopicService
                 StudentProfileId = p.Id,
                 LastName = p.User.LastName,
                 FirstName = p.User.FirstName,
-                GroupCode = p.Group.Code
+                GroupCode = p.Group.Code,
+                HasSubmissions = p.StudentTasks.Any(st => st.Submissions.Any())
             })
             .FirstOrDefault(),
         Request = t.Reservations
@@ -462,6 +466,7 @@ public class TopicService : ITopicService
         public string LastName { get; init; } = string.Empty;
         public string FirstName { get; init; } = string.Empty;
         public string GroupCode { get; init; } = string.Empty;
+        public bool HasSubmissions { get; init; }
 
         public string Name => LastName + " " + FirstName;
     }
