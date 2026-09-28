@@ -11,7 +11,7 @@ Newest status first; keep entries short.
 | System design (binding authority) | `docs/superpowers/specs/2026-09-15-diploma-tracker-system-design.md` |
 | Increment designs | `docs/superpowers/specs/<date>-<topic>-design.md` |
 | Implementation plans | `docs/superpowers/plans/` |
-| Session handoffs (latest: `2026-09-27-phase-11-planned.md`) | `docs/superpowers/handoffs/` |
+| Session handoffs (latest: `2026-09-28-phase-12-planned.md`) | `docs/superpowers/handoffs/` |
 | Tests to write at the end of the project | `docs/superpowers/test-backlog.md` |
 | Per-plan execution ledger, briefs, reports, review packages (git-ignored, local only — does **not** travel between machines, so a handoff must be self-contained) | `.superpowers/sdd/<plan-name>/` |
 | End-to-end check scripts (committed since 2026-09-18) | `.superpowers/checks/` |
@@ -40,7 +40,7 @@ management) sits between 2 and 3.
 | 9 Review panels | Done — commit `Implement review panels` (branch `feature-dms`) | `2026-09-24-review-panels-and-document-routing-design.md` §3 | `2026-09-24-review-panels.md` |
 | 10 Document routing | Done — commit `Implement document routing` (branch `feature-dms`) | same, §4 | `2026-09-24-document-routing.md` |
 | 11 Directions, topic approval and standards control | Done — commit `Implement directions, topic approval and standards control` (branch `phase11-12`) | `2026-09-27-directions-topic-approval-and-standards-control-design.md` | `2026-09-27-directions-topic-approval-and-standards-control.md` |
-| 12 Scoped staff roles | Designed only; planned after phase 11 is delivered and tested | `2026-09-27-scoped-staff-roles-design.md` | — |
+| 12 Scoped staff roles | Planned, not implemented | `2026-09-27-scoped-staff-roles-design.md` (amended 2026-09-28) | `2026-09-28-scoped-staff-roles.md` |
 
 Build order: onboarding → 3 → 4 → 5 → 6 → 8. Specs live in `docs/superpowers/specs/`, plans in
 `docs/superpowers/plans/`. Each plan assumes the previous ones are implemented; execute them
@@ -260,6 +260,8 @@ Parked for later (not blocking):
 - API errors are `{ code, message }`; a body reference that does not exist has its own 400 code, a URL resource that does not exist a 404 code.
 
 ## Log
+
+- 2026-09-28 — Phase 12 plan written (`2026-09-28-scoped-staff-roles.md`, seven tasks, one commit) with handoff `2026-09-28-phase-12-planned.md`. The design was double-checked and amended: group reviewers also assigned steps (now the administrators' only); supervision follows the student's group and publishing the topic's department, so a group-level teacher supervises proposals but publishes nothing; removal is also blocked by supervised topics and open extra-reviewer seats, and freed by another assignment of the same role; the archive stamps each row's supervisor; deleting a place deletes its assignments; coverage is checked only when work is taken on; topic approvals stay by person. Planning rulings: the acting role is the token's role claim (`Staff` for none), `/api/teachers` becomes `/api/staff`, staff routes move to `/staff/*`, one `/api/dashboard/teacher` serves the three staff roles. The plan also carries phase 11's O1 (Task 3 Step 2). Nothing implemented yet.
 
 - 2026-09-27 — Phase 11 walkthrough follow-ups (commit `Apply phase 11 walkthrough fixes`): the supervisor seat reads *Науковий керівник*; topic lists under *Topics* and *Directions* show *Approve* on rows waiting for the caller (`useWaitingApprovals`, `TopicApproveButton`); direction counts reload after topic changes; the request history strikes out approvals older than `ContentChangedAt` (now on `ReservationResponse`) and shows the student's resubmission; the group page's *Start date (optional)* sits in line with its neighbours. The phase 12 design now removes group reviewers (§4.1). `directions-approval-check` 70/70 and `topics-check` 73/73 after the change.
 
