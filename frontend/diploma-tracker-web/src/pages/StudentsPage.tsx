@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next'
 import { ApiError } from '../api/apiClient'
 import { getGroups } from '../api/groupsApi'
 import { setStudentTopic } from '../api/reservationsApi'
+import { getStaff } from '../api/staffApi'
 import { archiveStudents, createStudent, getStudents, importStudents, resetStudentAccess, restoreStudents, updateStudent } from '../api/studentsApi'
-import { getTeachers } from '../api/teachersApi'
 import { getTopics } from '../api/topicsApi'
 import { useCodeMessage, useErrorMessage } from '../api/useErrorMessage'
 import { PASSWORD_MAX, isPasswordLengthValid } from '../auth/passwordPolicy'
@@ -24,7 +24,7 @@ import { SegmentedControl, type SegmentedOption } from '../components/ui/Segment
 import { TextField } from '../components/ui/TextField'
 import { useToast } from '../components/ui/useToast'
 import { optional } from '../utils/optional'
-import type { Group, ImportRowError, Student, StudentImportResult, Teacher, Topic } from '../api/types'
+import type { Group, ImportRowError, StaffMember, Student, StudentImportResult, Topic } from '../api/types'
 
 type StudentFormState = {
   firstName: string
@@ -90,7 +90,6 @@ export function StudentsPage() {
   const toast = useToast()
 
   const [students, setStudents] = useState<Student[]>([])
-  const [teachers, setTeachers] = useState<Teacher[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -122,6 +121,7 @@ export function StudentsPage() {
   const [isRestoring, setIsRestoring] = useState(false)
 
   const [formTopics, setFormTopics] = useState<Topic[]>([])
+  const [supervisors, setSupervisors] = useState<StaffMember[]>([])
   const [pendingTopicChange, setPendingTopicChange] = useState<PendingTopicChange | null>(null)
   const [isApplyingTopicChange, setIsApplyingTopicChange] = useState(false)
 
@@ -134,25 +134,32 @@ export function StudentsPage() {
     () => [...students].sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName)),
     [students]
   )
-  const activeTeachers = useMemo(() => teachers.filter((teacher) => teacher.isActive), [teachers])
+  // Design 2026-09-27 (phase 12) §4: the supervisors on offer are the teachers whose role covers
+  // the chosen group (every one the server returns is active).
   const supervisorOptions: SelectOption[] = useMemo(
     () => [
       { value: '', label: t('students.noSupervisor') },
-      ...activeTeachers.map((teacher) => ({ value: teacher.id, label: `${teacher.lastName} ${teacher.firstName}` }))
+      ...supervisors.map((member) => ({ value: member.id, label: `${member.lastName} ${member.firstName}` }))
     ],
-    [activeTeachers, t]
+    [supervisors, t]
   )
   const editSupervisorOptions: SelectOption[] = useMemo(() => {
-    if (!editingStudent?.supervisorId || activeTeachers.some((teacher) => teacher.id === editingStudent.supervisorId)) {
-      return supervisorOptions
+    const options = [...supervisorOptions]
+    const offered = new Set(options.map((option) => option.value))
+    // The server keeps a current supervisor across a group move, even when their teacher role does
+    // not cover the new group, so the student's supervisor stays selectable.
+    if (editingStudent?.supervisorId && !offered.has(editingStudent.supervisorId)) {
+      const name = `${editingStudent.supervisorLastName ?? ''} ${editingStudent.supervisorFirstName ?? ''}`.trim()
+      options.push({ value: editingStudent.supervisorId, label: t('students.currentSupervisor', { name }) })
+      offered.add(editingStudent.supervisorId)
     }
-
-    const name = `${editingStudent.supervisorLastName ?? ''} ${editingStudent.supervisorFirstName ?? ''}`.trim()
-    return [
-      ...supervisorOptions,
-      { value: editingStudent.supervisorId, label: t('students.inactiveSupervisor', { name }) }
-    ]
-  }, [editingStudent, activeTeachers, supervisorOptions, t])
+    // While a topic controls the field, it shows that topic's supervisor.
+    const chosenTopic = formTopics.find((topic) => topic.id === studentForm.topicId)
+    if (chosenTopic && !offered.has(chosenTopic.supervisorId)) {
+      options.push({ value: chosenTopic.supervisorId, label: chosenTopic.supervisorName })
+    }
+    return options
+  }, [editingStudent, supervisorOptions, formTopics, studentForm.topicId, t])
 
   const groupOptions: SelectOption[] = useMemo(
     () => groups.map((group) => ({ value: group.id, label: `${group.code} (${group.academicYear})` })),
@@ -208,13 +215,8 @@ export function StudentsPage() {
     setLoadError('')
     setSelectedIds(new Set())
     try {
-      const [studentsData, teachersData, groupsData] = await Promise.all([
-        getStudents(nextView === 'archived'),
-        getTeachers(),
-        getGroups()
-      ])
+      const [studentsData, groupsData] = await Promise.all([getStudents(nextView === 'archived'), getGroups()])
       setStudents(studentsData)
-      setTeachers(teachersData)
       setGroups(groupsData)
     } catch (err) {
       setLoadError(errorMessage(err))
@@ -263,6 +265,37 @@ export function StudentsPage() {
       cancelled = true
     }
   }, [isStudentModalOpen, editingStudent, studentForm.groupId, groups])
+
+  useEffect(() => {
+    if (!isStudentModalOpen || !studentForm.groupId) {
+      setSupervisors([])
+      return
+    }
+
+    let cancelled = false
+    void getStaff({ role: 'Teacher', groupId: studentForm.groupId })
+      .then((data) => {
+        if (cancelled) return
+        setSupervisors(data)
+        // A supervisor picked for the previous group may not cover the new one; the student's own
+        // current supervisor stays (the server keeps them across a group move).
+        setStudentForm((prev) => {
+          if (!prev.supervisorId || prev.supervisorId === editingStudent?.supervisorId) return prev
+          if (prev.topicId && prev.topicId !== editingStudent?.topicId) return prev
+          return data.some((member) => member.id === prev.supervisorId) ? prev : { ...prev, supervisorId: '' }
+        })
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setSupervisors([])
+        toast.error(errorMessage(err))
+      })
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStudentModalOpen, studentForm.groupId, editingStudent])
 
   const openImportModal = () => {
     setImportGroupId('')
@@ -762,8 +795,10 @@ export function StudentsPage() {
             value={studentForm.supervisorId}
             onChange={(value) => setStudentForm((prev) => ({ ...prev, supervisorId: value }))}
             options={editingStudent ? editSupervisorOptions : supervisorOptions}
-            disabled={topicControlsSupervisor}
-            hint={topicControlsSupervisor ? t('students.supervisorFollowsTopic') : undefined}
+            disabled={topicControlsSupervisor || !studentForm.groupId}
+            hint={topicControlsSupervisor
+              ? t('students.supervisorFollowsTopic')
+              : !studentForm.groupId ? t('students.supervisorAfterGroup') : undefined}
           />
           {editingStudent && (
             <div className="col-span-2">

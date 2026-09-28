@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createDirection, updateDirection } from '../../api/directionsApi'
+import { getStaff } from '../../api/staffApi'
 import { useErrorMessage } from '../../api/useErrorMessage'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
@@ -8,20 +9,19 @@ import { Select, type SelectOption } from '../ui/Select'
 import { TextField } from '../ui/TextField'
 import { Textarea } from '../ui/Textarea'
 import { optional } from '../../utils/optional'
-import type { Department, Direction, StaffOption } from '../../api/types'
+import type { Department, Direction, SupervisorOption } from '../../api/types'
 
 type DirectionFormModalProps = {
   open: boolean
   initial?: Direction
+  /** The departments on offer: every one for an administrator, the covered ones for a manager. */
   departments: Department[]
-  /** Direction managers, for an administrator's form; ignored otherwise. */
-  managers: StaffOption[]
   isAdmin: boolean
   onClose: () => void
   onSaved: () => void
 }
 
-export function DirectionFormModal({ open, initial, departments, managers, isAdmin, onClose, onSaved }: DirectionFormModalProps) {
+export function DirectionFormModal({ open, initial, departments, isAdmin, onClose, onSaved }: DirectionFormModalProps) {
   const { t } = useTranslation()
   const errorMessage = useErrorMessage()
   const [name, setName] = useState('')
@@ -32,6 +32,8 @@ export function DirectionFormModal({ open, initial, departments, managers, isAdm
   const [managerError, setManagerError] = useState('')
   const [error, setError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [managers, setManagers] = useState<SupervisorOption[]>([])
+  const [isLoadingManagers, setIsLoadingManagers] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -44,9 +46,46 @@ export function DirectionFormModal({ open, initial, departments, managers, isAdm
     setError('')
   }, [open, initial])
 
+  // Design 2026-09-27 (phase 12) §4: an administrator names a manager who covers the direction's
+  // department, so the list is loaded for the chosen department and reloaded when it changes. The
+  // administrator's staff list is not capped, unlike the picker endpoint.
+  useEffect(() => {
+    if (!open || !isAdmin || !departmentId) {
+      setManagers([])
+      return
+    }
+
+    let cancelled = false
+    setIsLoadingManagers(true)
+    getStaff({ role: 'DirectionManager', departmentId })
+      .then((staff) => {
+        if (cancelled) return
+        const options = staff.map((m) => ({ id: m.id, name: [m.lastName, m.firstName, m.patronymic].filter(Boolean).join(' ') }))
+        setManagers(options)
+        // A manager picked for another department does not carry over; the current one is kept
+        // while the department is unchanged (work already held is not re-checked).
+        setManagerId((current) =>
+          options.some((m) => m.id === current) || (initial && current === initial.managerId && departmentId === initial.departmentId)
+            ? current
+            : '')
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setManagers([])
+        setError(errorMessage(err))
+      })
+      .finally(() => { if (!cancelled) setIsLoadingManagers(false) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isAdmin, departmentId, initial])
+
   const departmentOptions: SelectOption[] = departments.map((d) => ({ value: d.id, label: `${d.name} · ${d.facultyName}` }))
+  // The direction's own department stays selectable when editing, even when it is not on offer.
+  if (initial && !departments.some((d) => d.id === initial.departmentId)) {
+    departmentOptions.push({ value: initial.departmentId, label: `${initial.departmentName} · ${initial.facultyName}` })
+  }
   const managerOptions: SelectOption[] = managers.map((m) => ({ value: m.id, label: m.name }))
-  if (initial && !managers.some((m) => m.id === initial.managerId)) {
+  if (initial && departmentId === initial.departmentId && !managers.some((m) => m.id === initial.managerId)) {
     managerOptions.push({ value: initial.managerId, label: initial.managerName })
   }
 
@@ -113,7 +152,18 @@ export function DirectionFormModal({ open, initial, departments, managers, isAdm
           error={departmentError}
         />
         {isAdmin && (
-          managerOptions.length === 0 ? (
+          !departmentId ? (
+            <Select
+              label={t('directions.manager')}
+              value=""
+              onChange={setManagerId}
+              options={[]}
+              placeholder={t('common.select')}
+              hint={t('directions.managerPickDepartment')}
+              error={managerError}
+              disabled
+            />
+          ) : !isLoadingManagers && managerOptions.length === 0 ? (
             <p className="text-sm text-text-muted">{t('directions.noManagers')}</p>
           ) : (
             <Select

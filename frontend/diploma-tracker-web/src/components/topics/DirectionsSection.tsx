@@ -3,8 +3,8 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } fro
 import { useTranslation } from 'react-i18next'
 import { getDepartments } from '../../api/departmentsApi'
 import { deleteDirection, getDirections } from '../../api/directionsApi'
-import { searchStaff } from '../../api/workflowApi'
 import { useErrorMessage } from '../../api/useErrorMessage'
+import { useAuth } from '../../auth/useAuth'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
@@ -12,7 +12,15 @@ import { DataTable, type DataTableColumn } from '../ui/DataTable'
 import { EmptyState } from '../ui/EmptyState'
 import { useToast } from '../ui/useToast'
 import { DirectionFormModal } from './DirectionFormModal'
-import type { Department, Direction, StaffOption } from '../../api/types'
+import type { CurrentUser, Department, Direction } from '../../api/types'
+
+/** Phase 12 §4: the departments a direction manager's role covers - a department assignment, or a
+ *  faculty assignment of the department's faculty. */
+function coveredByManager(user: CurrentUser | null, department: Department): boolean {
+  return (user?.assignments ?? []).some((a) => a.role === 'DirectionManager'
+    && ((a.scopeKind === 'Department' && a.departmentId === department.id)
+      || (a.scopeKind === 'Faculty' && a.facultyId === department.facultyId)))
+}
 
 type DirectionsSectionProps = {
   /** 'admin' lists every direction and names managers; 'manager' lists the caller's own. */
@@ -34,11 +42,11 @@ export const DirectionsSection = forwardRef<DirectionsSectionHandle, DirectionsS
   const { t } = useTranslation()
   const errorMessage = useErrorMessage()
   const toast = useToast()
+  const { user } = useAuth()
   const isAdmin = mode === 'admin'
 
   const [directions, setDirections] = useState<Direction[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
-  const [managers, setManagers] = useState<StaffOption[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [isFormOpen, setIsFormOpen] = useState(false)
@@ -50,14 +58,13 @@ export const DirectionsSection = forwardRef<DirectionsSectionHandle, DirectionsS
     setIsLoading(true)
     setLoadError('')
     try {
-      const [directionsData, departmentsData, managersData] = await Promise.all([
+      const [directionsData, departmentsData] = await Promise.all([
         getDirections(isAdmin ? {} : { mine: true }),
-        getDepartments(),
-        isAdmin ? searchStaff('', 'directionManager') : Promise.resolve([] as StaffOption[])
+        getDepartments()
       ])
       setDirections(directionsData)
-      setDepartments(departmentsData)
-      setManagers(managersData)
+      // A direction manager is offered only the departments their role covers.
+      setDepartments(isAdmin ? departmentsData : departmentsData.filter((department) => coveredByManager(user, department)))
       onLoaded?.(directionsData)
     } catch (err) {
       setLoadError(errorMessage(err))
@@ -65,7 +72,7 @@ export const DirectionsSection = forwardRef<DirectionsSectionHandle, DirectionsS
       setIsLoading(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin])
+  }, [isAdmin, user])
 
   useEffect(() => {
     void load()
@@ -160,7 +167,6 @@ export const DirectionsSection = forwardRef<DirectionsSectionHandle, DirectionsS
         open={isFormOpen}
         initial={editing}
         departments={departments}
-        managers={managers}
         isAdmin={isAdmin}
         onClose={() => setIsFormOpen(false)}
         onSaved={() => {

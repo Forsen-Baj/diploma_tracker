@@ -1,8 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace DiplomaTracker.Api.DTOs.Teachers;
+namespace DiplomaTracker.Api.DTOs.Staff;
 
-public class SetTeacherPasswordRequest
+public class SetStaffPasswordRequest
 {
     [Required]
     public string Password { get; set; } = string.Empty;

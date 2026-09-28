@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace DiplomaTracker.Api.Controllers;
 
 [Route("api/review")]
-[Authorize(Roles = "Admin,Teacher")]
+[Authorize(Roles = AuthRoles.AdminOrAnyStaffRole)]
 public class ReviewController : ApiControllerBase
 {
     private readonly IStudentWorkflowService _workflow;

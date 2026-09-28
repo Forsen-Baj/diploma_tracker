@@ -17,12 +17,14 @@ public class ReservationService : IReservationService
 {
     private readonly AppDbContext _dbContext;
     private readonly ITopicSettingsService _settings;
+    private readonly IStudentWorkflowService _workflow;
     private readonly ILogger<ReservationService> _logger;
 
-    public ReservationService(AppDbContext dbContext, ITopicSettingsService settings, ILogger<ReservationService> logger)
+    public ReservationService(AppDbContext dbContext, ITopicSettingsService settings, IStudentWorkflowService workflow, ILogger<ReservationService> logger)
     {
         _dbContext = dbContext;
         _settings = settings;
+        _workflow = workflow;
         _logger = logger;
     }
 
@@ -90,7 +92,9 @@ public class ReservationService : IReservationService
             return (null, precondition);
         }
 
-        if (!await _dbContext.Users.AnyAsync(u => u.Id == request.SupervisorId && u.Role == "Teacher" && u.IsActive))
+        // Phase 12 §4: the proposal picker lists the teachers who cover the student's group; the named
+        // supervisor must be one of them.
+        if (!await _dbContext.CoversGroupAsync(request.SupervisorId, StaffRole.Teacher, student.GroupId))
         {
             return (null, TopicErrors.ProposalTeacherInvalid);
         }
@@ -418,7 +422,7 @@ public class ReservationService : IReservationService
         var student = await _dbContext.StudentProfiles
             .Include(p => p.User)
             .Include(p => p.Group)
-            .FirstOrDefaultAsync(p => p.Id == studentId && p.User.Role == "Student");
+            .FirstOrDefaultAsync(p => p.Id == studentId && p.User.Role == AccountRoles.Student);
 
         if (student is null)
         {
@@ -539,7 +543,7 @@ public class ReservationService : IReservationService
         SecurityLog.TopicAssigned(_logger, student.Id, administratorId, topic.Id);
 
         _dbContext.ChangeTracker.Clear();
-        return (await LoadResponseAsync(reservation.Id, new UserContext(administratorId, "Admin")), null);
+        return (await LoadResponseAsync(reservation.Id, new UserContext(administratorId, AccountRoles.Admin)), null);
     }
 
     public async Task CompleteSatisfiedRequestsAsync(IReadOnlyCollection<Guid> topicIds)
@@ -608,7 +612,8 @@ public class ReservationService : IReservationService
         var visible = row is not null
             && (user.IsAdmin
                 || (user.IsStudent && row.StudentUserId == user.UserId)
-                || (user.IsTeacher && (row.SupervisorId == user.UserId || row.DirectionManagerId == user.UserId)));
+                || (user.IsTeacher && row.SupervisorId == user.UserId)
+                || (user.IsDirectionManager && row.DirectionManagerId == user.UserId));
 
         if (!visible)
         {
@@ -640,10 +645,10 @@ public class ReservationService : IReservationService
         return (rows.Select(row => ToResponse(row, user, selectionOpen && IsOpen(row.Status))).ToList(), null);
     }
 
-    /// §5.4. "Pending" asks for every open request - those waiting for approvers and those returned
-    /// to the student. A teacher sees requests for topics they supervise and, as a direction
-    /// manager, every request in their directions. An administrator sees them all, including the
-    /// history of proposals whose topic was deleted by design.
+    /// §5.4, phase 12 §5. "Pending" asks for every open request - those waiting for approvers and
+    /// those returned to the student. Acting as teacher, a teacher sees requests for the topics they
+    /// supervise; acting as direction manager, every request in their directions. An administrator
+    /// sees them all, including the history of proposals whose topic was deleted by design.
     public async Task<IReadOnlyList<ReservationResponse>> GetForDecisionAsync(UserContext user, ReservationStatus status, bool waitingForMe)
     {
         var me = user.UserId;
@@ -653,9 +658,17 @@ public class ReservationService : IReservationService
             ? query.Where(r => r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Returned)
             : query.Where(r => r.Status == status);
 
-        if (!user.IsAdmin)
+        if (user.IsTeacher)
         {
-            query = query.Where(r => r.Topic != null && (r.Topic.SupervisorId == me || r.Topic.Direction.ManagerId == me));
+            query = query.Where(r => r.Topic != null && r.Topic.SupervisorId == me);
+        }
+        else if (user.IsDirectionManager)
+        {
+            query = query.Where(r => r.Topic != null && r.Topic.Direction.ManagerId == me);
+        }
+        else if (!user.IsAdmin)
+        {
+            query = query.Where(_ => false);
         }
 
         var rows = await Project(query).OrderBy(r => r.CreatedAt).ToListAsync();
@@ -722,7 +735,7 @@ public class ReservationService : IReservationService
             return null;
         }
 
-        var isAdministrator = creator.Role == "Admin";
+        var isAdministrator = creator.Role == AccountRoles.Admin;
         var holdsTeachingSeat = creatorId == topic.SupervisorId || creatorId == topic.Direction.ManagerId;
         var holdsSeat = (isAdministrator && !administrationFilled) || holdsTeachingSeat;
         if (!holdsSeat)
@@ -760,8 +773,18 @@ public class ReservationService : IReservationService
     /// already holds is released first, in its own save inside the caller's transaction: both rows
     /// belong to the same student under IX_TopicReservations_ApprovedPerStudent, and one save
     /// would transiently violate it whenever EF emits the new row's UPDATE first.
+    ///
+    /// Phase 11 follow-up O1: when the request replaces a held topic, the student has unfinished
+    /// steps whose supervisor and direction-manager seats move to the new topic's now. They are
+    /// touched, and a Submitted step the new seats leave fully satisfied is approved in the caller's
+    /// save - exactly as when an administrator moves a held topic to another supervisor (§4.2).
+    /// Without this, a step whose only open seat disappears (the new supervisor also manages the new
+    /// direction, and an administrator already stood in for the supervisor) would wait for nobody. A
+    /// student with no topic has never submitted, so a first topic needs no refresh.
     private async Task<string?> CompleteAsync(TopicReservation reservation, DateTime now)
     {
+        var replacing = reservation.StudentProfile.TopicId is not null;
+
         await ReleaseCurrentTopicAsync(reservation.StudentProfileId, now, null);
 
         // The student always has this very request open here, so a unique violation in phase 1 is
@@ -784,6 +807,17 @@ public class ReservationService : IReservationService
         reservation.StudentProfile.TopicId = reservation.Topic.Id;
         reservation.StudentProfile.SupervisorId = reservation.Topic.SupervisorId;
         reservation.StudentProfile.UpdatedAt = now;
+
+        if (replacing)
+        {
+            // Read from the topic and its direction, which every caller loads: the profile's new
+            // values are not saved yet, and the panel facts are read from the database.
+            var supervisorId = reservation.Topic.SupervisorId;
+            var managerId = reservation.Topic.Direction.ManagerId;
+            await _workflow.RefreshStudentPanelsAsync([reservation.StudentProfileId], now,
+                facts => facts with { SupervisorId = supervisorId, DirectionManagerId = managerId });
+        }
+
         return null;
     }
 
@@ -818,7 +852,7 @@ public class ReservationService : IReservationService
         return await _dbContext.StudentProfiles
             .Include(p => p.Group)
             .Include(p => p.User)
-            .FirstOrDefaultAsync(p => p.UserId == userId && p.User.Role == "Student" && p.User.IsActive);
+            .FirstOrDefaultAsync(p => p.UserId == userId && p.User.Role == AccountRoles.Student && p.User.IsActive);
     }
 
     /// A student with no topic may ask for one while nothing of theirs is open. A student who holds

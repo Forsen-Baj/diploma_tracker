@@ -7,27 +7,24 @@ public interface IAccessScope
 {
     IQueryable<Group> VisibleGroups(UserContext user);
     Task<bool> CanSeeGroupAsync(UserContext user, Guid groupId);
+
+    /// Phase 12 §4.2: the students the caller opens in full in the role they act in - a teacher their
+    /// supervised students, a direction manager the students of their directions; an administrator
+    /// every student.
     IQueryable<StudentProfile> ReviewableStudents(UserContext user);
     Task<bool> CanReviewStudentAsync(UserContext user, Guid studentProfileId);
 
-    /// O3: every active, non-archived student a reviewer's Review tab LISTS - the students
-    /// ReviewableStudents already gives (supervised, or in a group they review), plus students
-    /// for whom the caller holds an extra-reviewer seat on any step. An administrator sees every
-    /// active student. This is deliberately broader than CanSeeStudentTaskAsync below: it decides
-    /// whether a student's row appears at all, not whether the caller may open that row's current
-    /// step - an extra seat on step 2 lists the student even while their current step is step 3,
-    /// which the caller cannot open. Callers must run CanSeeStudentTaskAsync's own rule (or its
-    /// equivalent) per row against the actual step being linked to, never infer openability from
-    /// membership in this query. A direction manager counts as a supervisor for the students of
-    /// their directions; a standards controller as an extra reviewer on the steps they control
-    /// (design 2026-09-27 §6.2).
+    /// O3, phase 12 §4.2: every active student the caller works with in the role they act in - the
+    /// students they open in full (ReviewableStudents), plus, for a teacher, students on whose steps
+    /// they sit as an extra reviewer, and for a standards controller, students of the group steps
+    /// they control. An administrator gets every active student. It decides whether a student's row
+    /// appears and which groups the caller sees, not whether the caller may open a given step - run
+    /// CanSeeStudentTaskAsync's rule for that.
     IQueryable<StudentProfile> ReviewOverviewStudents(UserContext user);
 
-    /// Design 2026-09-24 §3.4: who may open one student step. Today's rule (the student's
-    /// supervisor, a reviewer of their group, an administrator), or an extra seat on that very step.
-    /// An extra seat grants nothing else - not the group, not the student's other steps. This is
-    /// the narrower, per-task rule ReviewOverviewStudents' own doc comment above points back to. A
-    /// direction manager counts as a supervisor for the students of their directions; a standards
-    /// controller as an extra reviewer on the steps they control (design 2026-09-27 §6.2).
+    /// Design 2026-09-24 §3.4, phase 12 §4.2: who may open one student step. The student's supervisor
+    /// acting as teacher and the manager of their topic's direction acting as direction manager open
+    /// every step of the student; an extra reviewer (as teacher) and a standards controller only the
+    /// step they sit on; an administrator every step.
     Task<bool> CanSeeStudentTaskAsync(UserContext user, Guid studentTaskId);
 }

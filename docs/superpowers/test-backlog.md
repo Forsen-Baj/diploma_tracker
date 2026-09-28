@@ -611,3 +611,20 @@ From the whole-phase review:
     - `ReviewPanel.Evaluate` absorption order and `AverageMark` ignoring standards control.
 
 ---
+
+## Phase 12 — Scoped staff roles
+
+- `RoleCoverage`: a faculty assignment covers its departments and groups, a department assignment its groups, a group assignment only itself; a group assignment never covers a department; an inactive account covers nothing; an Admin account never covers. `DepartmentsCoveredBy` agrees with `CoversDepartmentAsync`.
+- `RoleAssignmentUsage.FindBlockersAsync`: each kind of work blocks in its own role only (`supervisedStudent`, `supervisedTopic` for an available and an asked-for topic, `panelSeat`, `managedDirection`, `controlledStep`); work outside the scope does not block; a group-scope teacher assignment is never blocked by an available topic; another assignment of the same role covering the place frees it (faculty frees department and the reverse); archived students and approved steps do not block.
+- `StaffService.AddAssignmentAsync`: role and scope kind by name only (numeric strings refused); a direction manager at group level refused; an unknown place refused; a duplicate refused, including the unique-index race (`roleAssignment.exists`). `StaffRoleName.TryParse` in the list and options queries refuses numbers.
+- `AuthService`: the first held role in sign-in order; none gives `Staff`; switching to a role not held refused; a non-staff account cannot switch.
+- `SessionStateValidator`: every claim that does not fit its account (Admin↔Staff, Student↔Staff, an unknown or lowercase name) gives `RoleChanged`; a held role passes; `Staff` always passes for a staff account; `RoleWithdrawn` after the last assignment of the role is removed, and after its scope is deleted.
+- `ReviewPanel.SeatFor` / `ActsFor`: a seat is decided only in its role (a direction manager acting as teacher cannot decide their manager seat); an administrator may decide an extra seat.
+- `WaitingForCallerQuery`: one person holding two seats (supervisor + manager, manager + extra, extra + controller) appears only in the queue of their first seat's role.
+- `BuildReviewStudentProjection.CanOpen` per acting role, including a standards controller seeing only controlled steps.
+- `TopicApprovalPanel.SeatsOf`: the direction seat only while acting as direction manager, the supervision seat only while acting as teacher.
+- `AccessScope`: each acting role's students, groups and steps; a standards controller opens only the steps of the group steps they control.
+- Coverage at take-on: topic edit re-checks only a new supervisor or a department move; a direction move needs a manager covering the target (`direction.managerInvalid` for an admin, `scope.notCovered` for the manager); the student form keeps an unchanged supervisor across a group move and refuses a new uncovered one (`AssignSupervisorAsync`, `ResolveAssignmentAsync`); `SetStandardsControllerAsync` refuses an uncovered controller and accepts the unchanged one as a no-op.
+- `ReservationService.CompleteAsync`: a replacement refreshes the student's unfinished steps and approves a Submitted step whose new panel is satisfied, also through `CompleteSatisfiedRequestsAsync`; a first topic touches nothing.
+- `ArchiveService`: rows stamped with the supervisor at archiving time, taken before reservations are settled (both `StudentService` and `GroupService` paths); two supervisors in one archived group each see only their own rows, counts and search hits; a download of another supervisor's file answers 404; a restored and re-archived student keeps the old stamp on old rows.
+- Deleting a faculty, department or group deletes the assignments scoped to it, in the same save.

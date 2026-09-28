@@ -201,26 +201,28 @@ const groups = (await call('GET', '/api/groups', { token: admin })).body
 const seedGroup = groups.find((g) => g.code === 'SEED-A')
 // Design 2026-09-27: a topic belongs to a direction; the seeded department has one.
 const seedDirection = (await call('GET', `/api/directions?departmentId=${seedGroup.departmentId}`, { token: admin })).body.find((d) => d.name === 'Software Engineering')
-const teacherId = (await call('GET', '/api/teachers', { token: admin })).body.find((t) => t.email === 'teacher@diploma.local').id
+const teacherId = (await call('GET', '/api/staff', { token: admin })).body.find((t) => t.email === 'teacher@diploma.local').id
 
 // The students this script creates live in two groups of its own, removed with them at the end;
-// the seed teacher reviews the home group so it may share templates with it.
+// the seed teacher supervises this script's student, so the home group is theirs to share templates with.
 const homeGroup = (await call('POST', '/api/groups', { token: admin, json: { departmentId: seedGroup.departmentId, code: `DOCA${stamp}`, academicYear: '2026/2027', description: '' } })).body
 cleanup.add(`group ${homeGroup.code}`, () => removeGroup(call, admin, homeGroup))
-await call('POST', `/api/groups/${homeGroup.id}/reviewers`, { token: admin, json: { reviewerId: teacherId } })
 
 const otherGroup = (await call('POST', '/api/groups', { token: admin, json: { departmentId: seedGroup.departmentId, code: `DOC${stamp}`, academicYear: '2026/2027', description: '' } })).body
 cleanup.add(`group ${otherGroup.code}`, () => removeGroup(call, admin, otherGroup))
 const otherTeacherEmail = `doc.teacher.${stamp}@diploma.local`
-const otherTeacherId = (await call('POST', '/api/teachers', { token: admin, json: { firstName: 'Олег', lastName: 'Іншенко', email: otherTeacherEmail, password: 'Teacher456!' } })).body.id
+const otherTeacherId = (await call('POST', '/api/staff', { token: admin, json: { firstName: 'Олег', lastName: 'Іншенко', email: otherTeacherEmail, password: 'Teacher456!' } })).body.id
 // Fix wave M17: the teacher account this run creates was previously never deactivated, so it kept
 // piling up in the teacher multi-select, in /api/topics/supervisors and in every "all teachers"
-// audience across repeated runs.
-cleanup.add(`teacher ${otherTeacherEmail} -> deactivate`, () => call('PATCH', `/api/teachers/${otherTeacherId}/deactivate`, { token: admin }))
+// audience across repeated runs. The other teacher keeps no role: templates are every staff member's
+// (phase 12 §6).
+cleanup.add(`teacher ${otherTeacherEmail} -> deactivate`, () => call('PATCH', `/api/staff/${otherTeacherId}/deactivate`, { token: admin }))
 const otherTeacher = await login(otherTeacherEmail, 'Teacher456!')
 
 const studentEmail = `doc.${stamp}@student.local`
 const student = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Іван', lastName: 'Документенко', patronymic: 'Петрович', email: studentEmail, studentNumber: `D${stamp}`, password: 'Password1!', groupId: homeGroup.id } })).body
+// Phase 12 §4.1: the home group is the seed teacher's through the student they supervise.
+await call('PUT', `/api/students/${student.id}/supervisor`, { token: admin, json: { supervisorId: teacherId } })
 const studentToken = await login(studentEmail, 'Password1!')
 const outsiderEmail = `outsider.${stamp}@student.local`
 const outsider = (await call('POST', '/api/students', { token: admin, json: { firstName: 'Out', lastName: 'Sider', email: outsiderEmail, studentNumber: `O${stamp}`, password: 'Password1!', groupId: otherGroup.id } })).body

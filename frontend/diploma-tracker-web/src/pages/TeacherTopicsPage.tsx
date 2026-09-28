@@ -58,7 +58,8 @@ export function TeacherTopicsPage() {
       getReservationsForDecision('Pending'),
       getReservationsForDecision('Approved'),
       getTopics(),
-      getDirections()
+      // Design 2026-09-27 (phase 12) §4: only directions of departments the teacher's role covers.
+      getDirections({ covered: true })
     ])
 
     // A single failed call (typically the direction lookup, only needed for the create-topic
@@ -196,11 +197,14 @@ export function TeacherTopicsPage() {
     }
   ]
 
+  // A teacher assigned to a group only covers no department, so has no direction to publish in.
+  const canCreateTopic = directions.length > 0
+
   return (
     <>
       <PageHeader
         title={t('topics.myTopicsTitle')}
-        actions={<Button icon={Plus} onClick={openCreateTopic}>{t('topics.addTopic')}</Button>}
+        actions={canCreateTopic ? <Button icon={Plus} onClick={openCreateTopic}>{t('topics.addTopic')}</Button> : undefined}
       />
 
       {loadError && (

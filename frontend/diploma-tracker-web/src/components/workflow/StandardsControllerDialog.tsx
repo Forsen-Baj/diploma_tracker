@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { setStandardsController } from '../../api/groupTasksApi'
-import { searchStaff } from '../../api/workflowApi'
+import { searchStaff } from '../../api/staffApi'
 import { useErrorMessage } from '../../api/useErrorMessage'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
@@ -27,7 +27,8 @@ export function StandardsControllerDialog({ groupTask, onClose, onChanged }: Sta
 
   useEffect(() => {
     let cancelled = false
-    searchStaff('', 'standardsController')
+    // Design 2026-09-27 (phase 12) §4: the standards controllers whose role covers the step's group.
+    searchStaff('', { role: 'StandardsController', groupId: groupTask.groupId })
       .then((options) => { if (!cancelled) setControllers(options) })
       .catch((err) => { if (!cancelled) toast.error(errorMessage(err)) })
       .finally(() => { if (!cancelled) setIsLoading(false) })
@@ -36,6 +37,10 @@ export function StandardsControllerDialog({ groupTask, onClose, onChanged }: Sta
   }, [])
 
   const options: SelectOption[] = controllers.map((c) => ({ value: c.id, label: c.name }))
+  // The current controller stays selectable even when their role no longer covers the group.
+  if (groupTask.standardsControllerId && !controllers.some((c) => c.id === groupTask.standardsControllerId)) {
+    options.push({ value: groupTask.standardsControllerId, label: groupTask.standardsControllerName ?? '' })
+  }
   const selectedName = controllers.find((c) => c.id === selected)?.name ?? groupTask.standardsControllerName ?? ''
 
   const save = async (userId: string | null) => {

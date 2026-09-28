@@ -52,7 +52,6 @@ public class ArchivedReviewResponse
 
 public class ArchivedGroupDetailsResponse : ArchivedGroupSummaryResponse
 {
-    public IReadOnlyList<string> ReviewerNames { get; set; } = [];
     public IReadOnlyList<ArchivedFileResponse> Files { get; set; } = [];
     public IReadOnlyList<ArchivedReviewResponse> Reviews { get; set; } = [];
 }

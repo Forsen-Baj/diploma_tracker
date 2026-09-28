@@ -58,7 +58,7 @@ public class AuthServiceTests
             LastName = "User",
             Email = "teacher@test.local",
             PasswordHash = passwordHasher.HashPassword("Teacher123!"),
-            Role = "Teacher",
+            Role = "Staff",
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -143,7 +143,7 @@ public class AuthServiceTests
         await context.SaveChangesAsync();
 
         var service = CreateAuthService(context, passwordHasher);
-        var result = await service.GetCurrentUserAsync(userId);
+        var result = await service.GetCurrentUserAsync(userId, "Student");
 
         Assert.Null(result);
     }
@@ -162,7 +162,7 @@ public class AuthServiceTests
             LastName = "Teacher",
             Email = "active.teacher@test.local",
             PasswordHash = passwordHasher.HashPassword("Active123!"),
-            Role = "Teacher",
+            Role = "Staff",
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -170,12 +170,13 @@ public class AuthServiceTests
         await context.SaveChangesAsync();
 
         var service = CreateAuthService(context, passwordHasher);
-        var result = await service.GetCurrentUserAsync(userId);
+        var result = await service.GetCurrentUserAsync(userId, "Staff");
 
         Assert.NotNull(result);
         Assert.Equal(userId.ToString(), result!.Id);
         Assert.Equal("active.teacher@test.local", result.Email);
-        Assert.Equal("Teacher", result.Role);
+        Assert.Equal("Staff", result.Role);
+        Assert.Equal("Staff", result.AccountRole);
     }
 
     private static AppDbContext CreateDbContext()

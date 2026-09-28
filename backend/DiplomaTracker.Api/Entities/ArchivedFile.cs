@@ -8,6 +8,11 @@ public class ArchivedFile
 
     public string StudentName { get; set; } = string.Empty;
     public string StudentNumber { get; set; } = string.Empty;
+
+    /// The student's supervisor when this file was archived (design 2026-09-27, phase 12, §4.1): an
+    /// acting teacher reads the rows that carry their id. Not a foreign key - the archive refers to
+    /// nothing live.
+    public Guid? SupervisorId { get; set; }
     public string StepTitle { get; set; } = string.Empty;
     public int StepOrder { get; set; }
     public DateTime Deadline { get; set; }

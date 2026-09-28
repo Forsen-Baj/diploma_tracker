@@ -17,6 +17,9 @@ type TopicFormModalProps = {
   showSupervisor: boolean
   directions: Direction[]
   supervisors: SupervisorOption[]
+  /** Phase 12 §4: when given, the supervisors on offer are loaded for the chosen direction's
+   *  department (the teachers who cover it) instead of taken from `supervisors`. */
+  loadSupervisors?: (departmentId: string) => Promise<SupervisorOption[]>
   /** Pre-selects the direction and hides the picker (a direction manager's "Add topic" on a direction row). */
   fixedDirectionId?: string
   /** Design 2026-09-27 §4.3: only an administrator moves a topic to another direction, so the
@@ -35,7 +38,7 @@ type FormState = {
 
 const emptyForm: FormState = { title: '', description: '', directionId: '', supervisorId: '' }
 
-export function TopicFormModal({ open, mode, initial, showSupervisor, directions, supervisors, fixedDirectionId, canMoveDirection = true, onClose, onSaved }: TopicFormModalProps) {
+export function TopicFormModal({ open, mode, initial, showSupervisor, directions, supervisors, loadSupervisors, fixedDirectionId, canMoveDirection = true, onClose, onSaved }: TopicFormModalProps) {
   const { t } = useTranslation()
   const errorMessage = useErrorMessage()
 
@@ -44,6 +47,7 @@ export function TopicFormModal({ open, mode, initial, showSupervisor, directions
   const [supervisorError, setSupervisorError] = useState('')
   const [error, setError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [loadedSupervisors, setLoadedSupervisors] = useState<SupervisorOption[]>([])
 
   useEffect(() => {
     if (!open) return
@@ -62,6 +66,37 @@ export function TopicFormModal({ open, mode, initial, showSupervisor, directions
     setError('')
   }, [open, initial, fixedDirectionId])
 
+  const selectedDepartmentId = directions.find((d) => d.id === form.directionId)?.departmentId ?? ''
+  // The topic's supervisor is held work: kept while the topic stays in its department.
+  const keepsInitialSupervisor = Boolean(initial) && selectedDepartmentId === initial?.departmentId
+
+  useEffect(() => {
+    if (!open || !loadSupervisors) return
+    if (!selectedDepartmentId) {
+      setLoadedSupervisors([])
+      return
+    }
+
+    let cancelled = false
+    loadSupervisors(selectedDepartmentId)
+      .then((options) => {
+        if (cancelled) return
+        setLoadedSupervisors(options)
+        // A supervisor picked for another department does not carry over.
+        setForm((prev) =>
+          options.some((s) => s.id === prev.supervisorId) || (keepsInitialSupervisor && prev.supervisorId === initial?.supervisorId)
+            ? prev
+            : { ...prev, supervisorId: '' })
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setLoadedSupervisors([])
+        setError(errorMessage(err))
+      })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, selectedDepartmentId])
+
   // §8: the picker lists the directions by department.
   const directionOptions: SelectOption[] = [...directions]
     .sort((a, b) => a.departmentName.localeCompare(b.departmentName) || a.name.localeCompare(b.name))
@@ -71,10 +106,11 @@ export function TopicFormModal({ open, mode, initial, showSupervisor, directions
     }))
   const directionLocked = mode === 'edit' && !canMoveDirection
 
-  const supervisorOptions: SelectOption[] = supervisors.map((s) => ({ value: s.id, label: s.name }))
+  const offeredSupervisors = loadSupervisors ? loadedSupervisors : supervisors
+  const supervisorOptions: SelectOption[] = offeredSupervisors.map((s) => ({ value: s.id, label: s.name }))
   // A topic's supervisor can be deactivated after the topic was created; keep them selectable and
   // labelled so editing the topic (e.g. to fix a typo) doesn't appear to show "no supervisor".
-  if (initial?.supervisorId && !supervisors.some((s) => s.id === initial.supervisorId)) {
+  if (initial?.supervisorId && (!loadSupervisors || keepsInitialSupervisor) && !offeredSupervisors.some((s) => s.id === initial.supervisorId)) {
     supervisorOptions.push({ value: initial.supervisorId, label: t('students.inactiveSupervisor', { name: initial.supervisorName }) })
   }
 

@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using DiplomaTracker.Api.Data;
+using DiplomaTracker.Api.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -60,12 +61,29 @@ public sealed class SessionStateValidator
             return false;
         }
 
-        if (!string.Equals(state.Role, role, StringComparison.Ordinal))
+        if (!ClaimFitsAccount(state.Role, role))
         {
             SecurityLog.SessionRejected(_logger, userId, "RoleChanged");
             return false;
         }
 
+        // Design 2026-09-27 (phase 12) §5: a staff session acts in a role the account must still hold
+        // somewhere. Removing the last assignment of a role ends the sessions acting in it at once.
+        if (state.Role == AccountRoles.Staff
+            && role != ActingRoles.None
+            && !await _dbContext.HoldsRoleAsync(userId, Enum.Parse<StaffRole>(role)))
+        {
+            SecurityLog.SessionRejected(_logger, userId, "RoleWithdrawn");
+            return false;
+        }
+
         return true;
     }
+
+    /// An administrator's and a student's claim is their account role; a staff member's is one of the
+    /// three staff roles or Staff (acting in none).
+    private static bool ClaimFitsAccount(string accountRole, string claim) =>
+        accountRole == AccountRoles.Staff
+            ? claim is ActingRoles.None or ActingRoles.Teacher or ActingRoles.DirectionManager or ActingRoles.StandardsController
+            : string.Equals(accountRole, claim, StringComparison.Ordinal);
 }

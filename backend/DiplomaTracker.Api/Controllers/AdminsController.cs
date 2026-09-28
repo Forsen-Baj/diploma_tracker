@@ -10,7 +10,7 @@ namespace DiplomaTracker.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = AuthRoles.Admin)]
 public class AdminsController : ApiControllerBase
 {
     private readonly IAdminService _adminService;

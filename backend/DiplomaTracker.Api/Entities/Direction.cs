@@ -9,7 +9,7 @@ public class Direction
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
 
-    /// An active teacher with IsDirectionManager. They approve every topic request in this
+    /// An active staff member whose direction-manager role covers the department. They approve every topic request in this
     /// direction and sit on the review panel of every step of its students (§5.2, §6).
     public Guid ManagerId { get; set; }
     public DateTime CreatedAt { get; set; }

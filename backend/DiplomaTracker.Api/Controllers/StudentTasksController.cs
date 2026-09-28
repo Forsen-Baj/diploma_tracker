@@ -19,7 +19,7 @@ public class StudentTasksController : ApiControllerBase
         _workflow = workflow;
     }
 
-    [Authorize(Roles = "Student")]
+    [Authorize(Roles = AccountRoles.Student)]
     [HttpGet("mine")]
     public async Task<IActionResult> Mine()
     {
@@ -44,7 +44,7 @@ public class StudentTasksController : ApiControllerBase
         return step is null ? ErrorResult(error) : Ok(step);
     }
 
-    [Authorize(Roles = "Student")]
+    [Authorize(Roles = AccountRoles.Student)]
     [HttpPost("{id:guid}/submissions")]
     [ServiceFilter(typeof(StudentTaskOwnershipFilter))]
     [RequestSizeLimit(SubmissionFileRules.MaxRequestBytes)]
@@ -80,7 +80,7 @@ public class StudentTasksController : ApiControllerBase
         return panel is null ? ErrorResult(error) : Ok(panel);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminTeacherOrManager)]
     [HttpPost("{id:guid}/reviewers")]
     public async Task<IActionResult> AddReviewer(Guid id, [FromBody] AddPanelReviewerRequest request)
     {
@@ -93,7 +93,7 @@ public class StudentTasksController : ApiControllerBase
         return step is null ? ErrorResult(error) : Ok(step);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminTeacherOrManager)]
     [HttpDelete("{id:guid}/reviewers/{reviewerId:guid}")]
     public async Task<IActionResult> RemoveReviewer(Guid id, Guid reviewerId)
     {

@@ -177,6 +177,11 @@ public class DepartmentService : IDepartmentService
             return (false, AcademicStructureErrors.DepartmentHasDirections);
         }
 
+        // Design 2026-09-27 (phase 12) §3: the roles assigned for this department go with it.
+        _dbContext.RoleAssignments.RemoveRange(await _dbContext.RoleAssignments
+            .Where(a => a.ScopeKind == RoleScopeKind.Department && a.ScopeId == id)
+            .ToListAsync());
+
         _dbContext.Departments.Remove(department);
 
         try

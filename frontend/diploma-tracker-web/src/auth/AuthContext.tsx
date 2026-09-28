@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { getCurrentUser, login as loginRequest } from '../api/authApi'
+import { getCurrentUser, login as loginRequest, switchActingRole } from '../api/authApi'
 import { clearToken, getToken, setToken, setUnauthorizedHandler } from '../api/apiClient'
 import type { CurrentUser } from '../api/types'
 import { AuthContext, type AuthContextValue } from './context'
@@ -42,6 +42,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return result.user
     },
     completeSignIn: (result) => {
+      setToken(result.token)
+      setUser(result.user)
+      return result.user
+    },
+    switchRole: async (role) => {
+      const result = await switchActingRole(role)
       setToken(result.token)
       setUser(result.user)
       return result.user

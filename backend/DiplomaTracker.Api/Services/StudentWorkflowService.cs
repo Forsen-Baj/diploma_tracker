@@ -294,13 +294,12 @@ public class StudentWorkflowService : IStudentWorkflowService
     public const int ReviewQueueDefaultPageSize = 25;
     public const int ReviewQueueMaxPageSize = 100;
 
-    // Design 2026-09-24 §3.5. A teacher's queue is the steps where they hold an OPEN seat; a
-    // group reviewer who sits on no panel watches the group and has nothing to decide. An
-    // administrator sees every submission still awaiting its panel. Shared by GetReviewQueueAsync
-    // (below) and GetLateAwaitingReviewAsync (task 7 bug 5) so both agree exactly on what "the
-    // caller's open seat" means - explicit panel membership only, R1's own definition, and never an
-    // administrator stand-in (moot here: an administrator's query is deliberately unfiltered, the
-    // same "global backlog" GetReviewQueueAsync always gave them).
+    // Design 2026-09-24 §3.5, phase 12 §5. The queue is the steps where the caller holds an OPEN seat
+    // in the role they act in: a teacher's supervisor and extra seats, a direction manager's seat, a
+    // standards controller's seat. An administrator sees every submission still awaiting its panel.
+    // Shared by GetReviewQueueAsync and GetLateAwaitingReviewAsync (task 7 bug 5) so both agree
+    // exactly on what "the caller's open seat" means - explicit panel membership only, never an
+    // administrator's stand-in (moot here: an administrator's query is deliberately unfiltered).
     // M14: a student who moved groups while a version was pending leaves a queue item that opens
     // as studentTask.notFound - agree with the admin dashboard's waiting count.
     private IQueryable<Submission> WaitingForCallerQuery(UserContext user)
@@ -310,25 +309,25 @@ public class StudentWorkflowService : IStudentWorkflowService
                 && s.StudentTask.Status == StudentTaskStatus.Submitted
                 && s.StudentTask.GroupTask.GroupId == s.StudentTask.StudentProfile.GroupId);
 
+        if (user.IsAdmin)
+        {
+            return query;
+        }
+
+        var me = user.UserId;
+        query = query.Where(s => s.StudentTask.StudentProfile.ArchivedAt == null);
+
+        // One predicate per seat, in ReviewPanel.Evaluate's order, each excluding the seats an
+        // earlier one absorbs - a person decides once, in their first seat (design 2026-09-27 §6),
+        // and in the role that seat belongs to.
         if (user.IsTeacher)
         {
-            var me = user.UserId;
-
-            // One predicate per seat, in ReviewPanel.Evaluate's order, each excluding the seats an
-            // earlier one absorbs - a person decides once, in their first seat (design 2026-09-27 §6).
-            query = query.Where(s => s.StudentTask.StudentProfile.ArchivedAt == null && (
+            return query.Where(s =>
                 (s.StudentTask.StudentProfile.SupervisorId == me
                     && !s.StudentTask.Submissions.SelectMany(x => x.Reviews).Any(r =>
                         r.Seat == ReviewSeat.Supervisor
                         && r.Decision == SubmissionDecision.Approved
-                        && (r.ReviewerId == me || r.Reviewer.Role == "Admin")))
-                || (s.StudentTask.StudentProfile.SupervisorId != me
-                    && s.StudentTask.StudentProfile.Topic != null
-                    && s.StudentTask.StudentProfile.Topic.Direction.ManagerId == me
-                    && !s.StudentTask.Submissions.SelectMany(x => x.Reviews).Any(r =>
-                        r.Seat == ReviewSeat.DirectionManager
-                        && r.Decision == SubmissionDecision.Approved
-                        && r.ReviewerId == me))
+                        && (r.ReviewerId == me || r.Reviewer.Role == AccountRoles.Admin)))
                 || (s.StudentTask.StudentProfile.SupervisorId != me
                     && (s.StudentTask.StudentProfile.Topic == null || s.StudentTask.StudentProfile.Topic.Direction.ManagerId != me)
                     && s.StudentTask.Reviewers.Any(x => x.ReviewerId == me
@@ -336,23 +335,36 @@ public class StudentWorkflowService : IStudentWorkflowService
                             r.Seat == ReviewSeat.Extra
                             && r.Decision == SubmissionDecision.Approved
                             && r.ReviewerId == me
-                            && r.DecidedAt >= x.AddedAt)))
-                || (s.StudentTask.GroupTask.StandardsControllerId == me
-                    && s.StudentTask.StudentProfile.SupervisorId != me
-                    && (s.StudentTask.StudentProfile.Topic == null || s.StudentTask.StudentProfile.Topic.Direction.ManagerId != me)
-                    && !s.StudentTask.Reviewers.Any(x => x.ReviewerId == me)
-                    && !s.StudentTask.Submissions.SelectMany(y => y.Reviews).Any(r =>
-                        r.Seat == ReviewSeat.StandardsControl
-                        && r.Decision == SubmissionDecision.Approved
-                        && r.ReviewerId == me
-                        && r.DecidedAt >= s.StudentTask.GroupTask.StandardsControllerAssignedAt))));
-        }
-        else if (!user.IsAdmin)
-        {
-            query = query.Where(_ => false);
+                            && r.DecidedAt >= x.AddedAt))));
         }
 
-        return query;
+        if (user.IsDirectionManager)
+        {
+            return query.Where(s =>
+                s.StudentTask.StudentProfile.SupervisorId != me
+                && s.StudentTask.StudentProfile.Topic != null
+                && s.StudentTask.StudentProfile.Topic.Direction.ManagerId == me
+                && !s.StudentTask.Submissions.SelectMany(x => x.Reviews).Any(r =>
+                    r.Seat == ReviewSeat.DirectionManager
+                    && r.Decision == SubmissionDecision.Approved
+                    && r.ReviewerId == me));
+        }
+
+        if (user.IsStandardsController)
+        {
+            return query.Where(s =>
+                s.StudentTask.GroupTask.StandardsControllerId == me
+                && s.StudentTask.StudentProfile.SupervisorId != me
+                && (s.StudentTask.StudentProfile.Topic == null || s.StudentTask.StudentProfile.Topic.Direction.ManagerId != me)
+                && !s.StudentTask.Reviewers.Any(x => x.ReviewerId == me)
+                && !s.StudentTask.Submissions.SelectMany(y => y.Reviews).Any(r =>
+                    r.Seat == ReviewSeat.StandardsControl
+                    && r.Decision == SubmissionDecision.Approved
+                    && r.ReviewerId == me
+                    && r.DecidedAt >= s.StudentTask.GroupTask.StandardsControllerAssignedAt));
+        }
+
+        return query.Where(_ => false);
     }
 
     public async Task<PagedResponse<ReviewQueueItem>> GetReviewQueueAsync(
@@ -618,7 +630,7 @@ public class StudentWorkflowService : IStudentWorkflowService
 
         var students = await _dbContext.StudentProfiles.AsNoTracking()
             .Include(p => p.User)
-            .Where(p => p.GroupId == groupId && p.ArchivedAt == null && p.User.Role == "Student")
+            .Where(p => p.GroupId == groupId && p.ArchivedAt == null && p.User.Role == AccountRoles.Student)
             .OrderBy(p => p.User.LastName)
             .ThenBy(p => p.User.FirstName)
             .ToListAsync();
@@ -649,32 +661,25 @@ public class StudentWorkflowService : IStudentWorkflowService
 
         var byStudent = tasks.ToLookup(t => t.StudentProfileId);
 
-        // Design 2026-09-24: a row is openable for an administrator, a reviewer of the group (both
-        // already give every student here via `ReviewableStudents`), or the student's own
-        // supervisor. Computed once for the whole group, not per student.
+        // Design 2026-09-24, phase 12 §4.2: a row opens for an administrator, the student's
+        // supervisor acting as teacher, and the manager of the student's topic's direction acting as
+        // direction manager - exactly `ReviewableStudents`. Computed once for the whole group.
         var reviewableIds = (await _accessScope.ReviewableStudents(user)
             .Where(s => studentIds.Contains(s.Id))
             .Select(s => s.Id)
             .ToListAsync())
             .ToHashSet();
 
-        // Bug 3 (task 7): "mine" for the My students / Others split - the caller supervises this
-        // student, manages the direction of their topic (design 2026-09-27 §6.2), or holds an
-        // extra-reviewer seat on any of their steps. A standards controller checks one step of the
-        // whole group and owns none of its students. An administrator owns
-        // every row (the split is teacher-only; the frontend collapses to one list when every row
-        // is "mine", same as it already does for CanOpen). A group reviewer with no seat of their
-        // own owns none - CanOpen still lets them open the row read-only.
-        var mineIds = user.IsAdmin
-            ? studentIds.ToHashSet()
-            : (await _dbContext.StudentProfiles.AsNoTracking()
-                .Where(p => studentIds.Contains(p.Id)
-                    && (p.SupervisorId == user.UserId
-                        || (p.Topic != null && p.Topic.Direction.ManagerId == user.UserId)
-                        || p.StudentTasks.Any(t => t.Reviewers.Any(r => r.ReviewerId == user.UserId))))
+        // Bug 3 (task 7), phase 12 §4.1: "mine" for the My students / Others split - the students the
+        // caller works with in their acting role (`ReviewOverviewStudents`): a teacher's supervised
+        // students and students on whose steps they sit, a direction manager's direction students, a
+        // standards controller's students of the steps they control. For an administrator every
+        // active student is theirs, so the page shows one list. Others never open.
+        var mineIds = (await _accessScope.ReviewOverviewStudents(user).AsNoTracking()
+                .Where(p => studentIds.Contains(p.Id))
                 .Select(p => p.Id)
                 .ToListAsync())
-                .ToHashSet();
+            .ToHashSet();
 
         var submittedTaskIds = tasks.Where(t => t.Status == StudentTaskStatus.Submitted).Select(t => t.Id).ToList();
         var panelFacts = await LoadPanelFactsAsync(submittedTaskIds);
@@ -787,21 +792,23 @@ public class StudentWorkflowService : IStudentWorkflowService
             return (null, error);
         }
 
-        // M5: spec §2 says group reviewers "do not mark steps themselves" - a group reviewer must
-        // not sidestep that by adding themselves as an extra. The supervisor or an administrator
-        // may still name them.
-        if (reviewerId == user.UserId && task.StudentProfile.SupervisorId != user.UserId && !user.IsAdmin)
-        {
-            return (null, WorkflowErrors.PanelNotAllowed);
-        }
-
-        var reviewer = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == reviewerId);
-        if (reviewer is null || !reviewer.IsActive || (reviewer.Role != "Teacher" && reviewer.Role != "Admin"))
+        // Phase 12 §4: an extra reviewer is an administrator, or a teacher whose role covers the
+        // student's group.
+        var reviewer = await _dbContext.Users.AsNoTracking()
+            .Where(u => u.Id == reviewerId)
+            .Select(u => new { u.Id, u.IsActive, u.Role })
+            .FirstOrDefaultAsync();
+        var eligible = reviewer is not null
+            && reviewer.IsActive
+            && (reviewer.Role == AccountRoles.Admin
+                || (reviewer.Role == AccountRoles.Staff
+                    && await _dbContext.CoversGroupAsync(reviewer.Id, StaffRole.Teacher, task.StudentProfile.GroupId)));
+        if (!eligible)
         {
             return (null, WorkflowErrors.PanelReviewerInvalid);
         }
 
-        if (reviewer.Id == task.StudentProfile.SupervisorId)
+        if (reviewerId == task.StudentProfile.SupervisorId)
         {
             return (null, WorkflowErrors.PanelReviewerIsSupervisor);
         }
@@ -914,14 +921,17 @@ public class StudentWorkflowService : IStudentWorkflowService
             return (null, TaskErrors.GroupTaskNotFound);
         }
 
-        if (controllerId is not null && !await _dbContext.IsStandardsControllerAsync(controllerId.Value))
-        {
-            return (null, TaskErrors.GroupTaskControllerInvalid);
-        }
-
+        // Phase 12 §4: work already held is not re-checked, so keeping the current controller is a
+        // no-op even when their role no longer covers the group.
         if (groupTask.StandardsControllerId == controllerId)
         {
             return (new StandardsControllerChangeResponse { GroupTaskId = groupTask.Id }, null);
+        }
+
+        // Phase 12 §4: a new controller's role covers the group.
+        if (controllerId is not null && !await _dbContext.CoversGroupAsync(controllerId.Value, StaffRole.StandardsController, groupTask.GroupId))
+        {
+            return (null, TaskErrors.GroupTaskControllerInvalid);
         }
 
         var now = DateTime.UtcNow;
@@ -1013,8 +1023,9 @@ public class StudentWorkflowService : IStudentWorkflowService
         return tasks.Count > 0;
     }
 
-    /// Design 2026-09-24 §3.1: the supervisor, a reviewer of the student's group or an administrator
-    /// may change a panel, while the step is not approved and the student is not archived.
+    /// Design 2026-09-24 §3.1, phase 12 §4.1: the student's supervisor (acting as teacher), the manager
+    /// of their topic's direction (acting as direction manager) or an administrator may change a
+    /// panel, while the step is not approved and the student is not archived.
     private async Task<(StudentTask? task, string? error)> LoadTaskForPanelChangeAsync(UserContext user, Guid studentTaskId)
     {
         var task = await _dbContext.StudentTasks
@@ -1069,8 +1080,8 @@ public class StudentWorkflowService : IStudentWorkflowService
         var task = submission.StudentTask;
 
         // M3: a caller who cannot see this step at all learns nothing about it - the same 404 a
-        // missing submission gets. Only a caller who can see the step but holds no seat (e.g. a
-        // group reviewer) is told they are not on its panel.
+        // missing submission gets. Only a caller who can see the step but holds no seat on it
+        // is told they are not on its panel.
         if (!await _accessScope.CanSeeStudentTaskAsync(user, task.Id))
         {
             SecurityLog.AccessRefused(_logger, user.UserId, user.Role, "Submission", submission.Id);
@@ -1229,7 +1240,7 @@ public class StudentWorkflowService : IStudentWorkflowService
             {
                 r.Submission.StudentTaskId,
                 r.ReviewerId,
-                ReviewerIsAdmin = r.Reviewer.Role == "Admin",
+                ReviewerIsAdmin = r.Reviewer.Role == AccountRoles.Admin,
                 r.Seat,
                 r.Decision,
                 r.Mark,
@@ -1678,6 +1689,9 @@ public class StudentWorkflowService : IStudentWorkflowService
     {
         var callerId = user.UserId;
         var isAdmin = user.IsAdmin;
+        var isTeacher = user.IsTeacher;
+        var isManager = user.IsDirectionManager;
+        var isController = user.IsStandardsController;
 
         return p => new StudentProjectionRow
         {
@@ -1699,11 +1713,9 @@ public class StudentWorkflowService : IStudentWorkflowService
                     Status = t.Status,
                     Deadline = t.GroupTask.Deadline,
                     CanOpen = isAdmin
-                        || p.SupervisorId == callerId
-                        || (p.Topic != null && p.Topic.Direction.ManagerId == callerId)
-                        || p.Group.Reviewers.Any(r => r.ReviewerId == callerId)
-                        || t.Reviewers.Any(r => r.ReviewerId == callerId)
-                        || t.GroupTask.StandardsControllerId == callerId,
+                        || (isTeacher && (p.SupervisorId == callerId || t.Reviewers.Any(r => r.ReviewerId == callerId)))
+                        || (isManager && p.Topic != null && p.Topic.Direction.ManagerId == callerId)
+                        || (isController && t.GroupTask.StandardsControllerId == callerId),
                     LatestSubmission = t.Submissions
                         .OrderByDescending(s => s.Version)
                         .Select(s => new LatestSubmissionRow { Version = s.Version, SubmittedAt = s.SubmittedAt, IsLate = s.IsLate })
@@ -1722,11 +1734,9 @@ public class StudentWorkflowService : IStudentWorkflowService
                     Status = t.Status,
                     Deadline = t.GroupTask.Deadline,
                     CanOpen = isAdmin
-                        || p.SupervisorId == callerId
-                        || (p.Topic != null && p.Topic.Direction.ManagerId == callerId)
-                        || p.Group.Reviewers.Any(r => r.ReviewerId == callerId)
-                        || t.Reviewers.Any(r => r.ReviewerId == callerId)
-                        || t.GroupTask.StandardsControllerId == callerId,
+                        || (isTeacher && (p.SupervisorId == callerId || t.Reviewers.Any(r => r.ReviewerId == callerId)))
+                        || (isManager && p.Topic != null && p.Topic.Direction.ManagerId == callerId)
+                        || (isController && t.GroupTask.StandardsControllerId == callerId),
                     LatestSubmission = t.Submissions
                         .OrderByDescending(s => s.Version)
                         .Select(s => new LatestSubmissionRow { Version = s.Version, SubmittedAt = s.SubmittedAt, IsLate = s.IsLate })

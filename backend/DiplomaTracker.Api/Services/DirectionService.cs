@@ -9,8 +9,9 @@ using Microsoft.Extensions.Logging;
 
 namespace DiplomaTracker.Api.Services;
 
-/// Design 2026-09-27 §4. A direction manager creates directions and manages their own; an
-/// administrator manages every direction and names or changes its manager.
+/// Design 2026-09-27 §4, and phase 12 §4: a direction manager opens directions in the departments
+/// their role covers and manages their own; an administrator manages every direction and names or
+/// changes its manager, who must cover the direction's department.
 public class DirectionService : IDirectionService
 {
     private readonly AppDbContext _dbContext;
@@ -42,7 +43,7 @@ public class DirectionService : IDirectionService
 
             directions = directions.Where(d => d.DepartmentId == departmentId);
         }
-        else if (user.IsAdmin || user.IsTeacher)
+        else if (user.IsAdmin || user.IsStaff)
         {
             if (query.DepartmentId is not null)
             {
@@ -57,6 +58,19 @@ public class DirectionService : IDirectionService
             if (query.Mine)
             {
                 directions = directions.Where(d => d.ManagerId == user.UserId);
+            }
+
+            if (query.Covered && !user.IsAdmin)
+            {
+                if (user.ActingRole is { } role)
+                {
+                    var covered = _dbContext.DepartmentsCoveredBy(user.UserId, role);
+                    directions = directions.Where(d => covered.Contains(d.DepartmentId));
+                }
+                else
+                {
+                    directions = directions.Where(_ => false);
+                }
             }
         }
         else
@@ -96,21 +110,7 @@ public class DirectionService : IDirectionService
 
     public async Task<(DirectionResponse? direction, string? error)> CreateDirectionAsync(UserContext user, CreateDirectionRequest request)
     {
-        Guid managerId;
-        if (user.IsAdmin)
-        {
-            if (request.ManagerId is not { } named || !await _dbContext.IsDirectionManagerAsync(named))
-            {
-                return (null, DirectionErrors.ManagerInvalid);
-            }
-
-            managerId = named;
-        }
-        else if (user.IsTeacher && await _dbContext.IsDirectionManagerAsync(user.UserId))
-        {
-            managerId = user.UserId;
-        }
-        else
+        if (!user.IsAdmin && !user.IsDirectionManager)
         {
             return (null, CommonErrors.Forbidden);
         }
@@ -118,6 +118,29 @@ public class DirectionService : IDirectionService
         if (!await _dbContext.Departments.AnyAsync(d => d.Id == request.DepartmentId))
         {
             return (null, DirectionErrors.DepartmentInvalid);
+        }
+
+        // Phase 12 §4: the manager covers the direction's department. An administrator names one who
+        // does; a direction manager opens a direction only where their own role reaches.
+        Guid managerId;
+        if (user.IsAdmin)
+        {
+            if (request.ManagerId is not { } named
+                || !await _dbContext.CoversDepartmentAsync(named, StaffRole.DirectionManager, request.DepartmentId))
+            {
+                return (null, DirectionErrors.ManagerInvalid);
+            }
+
+            managerId = named;
+        }
+        else
+        {
+            if (!await _dbContext.CoversDepartmentAsync(user.UserId, StaffRole.DirectionManager, request.DepartmentId))
+            {
+                return (null, RoleErrors.NotCovered);
+            }
+
+            managerId = user.UserId;
         }
 
         var name = request.Name.Trim();
@@ -180,22 +203,31 @@ public class DirectionService : IDirectionService
         }
 
         var managerChanged = false;
-        if (request.ManagerId is { } managerId && managerId != editable.ManagerId)
+        var managerId = editable.ManagerId;
+        if (request.ManagerId is { } requestedManager && requestedManager != editable.ManagerId)
         {
             if (!user.IsAdmin)
             {
                 return (null, CommonErrors.Forbidden);
             }
 
-            if (!await _dbContext.IsDirectionManagerAsync(managerId))
-            {
-                return (null, DirectionErrors.ManagerInvalid);
-            }
+            managerId = requestedManager;
+            managerChanged = true;
+        }
 
+        // Phase 12 §4: the manager - a new one, or the current one when the direction moves - covers
+        // the department. A manager who moves their own direction outside their role is refused.
+        if ((managerChanged || request.DepartmentId != editable.DepartmentId)
+            && !await _dbContext.CoversDepartmentAsync(managerId, StaffRole.DirectionManager, request.DepartmentId))
+        {
+            return (null, user.IsAdmin ? DirectionErrors.ManagerInvalid : RoleErrors.NotCovered);
+        }
+
+        if (managerChanged)
+        {
             // §4.2: the direction's approval seat and its step-panel seats move to the new manager
             // at once - both are derived from ManagerId whenever they are read.
             editable.ManagerId = managerId;
-            managerChanged = true;
         }
 
         var name = request.Name.Trim();
@@ -302,12 +334,12 @@ public class DirectionService : IDirectionService
             return DirectionErrors.NotFound;
         }
 
-        if (user.IsAdmin || (user.IsTeacher && direction.ManagerId == user.UserId))
+        if (user.IsAdmin || (user.IsDirectionManager && direction.ManagerId == user.UserId))
         {
             return null;
         }
 
-        return user.IsTeacher ? DirectionErrors.NotManager : CommonErrors.Forbidden;
+        return user.IsDirectionManager ? DirectionErrors.NotManager : CommonErrors.Forbidden;
     }
 
     private Task<Guid?> StudentDepartmentAsync(Guid userId) =>

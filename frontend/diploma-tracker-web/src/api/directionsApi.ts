@@ -6,6 +6,7 @@ function toQueryString(query: DirectionQuery): string {
   if (query.departmentId) params.set('departmentId', query.departmentId)
   if (query.managerId) params.set('managerId', query.managerId)
   if (query.mine) params.set('mine', 'true')
+  if (query.covered) params.set('covered', 'true')
   const text = params.toString()
   return text ? `?${text}` : ''
 }

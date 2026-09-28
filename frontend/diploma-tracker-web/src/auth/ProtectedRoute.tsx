@@ -1,16 +1,11 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Spinner } from '../components/ui/Spinner'
+import { homeRouteByRole, type Role } from '../components/layout/navigation'
 import { useAuth } from './useAuth'
 
 type ProtectedRouteProps = {
-  allowedRoles?: Array<'Admin' | 'Teacher' | 'Student'>
-}
-
-function routeByRole(role: 'Admin' | 'Teacher' | 'Student'): string {
-  if (role === 'Admin') return '/admin/dashboard'
-  if (role === 'Teacher') return '/teacher/dashboard'
-  return '/student/dashboard'
+  allowedRoles?: Role[]
 }
 
 export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
@@ -32,7 +27,7 @@ export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <Navigate to={routeByRole(user.role)} replace />
+    return <Navigate to={homeRouteByRole[user.role]} replace />
   }
 
   return <Outlet />

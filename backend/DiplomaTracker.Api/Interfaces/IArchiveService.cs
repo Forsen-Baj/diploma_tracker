@@ -13,7 +13,12 @@ public interface IArchiveService
 
     /// Copies the submitted files of the named students into their group's archive, leaving the
     /// live rows untouched. Returns the number of files archived.
-    Task<int> ArchiveStudentsAsync(IReadOnlyList<Guid> studentProfileIds, CancellationToken cancellationToken);
+    /// supervisorsAtArchiving is each student's supervisor read before their reservations were settled
+    /// (settling clears it); the archive stamps it on their rows (phase 12 §4.1).
+    Task<int> ArchiveStudentsAsync(
+        IReadOnlyList<Guid> studentProfileIds,
+        IReadOnlyDictionary<Guid, Guid?> supervisorsAtArchiving,
+        CancellationToken cancellationToken);
 
     /// Counts the SubmissionFile rows a deletion of this group would archive, using the same
     /// predicate ArchiveGroupAsync archives by (I3: the deletion-preview endpoint).

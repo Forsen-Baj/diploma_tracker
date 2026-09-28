@@ -15,8 +15,9 @@ public class StepDetailsResponse : StudentStepResponse
     /// form asks for a mark in every seat but StandardsControl.
     public string? MySeat { get; set; }
 
-    /// The caller may add or remove extra reviewers: the supervisor, a group reviewer or an
-    /// administrator, while the step is not approved and the student is not archived.
+    /// The caller may add or remove extra reviewers: the student's supervisor (acting as teacher),
+    /// the manager of their topic's direction (acting as direction manager) or an administrator,
+    /// while the step is not approved and the student is not archived.
     public bool CanManagePanel { get; set; }
     public IReadOnlyList<PanelSeatResponse> Panel { get; set; } = [];
     public IReadOnlyList<SubmissionResponse> Timeline { get; set; } = [];

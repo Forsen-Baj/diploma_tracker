@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Navigate } from 'react-router-dom'
+import { getReservationsForDecision } from '../api/reservationsApi'
 import { deleteTopic, getTopics, getTopicSupervisors } from '../api/topicsApi'
 import { useErrorMessage } from '../api/useErrorMessage'
 import { useAuth } from '../auth/useAuth'
@@ -15,11 +15,13 @@ import { useToast } from '../components/ui/useToast'
 import { DirectionsSection, type DirectionsSectionHandle } from '../components/topics/DirectionsSection'
 import { TopicApproveButton } from '../components/topics/TopicApproveButton'
 import { TopicFormModal } from '../components/topics/TopicFormModal'
+import { TopicRequestsTable } from '../components/topics/TopicRequestsTable'
 import { TopicStatusBadge } from '../components/topics/TopicStatusBadge'
 import { useWaitingApprovals } from '../components/topics/useWaitingApprovals'
-import type { Direction, SupervisorOption, Topic } from '../api/types'
+import type { Direction, Reservation, SupervisorOption, Topic } from '../api/types'
 
-/** Design 2026-09-27 §8: a direction manager's directions, and the topics in them. */
+/** Design 2026-09-27 §8: a direction manager's directions, the topics in them and the requests
+ *  waiting in them. Reached only while acting as direction manager (phase 12 §4.2). */
 export function DirectionsPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -29,6 +31,7 @@ export function DirectionsPage() {
   const [directions, setDirections] = useState<Direction[]>([])
   const [supervisors, setSupervisors] = useState<SupervisorOption[]>([])
   const [topics, setTopics] = useState<Topic[]>([])
+  const [requests, setRequests] = useState<Reservation[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [formDirectionId, setFormDirectionId] = useState<string | undefined>(undefined)
@@ -43,9 +46,10 @@ export function DirectionsPage() {
     setIsLoading(true)
     setLoadError('')
     try {
-      const [topicsData, supervisorsData] = await Promise.all([getTopics(), getTopicSupervisors()])
+      // Acting as direction manager, the pending requests are those in the caller's directions.
+      const [topicsData, requestsData] = await Promise.all([getTopics(), getReservationsForDecision('Pending')])
       setTopics(topicsData.filter((topic) => topic.directionManagerId === user?.id))
-      setSupervisors(supervisorsData)
+      setRequests(requestsData)
     } catch (err) {
       setLoadError(errorMessage(err))
     } finally {
@@ -58,8 +62,18 @@ export function DirectionsPage() {
     void loadTopics()
   }, [loadTopics])
 
-  if (user && !user.isDirectionManager) {
-    return <Navigate to="/teacher/dashboard" replace />
+  // Design 2026-09-27 (phase 12) §4: the supervisors on offer are the teachers who cover the
+  // direction's department, loaded for that department whenever the topic form opens.
+  const openTopicForm = async (departmentId: string, directionId: string | undefined, topic: Topic | undefined) => {
+    try {
+      setSupervisors(await getTopicSupervisors(departmentId))
+    } catch (err) {
+      toast.error(errorMessage(err))
+      return
+    }
+    setEditingTopic(topic)
+    setFormDirectionId(directionId)
+    setIsFormOpen(true)
   }
 
   const confirmDeleteTopic = async () => {
@@ -99,7 +113,7 @@ export function DirectionsPage() {
         return (
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="sm" icon={Pencil} aria-label={t('common.edit')} disabled={!topic.canEdit}
-              onClick={() => { setEditingTopic(topic); setFormDirectionId(undefined); setIsFormOpen(true) }} />
+              onClick={() => void openTopicForm(topic.departmentId, undefined, topic)} />
             <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('common.delete')} disabled={!topic.canDelete}
               onClick={() => setDeletingTopic(topic)} />
             {waitingReservation && <TopicApproveButton reservation={waitingReservation} onChanged={handleTopicApproved} />}
@@ -117,12 +131,12 @@ export function DirectionsPage() {
         ref={directionsSectionRef}
         mode="manager"
         onLoaded={setDirections}
-        onAddTopic={(direction) => {
-          setEditingTopic(undefined)
-          setFormDirectionId(direction.id)
-          setIsFormOpen(true)
-        }}
+        onAddTopic={(direction) => void openTopicForm(direction.departmentId, direction.id, undefined)}
       />
+
+      <Card title={t('topics.requestsTitle')} className="mb-6">
+        <TopicRequestsTable rows={requests} loading={isLoading} onChanged={handleTopicApproved} />
+      </Card>
 
       <Card title={t('directions.topicsTitle')}>
         {loadError && <p className="mb-4 text-sm text-danger">{loadError}</p>}

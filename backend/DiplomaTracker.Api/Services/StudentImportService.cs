@@ -107,7 +107,7 @@ public class StudentImportService : IStudentImportService
         {
             if (usersByEmail.TryGetValue(row.Email, out var existingUser))
             {
-                if (existingUser.Role != "Student" || existingUser.StudentProfile is null)
+                if (existingUser.Role != AccountRoles.Student || existingUser.StudentProfile is null)
                 {
                     errors.Add(ImportRowError.Create(row.Line, OnboardingErrors.RowStaffEmail));
                 }
@@ -150,7 +150,7 @@ public class StudentImportService : IStudentImportService
                 Patronymic = row.Patronymic,
                 Email = row.Email,
                 PasswordHash = null,
-                Role = "Student",
+                Role = AccountRoles.Student,
                 IsActive = true,
                 CreatedAt = now,
                 UpdatedAt = now

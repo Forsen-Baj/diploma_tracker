@@ -1,5 +1,5 @@
 import { apiDownload, apiRequest, saveBlob } from './apiClient'
-import type { GroupProgress, Paged, ReviewStateFilter, ReviewStudentItem, StaffCapability, StaffOption, StepDetails, StudentProgress, StudentStep } from './types'
+import type { GroupProgress, Paged, ReviewStateFilter, ReviewStudentItem, StepDetails, StudentProgress, StudentStep } from './types'
 
 export function getMySteps(): Promise<StudentStep[]> {
   return apiRequest<StudentStep[]>('/api/student-tasks/mine')
@@ -63,12 +63,4 @@ export function addPanelReviewer(stepId: string, reviewerId: string): Promise<St
 
 export function removePanelReviewer(stepId: string, reviewerId: string): Promise<StepDetails> {
   return apiRequest<StepDetails>(`/api/student-tasks/${stepId}/reviewers/${reviewerId}`, { method: 'DELETE' })
-}
-
-export function searchStaff(search: string, capability?: StaffCapability): Promise<StaffOption[]> {
-  const params = new URLSearchParams()
-  if (search) params.set('search', search)
-  if (capability) params.set('capability', capability)
-  const query = params.toString()
-  return apiRequest<StaffOption[]>(`/api/staff/options${query ? `?${query}` : ''}`)
 }
