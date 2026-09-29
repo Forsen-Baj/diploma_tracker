@@ -59,6 +59,11 @@
     "Staff": "Без ролі",
     "Student": "Студент"
   },
+  "accountRoles": {
+    "Admin": "Адміністратор",
+    "Staff": "Працівник",
+    "Student": "Студент"
+  },
   "validation": {
     "required": "Заповніть це поле.",
     "passwordLength": "Пароль має містити від 8 до 128 символів.",

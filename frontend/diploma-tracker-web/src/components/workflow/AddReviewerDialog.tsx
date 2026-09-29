@@ -134,7 +134,7 @@ export function AddReviewerDialog({ step, onClose, onAdded }: AddReviewerDialogP
               >
                 <span className="block text-text-strong">{option.name}</span>
                 <span className="block text-xs text-text-muted">
-                  {t(`roles.${option.role}`)} · {option.email}
+                  {t(`accountRoles.${option.role}`)} · {option.email}
                 </span>
               </button>
             </li>

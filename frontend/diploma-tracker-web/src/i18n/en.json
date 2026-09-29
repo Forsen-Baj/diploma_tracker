@@ -58,6 +58,11 @@
     "Staff": "No role",
     "Student": "Student"
   },
+  "accountRoles": {
+    "Admin": "Administrator",
+    "Staff": "Staff member",
+    "Student": "Student"
+  },
   "validation": {
     "required": "Fill in this field.",
     "passwordLength": "Password must be between 8 and 128 characters.",

@@ -1007,6 +1007,6 @@ export type DocumentDetails = {
 export type DocumentRecipient = {
   id: string
   name: string
-  role: 'Admin' | 'Teacher' | 'Student'
+  role: 'Admin' | 'Staff' | 'Student'
   groupCode: string | null
 }
