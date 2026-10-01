@@ -34,7 +34,7 @@ public class StudentService : IStudentService
     public async Task<IReadOnlyList<StudentResponse>> GetStudentsAsync(bool archived)
     {
         return await _dbContext.StudentProfiles.AsNoTracking()
-            .Where(s => s.User.Role == "Student" && (archived ? s.ArchivedAt != null : s.ArchivedAt == null))
+            .Where(s => s.User.Role == AccountRoles.Student && (archived ? s.ArchivedAt != null : s.ArchivedAt == null))
             .OrderBy(s => s.User.LastName)
             .ThenBy(s => s.User.FirstName)
             .Select(ProjectStudent)
@@ -44,7 +44,7 @@ public class StudentService : IStudentService
     public async Task<StudentResponse?> GetStudentByIdAsync(Guid id)
     {
         return await _dbContext.StudentProfiles.AsNoTracking()
-            .Where(s => s.Id == id && s.User.Role == "Student")
+            .Where(s => s.Id == id && s.User.Role == AccountRoles.Student)
             .Select(ProjectStudent)
             .FirstOrDefaultAsync();
     }
@@ -91,7 +91,7 @@ public class StudentService : IStudentService
             Patronymic = IdentityNormalizer.Optional(request.Patronymic),
             Email = email,
             PasswordHash = password is null ? null : _passwordHasher.HashPassword(password),
-            Role = "Student",
+            Role = AccountRoles.Student,
             IsActive = true,
             CreatedAt = now,
             UpdatedAt = now
@@ -258,7 +258,12 @@ public class StudentService : IStudentService
             return (null, OnboardingErrors.SupervisorNotFound);
         }
 
-        if (supervisor.Role != "Teacher" || !supervisor.IsActive)
+        // Phase 12 §4: an administrator names a supervisor whose teacher role covers the student's
+        // group. Naming the current supervisor again takes nothing new on.
+        if (supervisor.Role != AccountRoles.Staff
+            || !supervisor.IsActive
+            || (supervisorId != profile.SupervisorId
+                && !await _dbContext.CoversGroupAsync(supervisorId, StaffRole.Teacher, profile.GroupId)))
         {
             return (null, OnboardingErrors.SupervisorMustBeActiveTeacher);
         }
@@ -282,7 +287,7 @@ public class StudentService : IStudentService
     {
         var profile = await _dbContext.StudentProfiles
             .Include(s => s.User)
-            .FirstOrDefaultAsync(s => s.Id == id && s.User.Role == "Student");
+            .FirstOrDefaultAsync(s => s.Id == id && s.User.Role == AccountRoles.Student);
 
         if (profile is null)
         {
@@ -309,7 +314,7 @@ public class StudentService : IStudentService
         var uniqueIds = studentIds.Distinct().ToList();
         var profiles = await _dbContext.StudentProfiles
             .Include(s => s.User)
-            .Where(s => uniqueIds.Contains(s.Id) && s.User.Role == "Student")
+            .Where(s => uniqueIds.Contains(s.Id) && s.User.Role == AccountRoles.Student)
             .ToListAsync();
 
         if (profiles.Count != uniqueIds.Count)
@@ -320,6 +325,10 @@ public class StudentService : IStudentService
         var now = DateTime.UtcNow;
         var archivedIds = StudentArchiver.Archive(profiles, now);
 
+        // The supervisor is read now: settling the reservations below clears it, and the archive
+        // stamps the supervisor at archiving on the student's rows (phase 12 §4.1).
+        var supervisorsAtArchiving = profiles.ToDictionary(p => p.Id, p => p.SupervisorId);
+
         // An archived student's live reservations must not linger: a topic's supervisor would
         // otherwise still see and could approve a pending request, or hold a topic permanently
         // approved for an account that can no longer act on it.
@@ -329,7 +338,7 @@ public class StudentService : IStudentService
         }
 
         await _dbContext.SaveChangesAsync();
-        await _archive.ArchiveStudentsAsync(archivedIds, CancellationToken.None);
+        await _archive.ArchiveStudentsAsync(archivedIds, supervisorsAtArchiving, CancellationToken.None);
 
         SecurityLog.StudentsArchived(_logger, administratorId, archivedIds.Count, archivedIds);
 
@@ -341,7 +350,7 @@ public class StudentService : IStudentService
         var uniqueIds = studentIds.Distinct().ToList();
         var profiles = await _dbContext.StudentProfiles
             .Include(s => s.User)
-            .Where(s => uniqueIds.Contains(s.Id) && s.User.Role == "Student")
+            .Where(s => uniqueIds.Contains(s.Id) && s.User.Role == AccountRoles.Student)
             .ToListAsync();
 
         if (profiles.Count != uniqueIds.Count)
@@ -373,7 +382,7 @@ public class StudentService : IStudentService
             .Include(s => s.Group)
             .Include(s => s.Supervisor)
             .Include(s => s.Topic)
-            .FirstOrDefaultAsync(s => s.Id == id && s.User.Role == "Student");
+            .FirstOrDefaultAsync(s => s.Id == id && s.User.Role == AccountRoles.Student);
     }
 
     private async Task<(Group? group, AppUser? supervisor, string? error)> ResolveAssignmentAsync(
@@ -399,7 +408,12 @@ public class StudentService : IStudentService
         }
 
         var isUnchangedSupervisor = currentSupervisorId is not null && supervisorId == currentSupervisorId;
-        if (supervisor.Role != "Teacher" || (!supervisor.IsActive && !isUnchangedSupervisor))
+        // Phase 12 §4: a new supervisor's teacher role covers the student's group. The current one is
+        // kept as they are - also across a move to a group their role does not cover, because
+        // coverage is checked only for what is taken on.
+        if (supervisor.Role != AccountRoles.Staff
+            || (!isUnchangedSupervisor
+                && (!supervisor.IsActive || !await _dbContext.CoversGroupAsync(supervisor.Id, StaffRole.Teacher, groupId))))
         {
             return (null, null, OnboardingErrors.SupervisorMustBeActiveTeacher);
         }
@@ -438,6 +452,8 @@ public class StudentService : IStudentService
         ArchivedAt = profile.ArchivedAt,
         TopicId = profile.TopicId,
         TopicTitle = profile.Topic != null ? profile.Topic.Title : null,
+        // O1: whether clearing the topic from this form would be refused.
+        HasSubmissions = profile.StudentTasks.Any(t => t.Submissions.Any()),
         GroupId = profile.GroupId,
         GroupCode = profile.Group != null ? profile.Group.Code : null,
         SupervisorId = profile.SupervisorId,

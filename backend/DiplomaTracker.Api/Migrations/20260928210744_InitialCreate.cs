@@ -1,0 +1,1191 @@
+﻿using System;
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace DiplomaTracker.Api.Migrations
+{
+    /// <inheritdoc />
+    public partial class InitialCreate : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.CreateTable(
+                name: "ArchivedGroups",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    GroupCode = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
+                    AcademicYear = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
+                    DepartmentName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    FacultyName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    GroupDeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    SourceGroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ArchivedGroups", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Faculties",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    ShortName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Faculties", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "PlatformSettings",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false),
+                    RegistrationOpen = table.Column<bool>(type: "bit", nullable: false),
+                    TopicSelectionDeadline = table.Column<DateTime>(type: "datetime2", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_PlatformSettings", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Users",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    FirstName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    LastName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    Patronymic = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    Email = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: false),
+                    PasswordHash = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ClaimReopened = table.Column<bool>(type: "bit", nullable: false),
+                    Role = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    IsActive = table.Column<bool>(type: "bit", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Users", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ArchivedFiles",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ArchivedGroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    StudentName = table.Column<string>(type: "nvarchar(302)", maxLength: 302, nullable: false),
+                    StudentNumber = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
+                    SupervisorId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    StepTitle = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
+                    StepOrder = table.Column<int>(type: "int", nullable: false),
+                    Deadline = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    Version = table.Column<int>(type: "int", nullable: false),
+                    SubmittedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    IsLate = table.Column<bool>(type: "bit", nullable: false),
+                    Decision = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    Mark = table.Column<int>(type: "int", nullable: true),
+                    DecidedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    Kind = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    OriginalName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
+                    ContentType = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    SizeBytes = table.Column<long>(type: "bigint", nullable: false),
+                    StorageKey = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
+                    ArchivedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ArchivedFiles", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ArchivedFiles_ArchivedGroups_ArchivedGroupId",
+                        column: x => x.ArchivedGroupId,
+                        principalTable: "ArchivedGroups",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ArchivedReviews",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ArchivedGroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    SourceReviewId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    StudentName = table.Column<string>(type: "nvarchar(302)", maxLength: 302, nullable: false),
+                    StudentNumber = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
+                    SupervisorId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    StepTitle = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
+                    StepOrder = table.Column<int>(type: "int", nullable: false),
+                    Version = table.Column<int>(type: "int", nullable: false),
+                    ReviewerName = table.Column<string>(type: "nvarchar(302)", maxLength: 302, nullable: false),
+                    Seat = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Decision = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Mark = table.Column<int>(type: "int", nullable: true),
+                    Comment = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    DecidedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    ArchivedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ArchivedReviews", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ArchivedReviews_ArchivedGroups_ArchivedGroupId",
+                        column: x => x.ArchivedGroupId,
+                        principalTable: "ArchivedGroups",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Departments",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    FacultyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    ShortName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Departments", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Departments_Faculties_FacultyId",
+                        column: x => x.FacultyId,
+                        principalTable: "Faculties",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "DiplomaTaskTemplates",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    FacultyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Title = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    Order = table.Column<int>(type: "int", nullable: false),
+                    IsActive = table.Column<bool>(type: "bit", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_DiplomaTaskTemplates", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_DiplomaTaskTemplates_Faculties_FacultyId",
+                        column: x => x.FacultyId,
+                        principalTable: "Faculties",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "DocumentTemplates",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    OwnerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    StorageKey = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
+                    OriginalFileName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
+                    SizeBytes = table.Column<long>(type: "bigint", nullable: false),
+                    VisibleToAllStudents = table.Column<bool>(type: "bit", nullable: false),
+                    VisibleToAllTeachers = table.Column<bool>(type: "bit", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_DocumentTemplates", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_DocumentTemplates_Users_OwnerId",
+                        column: x => x.OwnerId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "RoleAssignments",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Role = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    ScopeKind = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    ScopeId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    CreatedById = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RoleAssignments", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_RoleAssignments_Users_CreatedById",
+                        column: x => x.CreatedById,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_RoleAssignments_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "RoutedDocuments",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    OwnerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Title = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    State = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    HolderId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    Purpose = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RoutedDocuments", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_RoutedDocuments_Users_HolderId",
+                        column: x => x.HolderId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_RoutedDocuments_Users_OwnerId",
+                        column: x => x.OwnerId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Directions",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    DepartmentId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    ManagerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Directions", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Directions_Departments_DepartmentId",
+                        column: x => x.DepartmentId,
+                        principalTable: "Departments",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Directions_Users_ManagerId",
+                        column: x => x.ManagerId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Groups",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    DepartmentId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Code = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    AcademicYear = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Groups", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Groups_Departments_DepartmentId",
+                        column: x => x.DepartmentId,
+                        principalTable: "Departments",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "DocumentTemplateTeachers",
+                columns: table => new
+                {
+                    TemplateId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    TeacherId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_DocumentTemplateTeachers", x => new { x.TemplateId, x.TeacherId });
+                    table.ForeignKey(
+                        name: "FK_DocumentTemplateTeachers_DocumentTemplates_TemplateId",
+                        column: x => x.TemplateId,
+                        principalTable: "DocumentTemplates",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_DocumentTemplateTeachers_Users_TeacherId",
+                        column: x => x.TeacherId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "DocumentEvents",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    DocumentId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Sequence = table.Column<int>(type: "int", nullable: false),
+                    Kind = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    ActorId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    ActorName = table.Column<string>(type: "nvarchar(302)", maxLength: 302, nullable: false),
+                    RecipientId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    RecipientName = table.Column<string>(type: "nvarchar(302)", maxLength: 302, nullable: true),
+                    Purpose = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    Comment = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    VersionNumber = table.Column<int>(type: "int", nullable: true),
+                    At = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_DocumentEvents", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_DocumentEvents_RoutedDocuments_DocumentId",
+                        column: x => x.DocumentId,
+                        principalTable: "RoutedDocuments",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_DocumentEvents_Users_ActorId",
+                        column: x => x.ActorId,
+                        principalTable: "Users",
+                        principalColumn: "Id");
+                    table.ForeignKey(
+                        name: "FK_DocumentEvents_Users_RecipientId",
+                        column: x => x.RecipientId,
+                        principalTable: "Users",
+                        principalColumn: "Id");
+                });
+
+            migrationBuilder.CreateTable(
+                name: "DocumentVersions",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    DocumentId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Number = table.Column<int>(type: "int", nullable: false),
+                    UploadedById = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    UploadedByName = table.Column<string>(type: "nvarchar(302)", maxLength: 302, nullable: false),
+                    OriginalName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
+                    StorageKey = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
+                    ContentType = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    SizeBytes = table.Column<long>(type: "bigint", nullable: false),
+                    UploadedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_DocumentVersions", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_DocumentVersions_RoutedDocuments_DocumentId",
+                        column: x => x.DocumentId,
+                        principalTable: "RoutedDocuments",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_DocumentVersions_Users_UploadedById",
+                        column: x => x.UploadedById,
+                        principalTable: "Users",
+                        principalColumn: "Id");
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Topics",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Title = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(4000)", maxLength: 4000, nullable: true),
+                    SupervisorId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    DirectionId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    CreatedById = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    Origin = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Topics", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Topics_Directions_DirectionId",
+                        column: x => x.DirectionId,
+                        principalTable: "Directions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Topics_Users_CreatedById",
+                        column: x => x.CreatedById,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Topics_Users_SupervisorId",
+                        column: x => x.SupervisorId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "DocumentTemplateGroups",
+                columns: table => new
+                {
+                    TemplateId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    GroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_DocumentTemplateGroups", x => new { x.TemplateId, x.GroupId });
+                    table.ForeignKey(
+                        name: "FK_DocumentTemplateGroups_DocumentTemplates_TemplateId",
+                        column: x => x.TemplateId,
+                        principalTable: "DocumentTemplates",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_DocumentTemplateGroups_Groups_GroupId",
+                        column: x => x.GroupId,
+                        principalTable: "Groups",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "GroupTasks",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    GroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    DiplomaTaskTemplateId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    StartDate = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    Deadline = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    StandardsControllerId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    StandardsControllerAssignedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_GroupTasks", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_GroupTasks_DiplomaTaskTemplates_DiplomaTaskTemplateId",
+                        column: x => x.DiplomaTaskTemplateId,
+                        principalTable: "DiplomaTaskTemplates",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_GroupTasks_Groups_GroupId",
+                        column: x => x.GroupId,
+                        principalTable: "Groups",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_GroupTasks_Users_StandardsControllerId",
+                        column: x => x.StandardsControllerId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "StudentProfiles",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    StudentNumber = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
+                    StudentNumberCanonical = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
+                    GroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    SupervisorId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    TopicId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    ArchivedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_StudentProfiles", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_StudentProfiles_Groups_GroupId",
+                        column: x => x.GroupId,
+                        principalTable: "Groups",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_StudentProfiles_Topics_TopicId",
+                        column: x => x.TopicId,
+                        principalTable: "Topics",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_StudentProfiles_Users_SupervisorId",
+                        column: x => x.SupervisorId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_StudentProfiles_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "StudentTasks",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    StudentProfileId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    GroupTaskId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Mark = table.Column<int>(type: "int", nullable: true),
+                    CompletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_StudentTasks", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_StudentTasks_GroupTasks_GroupTaskId",
+                        column: x => x.GroupTaskId,
+                        principalTable: "GroupTasks",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_StudentTasks_StudentProfiles_StudentProfileId",
+                        column: x => x.StudentProfileId,
+                        principalTable: "StudentProfiles",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "TopicReservations",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    TopicId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    TopicTitle = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
+                    TopicDescription = table.Column<string>(type: "nvarchar(4000)", maxLength: 4000, nullable: true),
+                    StudentProfileId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    DecisionComment = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    DecidedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    ContentChangedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_TopicReservations", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_TopicReservations_StudentProfiles_StudentProfileId",
+                        column: x => x.StudentProfileId,
+                        principalTable: "StudentProfiles",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_TopicReservations_Topics_TopicId",
+                        column: x => x.TopicId,
+                        principalTable: "Topics",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "StudentTaskReviewers",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    StudentTaskId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ReviewerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    AddedById = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    AddedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_StudentTaskReviewers", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_StudentTaskReviewers_StudentTasks_StudentTaskId",
+                        column: x => x.StudentTaskId,
+                        principalTable: "StudentTasks",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_StudentTaskReviewers_Users_AddedById",
+                        column: x => x.AddedById,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_StudentTaskReviewers_Users_ReviewerId",
+                        column: x => x.ReviewerId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Submissions",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    StudentTaskId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Version = table.Column<int>(type: "int", nullable: false),
+                    Message = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    SubmittedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    IsLate = table.Column<bool>(type: "bit", nullable: false),
+                    Decision = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    DecidedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Submissions", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Submissions_StudentTasks_StudentTaskId",
+                        column: x => x.StudentTaskId,
+                        principalTable: "StudentTasks",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ReservationDecisions",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ReservationId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    DeciderId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    DeciderWasAdministrator = table.Column<bool>(type: "bit", nullable: false),
+                    Kind = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Comment = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    DecidedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ReservationDecisions", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ReservationDecisions_TopicReservations_ReservationId",
+                        column: x => x.ReservationId,
+                        principalTable: "TopicReservations",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_ReservationDecisions_Users_DeciderId",
+                        column: x => x.DeciderId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "SubmissionFiles",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    SubmissionId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Kind = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    OriginalName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
+                    StorageKey = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
+                    ContentType = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    SizeBytes = table.Column<long>(type: "bigint", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SubmissionFiles", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_SubmissionFiles_Submissions_SubmissionId",
+                        column: x => x.SubmissionId,
+                        principalTable: "Submissions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "SubmissionReviews",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    SubmissionId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ReviewerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Seat = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Decision = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Mark = table.Column<int>(type: "int", nullable: true),
+                    Comment = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    DecidedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SubmissionReviews", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_SubmissionReviews_Submissions_SubmissionId",
+                        column: x => x.SubmissionId,
+                        principalTable: "Submissions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_SubmissionReviews_Users_ReviewerId",
+                        column: x => x.ReviewerId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.InsertData(
+                table: "PlatformSettings",
+                columns: new[] { "Id", "RegistrationOpen", "TopicSelectionDeadline" },
+                values: new object[] { 1, false, null });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchivedFiles_ArchivedGroupId_StorageKey",
+                table: "ArchivedFiles",
+                columns: new[] { "ArchivedGroupId", "StorageKey" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchivedFiles_ArchivedGroupId_StudentName_StepOrder_Version",
+                table: "ArchivedFiles",
+                columns: new[] { "ArchivedGroupId", "StudentName", "StepOrder", "Version" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchivedFiles_SupervisorId",
+                table: "ArchivedFiles",
+                column: "SupervisorId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchivedGroups_AcademicYear_GroupCode",
+                table: "ArchivedGroups",
+                columns: new[] { "AcademicYear", "GroupCode" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchivedGroups_SourceGroupId",
+                table: "ArchivedGroups",
+                column: "SourceGroupId",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchivedReviews_ArchivedGroupId_SourceReviewId",
+                table: "ArchivedReviews",
+                columns: new[] { "ArchivedGroupId", "SourceReviewId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchivedReviews_SupervisorId",
+                table: "ArchivedReviews",
+                column: "SupervisorId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Departments_FacultyId_Name",
+                table: "Departments",
+                columns: new[] { "FacultyId", "Name" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Departments_FacultyId_ShortName",
+                table: "Departments",
+                columns: new[] { "FacultyId", "ShortName" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DiplomaTaskTemplates_FacultyId",
+                table: "DiplomaTaskTemplates",
+                column: "FacultyId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DiplomaTaskTemplates_FacultyId_Order",
+                table: "DiplomaTaskTemplates",
+                columns: new[] { "FacultyId", "Order" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DiplomaTaskTemplates_Title",
+                table: "DiplomaTaskTemplates",
+                column: "Title");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Directions_DepartmentId_Name",
+                table: "Directions",
+                columns: new[] { "DepartmentId", "Name" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Directions_ManagerId",
+                table: "Directions",
+                column: "ManagerId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentEvents_ActorId",
+                table: "DocumentEvents",
+                column: "ActorId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentEvents_DocumentId_Sequence",
+                table: "DocumentEvents",
+                columns: new[] { "DocumentId", "Sequence" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentEvents_RecipientId",
+                table: "DocumentEvents",
+                column: "RecipientId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentTemplateGroups_GroupId",
+                table: "DocumentTemplateGroups",
+                column: "GroupId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentTemplates_OwnerId",
+                table: "DocumentTemplates",
+                column: "OwnerId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentTemplateTeachers_TeacherId",
+                table: "DocumentTemplateTeachers",
+                column: "TeacherId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentVersions_DocumentId_Number",
+                table: "DocumentVersions",
+                columns: new[] { "DocumentId", "Number" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentVersions_UploadedById",
+                table: "DocumentVersions",
+                column: "UploadedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Faculties_Name",
+                table: "Faculties",
+                column: "Name",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Faculties_ShortName",
+                table: "Faculties",
+                column: "ShortName",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Groups_AcademicYear_Code",
+                table: "Groups",
+                columns: new[] { "AcademicYear", "Code" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Groups_DepartmentId",
+                table: "Groups",
+                column: "DepartmentId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_GroupTasks_DiplomaTaskTemplateId",
+                table: "GroupTasks",
+                column: "DiplomaTaskTemplateId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_GroupTasks_GroupId_DiplomaTaskTemplateId",
+                table: "GroupTasks",
+                columns: new[] { "GroupId", "DiplomaTaskTemplateId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_GroupTasks_StandardsControllerId",
+                table: "GroupTasks",
+                column: "StandardsControllerId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ReservationDecisions_DeciderId",
+                table: "ReservationDecisions",
+                column: "DeciderId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ReservationDecisions_ReservationId_DecidedAt",
+                table: "ReservationDecisions",
+                columns: new[] { "ReservationId", "DecidedAt" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RoleAssignments_CreatedById",
+                table: "RoleAssignments",
+                column: "CreatedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RoleAssignments_ScopeKind_ScopeId",
+                table: "RoleAssignments",
+                columns: new[] { "ScopeKind", "ScopeId" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RoleAssignments_UserId_Role_ScopeKind_ScopeId",
+                table: "RoleAssignments",
+                columns: new[] { "UserId", "Role", "ScopeKind", "ScopeId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RoutedDocuments_HolderId_State_Purpose",
+                table: "RoutedDocuments",
+                columns: new[] { "HolderId", "State", "Purpose" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RoutedDocuments_OwnerId",
+                table: "RoutedDocuments",
+                column: "OwnerId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_StudentProfiles_GroupId",
+                table: "StudentProfiles",
+                column: "GroupId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_StudentProfiles_StudentNumberCanonical",
+                table: "StudentProfiles",
+                column: "StudentNumberCanonical",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_StudentProfiles_SupervisorId",
+                table: "StudentProfiles",
+                column: "SupervisorId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_StudentProfiles_TopicId",
+                table: "StudentProfiles",
+                column: "TopicId",
+                unique: true,
+                filter: "[TopicId] IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_StudentProfiles_UserId",
+                table: "StudentProfiles",
+                column: "UserId",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_StudentTaskReviewers_AddedById",
+                table: "StudentTaskReviewers",
+                column: "AddedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_StudentTaskReviewers_ReviewerId",
+                table: "StudentTaskReviewers",
+                column: "ReviewerId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_StudentTaskReviewers_StudentTaskId_ReviewerId",
+                table: "StudentTaskReviewers",
+                columns: new[] { "StudentTaskId", "ReviewerId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_StudentTasks_GroupTaskId",
+                table: "StudentTasks",
+                column: "GroupTaskId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_StudentTasks_StudentProfileId_GroupTaskId",
+                table: "StudentTasks",
+                columns: new[] { "StudentProfileId", "GroupTaskId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_SubmissionFiles_SubmissionId",
+                table: "SubmissionFiles",
+                column: "SubmissionId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_SubmissionReviews_ReviewerId",
+                table: "SubmissionReviews",
+                column: "ReviewerId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_SubmissionReviews_SubmissionId_ReviewerId",
+                table: "SubmissionReviews",
+                columns: new[] { "SubmissionId", "ReviewerId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Submissions_Decision_SubmittedAt",
+                table: "Submissions",
+                columns: new[] { "Decision", "SubmittedAt" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Submissions_StudentTaskId_Version",
+                table: "Submissions",
+                columns: new[] { "StudentTaskId", "Version" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TopicReservations_ActivePerTopic",
+                table: "TopicReservations",
+                column: "TopicId",
+                unique: true,
+                filter: "[TopicId] IS NOT NULL AND [Status] IN ('Pending', 'Returned', 'Approved')");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TopicReservations_ApprovedPerStudent",
+                table: "TopicReservations",
+                column: "StudentProfileId",
+                unique: true,
+                filter: "[Status] = 'Approved'");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TopicReservations_OpenPerStudent",
+                table: "TopicReservations",
+                column: "StudentProfileId",
+                unique: true,
+                filter: "[Status] IN ('Pending', 'Returned')");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TopicReservations_StudentProfileId_CreatedAt",
+                table: "TopicReservations",
+                columns: new[] { "StudentProfileId", "CreatedAt" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Topics_CreatedById",
+                table: "Topics",
+                column: "CreatedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Topics_DirectionId_Status",
+                table: "Topics",
+                columns: new[] { "DirectionId", "Status" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Topics_SupervisorId",
+                table: "Topics",
+                column: "SupervisorId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Users_Email",
+                table: "Users",
+                column: "Email",
+                unique: true);
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropTable(
+                name: "ArchivedFiles");
+
+            migrationBuilder.DropTable(
+                name: "ArchivedReviews");
+
+            migrationBuilder.DropTable(
+                name: "DocumentEvents");
+
+            migrationBuilder.DropTable(
+                name: "DocumentTemplateGroups");
+
+            migrationBuilder.DropTable(
+                name: "DocumentTemplateTeachers");
+
+            migrationBuilder.DropTable(
+                name: "DocumentVersions");
+
+            migrationBuilder.DropTable(
+                name: "PlatformSettings");
+
+            migrationBuilder.DropTable(
+                name: "ReservationDecisions");
+
+            migrationBuilder.DropTable(
+                name: "RoleAssignments");
+
+            migrationBuilder.DropTable(
+                name: "StudentTaskReviewers");
+
+            migrationBuilder.DropTable(
+                name: "SubmissionFiles");
+
+            migrationBuilder.DropTable(
+                name: "SubmissionReviews");
+
+            migrationBuilder.DropTable(
+                name: "ArchivedGroups");
+
+            migrationBuilder.DropTable(
+                name: "DocumentTemplates");
+
+            migrationBuilder.DropTable(
+                name: "RoutedDocuments");
+
+            migrationBuilder.DropTable(
+                name: "TopicReservations");
+
+            migrationBuilder.DropTable(
+                name: "Submissions");
+
+            migrationBuilder.DropTable(
+                name: "StudentTasks");
+
+            migrationBuilder.DropTable(
+                name: "GroupTasks");
+
+            migrationBuilder.DropTable(
+                name: "StudentProfiles");
+
+            migrationBuilder.DropTable(
+                name: "DiplomaTaskTemplates");
+
+            migrationBuilder.DropTable(
+                name: "Groups");
+
+            migrationBuilder.DropTable(
+                name: "Topics");
+
+            migrationBuilder.DropTable(
+                name: "Directions");
+
+            migrationBuilder.DropTable(
+                name: "Departments");
+
+            migrationBuilder.DropTable(
+                name: "Users");
+
+            migrationBuilder.DropTable(
+                name: "Faculties");
+        }
+    }
+}

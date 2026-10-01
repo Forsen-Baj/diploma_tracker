@@ -11,7 +11,14 @@ public static class WorkflowErrors
     public const string AlreadyApproved = "step.alreadyApproved";
     public const string SubmissionNotFound = "submission.notFound";
     public const string SubmissionAlreadyDecided = "submission.alreadyDecided";
-    public const string NotReviewer = "submission.notReviewer";
+    public const string NotOnPanel = "review.notOnPanel";
+    public const string SeatSatisfied = "review.seatSatisfied";
+    public const string PanelReviewerInvalid = "panel.reviewerInvalid";
+    public const string PanelReviewerIsSupervisor = "panel.reviewerIsSupervisor";
+    public const string PanelReviewerExists = "panel.reviewerExists";
+    public const string PanelReviewerNotFound = "panel.reviewerNotFound";
+    public const string PanelNotAllowed = "panel.notAllowed";
+    public const string PanelChanged = "panel.changed";
     public const string MainFileMissing = "file.mainMissing";
     public const string FileTypeNotAllowed = "file.typeNotAllowed";
     public const string FileTooLarge = "file.tooLarge";
@@ -31,7 +38,14 @@ public static class WorkflowErrors
         new(AlreadyApproved, StatusCodes.Status409Conflict, "This step is already approved."),
         new(SubmissionNotFound, StatusCodes.Status404NotFound, "Submission not found."),
         new(SubmissionAlreadyDecided, StatusCodes.Status409Conflict, "This submission has already been decided."),
-        new(NotReviewer, StatusCodes.Status403Forbidden, "You are not a reviewer of this student."),
+        new(NotOnPanel, StatusCodes.Status403Forbidden, "You are not on this step's review panel."),
+        new(SeatSatisfied, StatusCodes.Status409Conflict, "Your approval of this step is already recorded."),
+        new(PanelReviewerInvalid, StatusCodes.Status400BadRequest, "Choose an administrator or an active teacher whose role covers the student's group."),
+        new(PanelReviewerIsSupervisor, StatusCodes.Status409Conflict, "The student's supervisor already reviews this step."),
+        new(PanelReviewerExists, StatusCodes.Status409Conflict, "This person already reviews this step."),
+        new(PanelReviewerNotFound, StatusCodes.Status404NotFound, "This person is not an extra reviewer of this step."),
+        new(PanelNotAllowed, StatusCodes.Status403Forbidden, "You cannot change the reviewers of this step."),
+        new(PanelChanged, StatusCodes.Status409Conflict, "The step changed while you were editing its reviewers. Reload and try again."),
         new(MainFileMissing, StatusCodes.Status400BadRequest, "Attach the main document."),
         new(FileTypeNotAllowed, StatusCodes.Status400BadRequest, "This file type is not allowed."),
         new(FileTooLarge, StatusCodes.Status400BadRequest, "A file is larger than 20 MB."),

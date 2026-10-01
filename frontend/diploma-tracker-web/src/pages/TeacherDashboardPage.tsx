@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { getTeacherDashboard } from '../api/dashboardApi'
 import { useErrorMessage } from '../api/useErrorMessage'
+import { useAuth } from '../auth/useAuth'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -15,12 +16,13 @@ import { GroupProgressCard } from '../components/dashboard/GroupProgressCard'
 import { GroupTable } from '../components/dashboard/GroupTable'
 import { nextGroupSort, sortGroupRows, type GroupSort } from '../components/dashboard/groupSort'
 import { StepStatusBadge } from '../components/workflow/StepStatusBadge'
-import type { OverdueStepRow, ReviewQueueItem, SupervisedStudentRow, TeacherDashboard } from '../api/types'
+import type { LateAwaitingReviewRow, OverdueStepRow, ReviewQueueItem, SupervisedStudentRow, TeacherDashboard } from '../api/types'
 
 export function TeacherDashboardPage() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const errorMessage = useErrorMessage()
+  const { user } = useAuth()
 
   const [dashboard, setDashboard] = useState<TeacherDashboard | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -79,22 +81,45 @@ export function TeacherDashboardPage() {
     }
   ]
 
+  // Bug 5 (task 7): a submitted step already past its deadline used to appear in neither list -
+  // "Overdue steps" (above) deliberately excludes Submitted steps, since it exists for steps
+  // nobody has touched. This is the missing half: late submissions still waiting for the caller's
+  // own decision (R1), oldest first - same row shape the other dashboard lists use.
+  //
+  // Review I3 (task 7 fix round 1): the owner's rule covers two different cases - a submission
+  // made after the deadline, and one made ON TIME that is still waiting after the deadline has
+  // since passed. The old single "days overdue" column labelled both as "submitted late", which
+  // is a wrong statement about a student's record when only the teacher is running late. Each row
+  // now shows exactly one of the two, from the row's own isLate flag.
+  const lateAwaitingReviewColumns: DataTableColumn<LateAwaitingReviewRow>[] = [
+    { key: 'student', header: t('steps.student'), render: (row) => row.studentName },
+    { key: 'group', header: t('review.group'), render: (row) => row.groupCode },
+    { key: 'step', header: t('steps.step'), render: (row) => `${row.stepOrder}. ${row.stepTitle}` },
+    { key: 'submittedAt', header: t('review.submittedAt'), render: (row) => dateTimeFormat.format(new Date(row.submittedAt)) },
+    {
+      key: 'lateness',
+      header: t('dashboard.pastDue'),
+      render: (row) =>
+        row.isLate ? (
+          <Badge tone="warning">{t('steps.late')}</Badge>
+        ) : (
+          <span className="text-danger">{t('dashboard.waitingPastDeadline', { count: row.daysOverdue })}</span>
+        )
+    }
+  ]
+
+  // Review I6 (task 7 fix round 1): the badge used to sit inline after the step title in one cell,
+  // so its x-position moved with every row's title length - the same zig-zag bug 2 already fixed
+  // on the Review page. Its own column fixes it here too.
   const supervisedColumns: DataTableColumn<SupervisedStudentRow>[] = [
     { key: 'student', header: t('steps.student'), render: (row) => row.studentName },
     { key: 'group', header: t('review.group'), render: (row) => row.groupCode },
     { key: 'topic', header: t('groupDetails.topic'), render: (row) => row.topicTitle ?? t('dashboard.noTopic') },
+    { key: 'currentStep', header: t('dashboard.currentStep'), render: (row) => row.currentStepTitle ?? '—' },
     {
-      key: 'currentStep',
-      header: t('dashboard.currentStep'),
-      render: (row) =>
-        row.currentStepStatus ? (
-          <span className="inline-flex items-center gap-2">
-            {row.currentStepTitle}
-            <StepStatusBadge status={row.currentStepStatus} />
-          </span>
-        ) : (
-          '—'
-        )
+      key: 'currentStepStatus',
+      header: t('common.status'),
+      render: (row) => (row.currentStepStatus ? <StepStatusBadge status={row.currentStepStatus} /> : null)
     },
     {
       key: 'nextDeadline',
@@ -103,9 +128,18 @@ export function TeacherDashboardPage() {
     }
   ]
 
+  // Design 2026-09-27 (phase 12) §4.2: one dashboard for the three staff roles, titled after the
+  // role the user acts in. A standards controller supervises no one, so that card is left out.
+  const role = user?.role
+  const title =
+    role === 'DirectionManager' ? t('dashboard.managerTitle')
+      : role === 'StandardsController' ? t('dashboard.controllerTitle')
+        : t('dashboard.teacherTitle')
+  const showSupervised = role !== 'StandardsController'
+
   return (
     <>
-      <PageHeader title={t('dashboard.teacherTitle')} />
+      <PageHeader title={title} />
 
       {isLoading && (
         <div className="flex justify-center py-10">
@@ -123,7 +157,7 @@ export function TeacherDashboardPage() {
         <>
           <div className="mb-6 grid grid-cols-2 gap-4">
             <StatTile label={t('dashboard.waiting')} value={dashboard.waitingReviews} onClick={() => navigate('/review')} />
-            <StatTile label={t('nav.groups')} value={dashboard.groups.length} onClick={() => navigate('/teacher/groups')} />
+            <StatTile label={t('nav.groups')} value={dashboard.groups.length} onClick={() => navigate('/staff/groups')} />
           </div>
 
           <Card title={t('dashboard.latestForReview')} className="mb-6">
@@ -153,14 +187,26 @@ export function TeacherDashboardPage() {
             />
           </Card>
 
-          <Card title={t('dashboard.supervisedStudents')} className="mb-6">
+          <Card title={t('dashboard.lateAwaitingReview')} className="mb-6">
             <DataTable
-              columns={supervisedColumns}
-              rows={dashboard.supervisedStudents}
-              getRowKey={(row) => row.studentProfileId}
-              emptyState={<EmptyState message={t('dashboard.supervisedEmpty')} />}
+              columns={lateAwaitingReviewColumns}
+              rows={dashboard.lateAwaitingReview}
+              getRowKey={(row) => row.studentTaskId}
+              emptyState={<EmptyState message={t('dashboard.lateAwaitingReviewEmpty')} />}
+              onRowClick={(row) => navigate(`/review/steps/${row.studentTaskId}`)}
             />
           </Card>
+
+          {showSupervised && (
+            <Card title={t('dashboard.supervisedStudents')} className="mb-6">
+              <DataTable
+                columns={supervisedColumns}
+                rows={dashboard.supervisedStudents}
+                getRowKey={(row) => row.studentProfileId}
+                emptyState={<EmptyState message={t('dashboard.supervisedEmpty')} />}
+              />
+            </Card>
+          )}
 
           <Card title={t('dashboard.groupsBreakdown')} className="mb-6">
             <GroupTable rows={sortedGroups} sort={groupSort} onSortChange={(key) => setGroupSort((current) => nextGroupSort(current, key))} />

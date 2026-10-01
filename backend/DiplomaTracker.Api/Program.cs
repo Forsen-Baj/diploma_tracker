@@ -57,7 +57,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<ITeacherService, TeacherService>();
+builder.Services.AddScoped<IStaffService, StaffService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IStudentService, StudentService>();
 builder.Services.AddScoped<IGroupService, GroupService>();
@@ -69,12 +69,14 @@ builder.Services.AddScoped<IRegistrationService, RegistrationService>();
 builder.Services.AddScoped<IStudentImportService, StudentImportService>();
 builder.Services.AddScoped<ITopicSettingsService, TopicSettingsService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
+builder.Services.AddScoped<IDirectionService, DirectionService>();
 builder.Services.AddScoped<IReservationService, ReservationService>();
 builder.Services.AddScoped<IAccessScope, AccessScope>();
 builder.Services.AddScoped<IStudentWorkflowService, StudentWorkflowService>();
 builder.Services.AddScoped<IDocumentTemplateService, DocumentTemplateService>();
 builder.Services.AddScoped<IArchiveService, ArchiveService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<SessionStateValidator>();
 
 builder.Services.AddSingleton<IFileStorage>(serviceProvider =>

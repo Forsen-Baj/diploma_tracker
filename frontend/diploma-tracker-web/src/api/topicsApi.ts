@@ -30,6 +30,8 @@ export async function deleteTopic(id: string): Promise<void> {
   await apiRequest<void>(`/api/topics/${id}`, { method: 'DELETE' })
 }
 
-export function getTopicSupervisors(): Promise<SupervisorOption[]> {
-  return apiRequest<SupervisorOption[]>('/api/topics/supervisors')
+/** Teachers a topic may name (phase 12 §4): for a student, those who cover their group; with a
+ *  department, those who cover it; otherwise every active teacher. */
+export function getTopicSupervisors(departmentId?: string): Promise<SupervisorOption[]> {
+  return apiRequest<SupervisorOption[]>(`/api/topics/supervisors${departmentId ? `?departmentId=${departmentId}` : ''}`)
 }

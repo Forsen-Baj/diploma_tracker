@@ -11,7 +11,8 @@ import { TeacherDashboardPage } from './pages/TeacherDashboardPage'
 import { StudentDashboardPage } from './pages/StudentDashboardPage'
 import { StudentMyTasksPage } from './pages/StudentMyTasksPage'
 import { StudentTaskDetailsPage } from './pages/StudentTaskDetailsPage'
-import { TeachersPage } from './pages/TeachersPage'
+import { StaffPage } from './pages/StaffPage'
+import { StaffMemberPage } from './pages/StaffMemberPage'
 import { StudentsPage } from './pages/StudentsPage'
 import { GroupsPage } from './pages/GroupsPage'
 import { GroupDetailsPage } from './pages/GroupDetailsPage'
@@ -27,8 +28,10 @@ import { ReviewStepPage } from './pages/ReviewStepPage'
 import { TeacherGroupsPage } from './pages/TeacherGroupsPage'
 import { GroupProgressPage } from './pages/GroupProgressPage'
 import { DocumentsPage } from './pages/DocumentsPage'
+import { DocumentPage } from './pages/DocumentPage'
 import { ArchivePage } from './pages/ArchivePage'
 import { ArchivedGroupPage } from './pages/ArchivedGroupPage'
+import { DirectionsPage } from './pages/DirectionsPage'
 
 function App() {
   return (
@@ -42,17 +45,21 @@ function App() {
           <Route path="health" element={<HealthPage />} />
           <Route path="account" element={<AccountPage />} />
           <Route path="documents" element={<DocumentsPage />} />
-          <Route element={<ProtectedRoute allowedRoles={['Admin', 'Teacher']} />}>
-            <Route path="task-templates" element={<TaskTemplatesPage />} />
+          <Route path="documents/:id" element={<DocumentPage />} />
+          <Route element={<ProtectedRoute allowedRoles={['Admin', 'Teacher', 'DirectionManager', 'StandardsController']} />}>
             <Route path="review" element={<ReviewQueuePage />} />
             <Route path="review/steps/:id" element={<ReviewStepPage />} />
             <Route path="groups/:groupId/progress" element={<GroupProgressPage />} />
+          </Route>
+          <Route element={<ProtectedRoute allowedRoles={['Admin', 'Teacher']} />}>
+            <Route path="task-templates" element={<TaskTemplatesPage />} />
             <Route path="archive" element={<ArchivePage />} />
             <Route path="archive/:id" element={<ArchivedGroupPage />} />
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['Admin']} />}>
             <Route path="admin/dashboard" element={<AdminDashboardPage />} />
-            <Route path="admin/teachers" element={<TeachersPage />} />
+            <Route path="admin/staff" element={<StaffPage />} />
+            <Route path="admin/staff/:id" element={<StaffMemberPage />} />
             <Route path="admin/students" element={<StudentsPage />} />
             <Route path="admin/faculties" element={<FacultiesPage />} />
             <Route path="admin/groups" element={<GroupsPage />} />
@@ -61,11 +68,16 @@ function App() {
             <Route path="admin/settings" element={<AdminSettingsPage />} />
             <Route path="admins" element={<AdminsPage />} />
           </Route>
+          <Route element={<ProtectedRoute allowedRoles={['Teacher', 'DirectionManager', 'StandardsController']} />}>
+            <Route path="staff/dashboard" element={<TeacherDashboardPage />} />
+            <Route path="staff/groups" element={<TeacherGroupsPage />} />
+            <Route path="staff/groups/:groupId" element={<GroupProgressPage />} />
+          </Route>
           <Route element={<ProtectedRoute allowedRoles={['Teacher']} />}>
-            <Route path="teacher/dashboard" element={<TeacherDashboardPage />} />
-            <Route path="teacher/topics" element={<TeacherTopicsPage />} />
-            <Route path="teacher/groups" element={<TeacherGroupsPage />} />
-            <Route path="teacher/groups/:groupId" element={<GroupProgressPage />} />
+            <Route path="staff/topics" element={<TeacherTopicsPage />} />
+          </Route>
+          <Route element={<ProtectedRoute allowedRoles={['DirectionManager']} />}>
+            <Route path="staff/directions" element={<DirectionsPage />} />
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['Student']} />}>
             <Route path="student/dashboard" element={<StudentDashboardPage />} />

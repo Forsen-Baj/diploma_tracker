@@ -14,7 +14,7 @@ public static class AdminBootstrapper
         BootstrapSettings settings,
         DateTime now)
     {
-        if (await dbContext.Users.AnyAsync(u => u.Role == "Admin"))
+        if (await dbContext.Users.AnyAsync(u => u.Role == AccountRoles.Admin))
         {
             return false;
         }
@@ -38,7 +38,7 @@ public static class AdminBootstrapper
             LastName = "Administrator",
             Email = settings.AdminEmail.Trim().ToLowerInvariant(),
             PasswordHash = passwordHasher.HashPassword(settings.AdminPassword),
-            Role = "Admin",
+            Role = AccountRoles.Admin,
             IsActive = true,
             CreatedAt = now,
             UpdatedAt = now

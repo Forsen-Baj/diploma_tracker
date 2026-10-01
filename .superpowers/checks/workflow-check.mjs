@@ -1,4 +1,4 @@
-import { createCleanup, giveTopic, removeGroup } from './checkCleanup.mjs'
+import { createCleanup, giveTopic, makeStaff, removeGroup } from './checkCleanup.mjs'
 
 const API = 'http://localhost:5000'
 const stamp = Date.now().toString().slice(-6)
@@ -101,16 +101,21 @@ async function runChecks() {
 const admin = await login('admin@diploma.local', 'Admin123!')
 const teacher = await login('teacher@diploma.local', 'Teacher123!')
 
-// Arrange: group with two steps, a student, the seed teacher as reviewer, a second teacher unrelated
+// Arrange: group with two steps, a student. The seed teacher supervises the student (through
+// giveTopic below), and a second teacher of the department has nothing to do with them.
 const department = (await call('GET', '/api/departments', { token: admin })).body[0]
 const group = (await call('POST', '/api/groups', { token: admin, json: { departmentId: department.id, code: `WF${stamp}`, academicYear: '2026/2027', description: '' } })).body
 cleanup.add(`group ${group.code}`, () => removeGroup(call, admin, group))
-const teachers = (await call('GET', '/api/teachers', { token: admin })).body
+const teachers = (await call('GET', '/api/staff', { token: admin })).body
 const teacherId = teachers.find((t) => t.email === 'teacher@diploma.local').id
-await call('POST', `/api/groups/${group.id}/reviewers`, { token: admin, json: { reviewerId: teacherId } })
 const otherTeacherEmail = `other.${stamp}@diploma.local`
-const otherTeacherId = (await call('POST', '/api/teachers', { token: admin, json: { firstName: 'Other', lastName: 'Teacher', email: otherTeacherEmail, password: 'Teacher456!' } })).body.id
-cleanup.add(`teacher ${otherTeacherEmail} -> deactivate`, () => call('PATCH', `/api/teachers/${otherTeacherId}/deactivate`, { token: admin }))
+// Phase 12: a teacher of the same department with no student and no seat here.
+const otherTeacherId = await makeStaff(call, cleanup, admin, {
+  email: otherTeacherEmail,
+  firstName: 'Other',
+  lastName: 'Teacher',
+  roles: [{ role: 'Teacher', scopeKind: 'Department', scopeId: department.id }]
+})
 const otherTeacher = await login(otherTeacherEmail, 'Teacher456!')
 
 // Step templates are per faculty (Order is unique per faculty); a template from a different
@@ -165,7 +170,11 @@ const queue = (await call('GET', '/api/review/queue', { token: teacher })).body.
 const queued = queue.find((item) => item.studentTaskId === steps[0].id)
 check('14 queue contains submission', Boolean(queued), true)
 check('15 unrelated teacher queue empty for it', (await call('GET', '/api/review/queue', { token: otherTeacher })).body.items.some((item) => item.studentTaskId === steps[0].id), false)
-check('16 unrelated teacher cannot decide', (await call('POST', `/api/submissions/${queued.submissionId}/return`, { token: otherTeacher, json: { comment: 'x' } })).body.code, 'submission.notReviewer')
+// M3: otherTeacher has no seat on this group at all (not a reviewer, not the supervisor), so the
+// step is invisible to them - the same 404 a missing submission gets, not the 403 that used to
+// leak that the submission exists. `review.notOnPanel` is reserved for a caller who CAN see the
+// step but holds no seat (a group reviewer - covered by review-panels-check.mjs #13).
+check('16 unrelated teacher cannot decide', (await call('POST', `/api/submissions/${queued.submissionId}/return`, { token: otherTeacher, json: { comment: 'x' } })).body.code, 'submission.notFound')
 check('17 return requires comment', (await call('POST', `/api/submissions/${queued.submissionId}/return`, { token: teacher, json: {} })).body.code, 'review.commentRequired')
 const returned = await call('POST', `/api/submissions/${queued.submissionId}/return`, { token: teacher, json: { comment: 'Add references' } })
 check('18 returned', returned.body.status, 'Returned')

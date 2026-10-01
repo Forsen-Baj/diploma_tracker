@@ -10,6 +10,7 @@ public class DashboardService : IDashboardService
 {
     private const int LatestForReviewCount = 5;
     private const int OverdueStepsCount = 20;
+    private const int LateAwaitingReviewCount = 10;
 
     private readonly AppDbContext _dbContext;
     private readonly IAccessScope _accessScope;
@@ -36,22 +37,24 @@ public class DashboardService : IDashboardService
             return (null, error);
         }
 
-        var latest = await _dbContext.Submissions.AsNoTracking()
-            .Where(s => s.StudentTask.StudentProfile.UserId == user.UserId && s.Decision != null)
-            .OrderByDescending(s => s.DecidedAt)
-            .ThenByDescending(s => s.Id)
-            .Select(s => new LatestDecisionResponse
+        // Design 2026-09-24 §3.6: the latest decision is the latest reviewer's decision - on a panel,
+        // one approval of several is news to the student too.
+        var latest = await _dbContext.SubmissionReviews.AsNoTracking()
+            .Where(r => r.Submission.StudentTask.StudentProfile.UserId == user.UserId)
+            .OrderByDescending(r => r.DecidedAt)
+            .ThenByDescending(r => r.Id)
+            .Select(r => new LatestDecisionResponse
             {
-                StudentTaskId = s.StudentTaskId,
-                SubmissionId = s.Id,
-                StepTitle = s.StudentTask.GroupTask.DiplomaTaskTemplate.Title,
-                StepOrder = s.StudentTask.GroupTask.DiplomaTaskTemplate.Order,
-                Version = s.Version,
-                Decision = s.Decision!.ToString()!,
-                Mark = s.Mark,
-                ReviewerName = s.Reviewer == null ? null : s.Reviewer.LastName + " " + s.Reviewer.FirstName,
-                ReviewerComment = s.ReviewerComment,
-                DecidedAt = s.DecidedAt!.Value
+                StudentTaskId = r.Submission.StudentTaskId,
+                SubmissionId = r.SubmissionId,
+                StepTitle = r.Submission.StudentTask.GroupTask.DiplomaTaskTemplate.Title,
+                StepOrder = r.Submission.StudentTask.GroupTask.DiplomaTaskTemplate.Order,
+                Version = r.Submission.Version,
+                Decision = r.Decision.ToString(),
+                Mark = r.Mark,
+                ReviewerName = r.Reviewer.LastName + " " + r.Reviewer.FirstName,
+                ReviewerComment = r.Comment,
+                DecidedAt = r.DecidedAt
             })
             .FirstOrDefaultAsync();
 
@@ -64,10 +67,12 @@ public class DashboardService : IDashboardService
         var now = DateTime.UtcNow;
 
         var overdue = await OverdueStepsAsync(user, now);
+        var lateAwaitingReview = await _workflow.GetLateAwaitingReviewAsync(user, LateAwaitingReviewCount);
         var groups = await GroupRowsAsync(user, now);
 
-        var supervised = await _dbContext.StudentProfiles.AsNoTracking()
-            .Where(p => p.SupervisorId == user.UserId && p.ArchivedAt == null)
+        // Phase 12 §4.2: the students the acting role opens in full - a teacher's supervised students,
+        // a direction manager's direction students. A standards controller has none.
+        var supervised = await _accessScope.ReviewableStudents(user).AsNoTracking()
             .OrderBy(p => p.User.LastName)
             .ThenBy(p => p.User.FirstName)
             .Select(p => new SupervisedStudentRow
@@ -101,6 +106,7 @@ public class DashboardService : IDashboardService
             WaitingReviews = queue.Total,
             LatestForReview = queue.Items,
             OverdueSteps = overdue,
+            LateAwaitingReview = lateAwaitingReview,
             SupervisedStudents = supervised,
             Groups = groups
         };
@@ -116,10 +122,15 @@ public class DashboardService : IDashboardService
         var totalStudents = await students.CountAsync();
         var withTopic = await students.CountAsync(p => p.TopicId != null);
         var withRequest = await students.CountAsync(p =>
-            p.TopicId == null && p.TopicReservations.Any(r => r.Status == ReservationStatus.Pending));
+            p.TopicId == null && p.TopicReservations.Any(r =>
+                r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Returned));
 
+        // M14: agree with the review queue's own predicate - a student who moved groups while a
+        // version was pending must not still count as waiting here.
         var waiting = await _dbContext.Submissions.AsNoTracking()
-            .Where(s => s.Decision == null && s.StudentTask.Status == StudentTaskStatus.Submitted)
+            .Where(s => s.Decision == null
+                && s.StudentTask.Status == StudentTaskStatus.Submitted
+                && s.StudentTask.GroupTask.GroupId == s.StudentTask.StudentProfile.GroupId)
             .GroupBy(_ => 1)
             .Select(g => new { Total = g.Count(), Late = g.Count(s => s.IsLate) })
             .FirstOrDefaultAsync();
@@ -159,7 +170,7 @@ public class DashboardService : IDashboardService
                 Groups = await _dbContext.Groups.CountAsync(),
                 ActiveStudents = totalStudents,
                 UnclaimedAccounts = await students.CountAsync(p => p.User.PasswordHash == null),
-                Teachers = await _dbContext.Users.CountAsync(u => u.Role == "Teacher" && u.IsActive),
+                Teachers = await _dbContext.Users.CountAsync(u => u.Role == AccountRoles.Staff && u.IsActive),
                 TopicsAvailable = topics.FirstOrDefault(t => t.Status == TopicStatus.Available)?.Count ?? 0,
                 TopicsReserved = topics.FirstOrDefault(t => t.Status == TopicStatus.Reserved)?.Count ?? 0,
                 TopicsApproved = topics.FirstOrDefault(t => t.Status == TopicStatus.Approved)?.Count ?? 0
@@ -168,18 +179,16 @@ public class DashboardService : IDashboardService
         };
     }
 
-    /// The per-group breakdown, identical for both roles apart from which groups are in it: every
-    /// group for an administrator, and for a teacher only the groups they review (§7.4). A group a
-    /// teacher sees only because they supervise one of its students is left out, as its overdue
-    /// and waiting figures are about students the teacher does not review; that student appears
-    /// under the students they supervise instead.
+    /// The per-group breakdown. An administrator's covers every group and every student. A staff
+    /// member's covers the groups `IAccessScope.VisibleGroups` returns for their acting role - the
+    /// Groups tab's set - and within each group only the students they work with in that role
+    /// (`ReviewOverviewStudents`; design 2026-09-27, phase 12, §4.1: "the teacher's group figures
+    /// count only the caller's own students"). So a row agrees with the caller's own Overdue list and
+    /// with the group page's My students split.
     private async Task<IReadOnlyList<DashboardGroupRow>> GroupRowsAsync(UserContext user, DateTime now)
     {
         var groups = _accessScope.VisibleGroups(user);
-        if (user.IsTeacher)
-        {
-            groups = groups.Where(g => g.Reviewers.Any(r => r.ReviewerId == user.UserId));
-        }
+        var working = _accessScope.ReviewOverviewStudents(user).Select(s => s.Id);
 
         return await groups.AsNoTracking()
             .OrderByDescending(g => g.AcademicYear)
@@ -190,27 +199,31 @@ public class DashboardService : IDashboardService
                 GroupCode = g.Code,
                 AcademicYear = g.AcademicYear,
                 DepartmentName = g.Department.Name,
-                StudentCount = g.Students.Count(s => s.ArchivedAt == null),
-                ApprovedTopicCount = g.Students.Count(s => s.ArchivedAt == null && s.TopicId != null),
+                StudentCount = g.Students.Count(s => s.ArchivedAt == null && working.Contains(s.Id)),
+                ApprovedTopicCount = g.Students.Count(s => s.ArchivedAt == null && s.TopicId != null && working.Contains(s.Id)),
                 StepsApproved = g.GroupTasks
                     .SelectMany(gt => gt.StudentTasks)
-                    .Count(t => t.StudentProfile.ArchivedAt == null && t.Status == StudentTaskStatus.Approved),
+                    .Count(t => t.StudentProfile.ArchivedAt == null && t.Status == StudentTaskStatus.Approved
+                        && working.Contains(t.StudentProfileId)),
                 StepsTotal = g.GroupTasks
                     .SelectMany(gt => gt.StudentTasks)
-                    .Count(t => t.StudentProfile.ArchivedAt == null),
+                    .Count(t => t.StudentProfile.ArchivedAt == null && working.Contains(t.StudentProfileId)),
                 WaitingReviews = g.GroupTasks
                     .SelectMany(gt => gt.StudentTasks)
-                    .Count(t => t.StudentProfile.ArchivedAt == null && t.Status == StudentTaskStatus.Submitted),
+                    .Count(t => t.StudentProfile.ArchivedAt == null && t.Status == StudentTaskStatus.Submitted
+                        && working.Contains(t.StudentProfileId)),
                 LateSteps = g.GroupTasks
                     .SelectMany(gt => gt.StudentTasks)
                     .Count(t => t.StudentProfile.ArchivedAt == null
-                        && t.Submissions.OrderByDescending(s => s.Version).Select(s => s.IsLate).FirstOrDefault()),
+                        && t.Submissions.OrderByDescending(s => s.Version).Select(s => s.IsLate).FirstOrDefault()
+                        && working.Contains(t.StudentProfileId)),
                 OverdueSteps = g.GroupTasks
                     .SelectMany(gt => gt.StudentTasks)
                     .Count(t => t.StudentProfile.ArchivedAt == null
                         && t.Status != StudentTaskStatus.Approved
                         && t.Status != StudentTaskStatus.Submitted
-                        && t.GroupTask.Deadline < now)
+                        && t.GroupTask.Deadline < now
+                        && working.Contains(t.StudentProfileId))
             })
             .ToListAsync();
     }

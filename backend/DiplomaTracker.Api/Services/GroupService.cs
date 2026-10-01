@@ -16,19 +16,22 @@ public class GroupService : IGroupService
     private readonly IAccessScope _accessScope;
     private readonly IArchiveService _archive;
     private readonly IReservationService _reservationService;
+    private readonly IDocumentService _documents;
 
     public GroupService(
         AppDbContext dbContext,
         ILogger<GroupService> logger,
         IAccessScope accessScope,
         IArchiveService archive,
-        IReservationService reservationService)
+        IReservationService reservationService,
+        IDocumentService documents)
     {
         _dbContext = dbContext;
         _logger = logger;
         _accessScope = accessScope;
         _archive = archive;
         _reservationService = reservationService;
+        _documents = documents;
     }
 
     /// Phase 8 §8: the API returns exactly the columns it sends. This used to materialise a
@@ -224,9 +227,19 @@ public class GroupService : IGroupService
         }
         await _dbContext.SaveChangesAsync(cancellationToken);
 
+        // Design 2026-09-24 §4.5: documents go before the accounts do. A student's own documents
+        // are deleted, one they hold for someone else returns to its owner, and their names stay
+        // in other people's timelines as text. Stored files are removed only after the commit.
+        var releasedKeys = await _documents.ReleaseForDeletedAccountsAsync(profiles.Select(p => p.UserId).ToList(), cancellationToken);
+
         // Deleting the user cascades to the profile, its reservations and its student tasks;
         // student tasks cascade to submissions and submission files. The group's own cascade
-        // takes its reviewers, group tasks and template links.
+        // takes its group tasks and template links.
+        // Design 2026-09-27 (phase 12) §3: the roles assigned for this group go with it.
+        _dbContext.RoleAssignments.RemoveRange(await _dbContext.RoleAssignments
+            .Where(a => a.ScopeKind == RoleScopeKind.Group && a.ScopeId == id)
+            .ToListAsync(cancellationToken));
+
         _dbContext.Users.RemoveRange(profiles.Select(p => p.User));
         _dbContext.Groups.Remove(group);
 
@@ -242,6 +255,8 @@ public class GroupService : IGroupService
         }
 
         await transaction.CommitAsync(cancellationToken);
+
+        await _documents.DeleteStoredFilesAsync(releasedKeys);
 
         SecurityLog.GroupDeleted(_logger, administratorId, id, groupCode, archivedFileCount, profiles.Count);
         return (true, null);
@@ -271,11 +286,18 @@ public class GroupService : IGroupService
 
         var fileCount = await _archive.CountFilesForGroupDeletionAsync(groupId, cancellationToken);
 
+        var archivedUserIds = await _dbContext.StudentProfiles.AsNoTracking()
+            .Where(p => p.GroupId == groupId && p.ArchivedAt != null)
+            .Select(p => p.UserId)
+            .ToListAsync(cancellationToken);
+        var documentCount = await _documents.CountOwnedByAsync(archivedUserIds, cancellationToken);
+
         return (new GroupDeletionPreviewResponse
         {
             ActiveStudentCount = counts?.Active ?? 0,
             ArchivedStudentCount = counts?.Archived ?? 0,
-            FileCount = fileCount
+            FileCount = fileCount,
+            DocumentCount = documentCount
         }, null);
     }
 
@@ -294,7 +316,7 @@ public class GroupService : IGroupService
 
         var students = await _dbContext.StudentProfiles
             .AsNoTracking()
-            .Where(s => s.GroupId == groupId && s.User.Role == "Student" && s.ArchivedAt == null)
+            .Where(s => s.GroupId == groupId && s.User.Role == AccountRoles.Student && s.ArchivedAt == null)
             .OrderBy(s => s.User.LastName)
             .ThenBy(s => s.User.FirstName)
             .Select(s => new GroupStudentResponse
@@ -331,11 +353,15 @@ public class GroupService : IGroupService
 
         var profiles = await _dbContext.StudentProfiles
             .Include(s => s.User)
-            .Where(s => s.GroupId == groupId && s.User.Role == "Student" && s.ArchivedAt == null)
+            .Where(s => s.GroupId == groupId && s.User.Role == AccountRoles.Student && s.ArchivedAt == null)
             .ToListAsync();
 
         var now = DateTime.UtcNow;
         var archivedIds = StudentArchiver.Archive(profiles, now);
+
+        // The supervisor is read now: settling the reservations below clears it, and the archive
+        // stamps the supervisor at archiving on the student's rows (phase 12 §4.1).
+        var supervisorsAtArchiving = profiles.ToDictionary(p => p.Id, p => p.SupervisorId);
 
         // Phase 8 §I2: as StudentService.ArchiveStudentsAsync does - an archived student's live
         // reservations must not linger, or a topic's supervisor would still see and could approve
@@ -347,98 +373,11 @@ public class GroupService : IGroupService
         }
 
         await _dbContext.SaveChangesAsync();
-        await _archive.ArchiveStudentsAsync(archivedIds, CancellationToken.None);
+        await _archive.ArchiveStudentsAsync(archivedIds, supervisorsAtArchiving, CancellationToken.None);
 
         SecurityLog.StudentsArchived(_logger, administratorId, archivedIds.Count, archivedIds);
 
         return (archivedIds.Count, null);
-    }
-
-    public async Task<IReadOnlyList<GroupReviewerResponse>?> GetGroupReviewersAsync(UserContext user, Guid groupId)
-    {
-        if (!await _accessScope.CanSeeGroupAsync(user, groupId))
-        {
-            SecurityLog.AccessRefused(_logger, user.UserId, user.Role, "Group", groupId);
-            return null;
-        }
-
-        var reviewers = await _dbContext.GroupReviewers
-            .AsNoTracking()
-            .Include(gr => gr.Reviewer)
-            .Where(gr => gr.GroupId == groupId)
-            .OrderBy(gr => gr.Reviewer.LastName)
-            .ThenBy(gr => gr.Reviewer.FirstName)
-            .ToListAsync();
-
-        return reviewers.Select(MapReviewer).ToList();
-    }
-
-    public async Task<(GroupReviewerResponse? reviewer, string? error)> AddGroupReviewerAsync(Guid groupId, AddGroupReviewerRequest request, Guid administratorId)
-    {
-        var groupExists = await _dbContext.Groups.AnyAsync(g => g.Id == groupId);
-        if (!groupExists)
-        {
-            return (null, GroupErrors.NotFound);
-        }
-
-        var reviewer = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == request.ReviewerId);
-        if (reviewer is null)
-        {
-            return (null, GroupErrors.ReviewerNotFound);
-        }
-
-        if (reviewer.Role != "Teacher")
-        {
-            return (null, GroupErrors.ReviewerMustBeActiveTeacher);
-        }
-
-        if (!reviewer.IsActive)
-        {
-            return (null, GroupErrors.ReviewerMustBeActiveTeacher);
-        }
-
-        var alreadyAssigned = await _dbContext.GroupReviewers
-            .AnyAsync(gr => gr.GroupId == groupId && gr.ReviewerId == request.ReviewerId);
-        if (alreadyAssigned)
-        {
-            return (null, GroupErrors.ReviewerAlreadyAssigned);
-        }
-
-        var assignment = new GroupReviewer
-        {
-            Id = Guid.NewGuid(),
-            GroupId = groupId,
-            ReviewerId = request.ReviewerId,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _dbContext.GroupReviewers.Add(assignment);
-        await _dbContext.SaveChangesAsync();
-
-        assignment.Reviewer = reviewer;
-        SecurityLog.AdministratorAction(_logger, administratorId, "Created", "Group", groupId);
-        return (MapReviewer(assignment), null);
-    }
-
-    public async Task<(bool success, string? error)> RemoveGroupReviewerAsync(Guid groupId, Guid reviewerId, Guid administratorId)
-    {
-        var groupExists = await _dbContext.Groups.AnyAsync(g => g.Id == groupId);
-        if (!groupExists)
-        {
-            return (false, GroupErrors.NotFound);
-        }
-
-        var assignment = await _dbContext.GroupReviewers
-            .FirstOrDefaultAsync(gr => gr.GroupId == groupId && gr.ReviewerId == reviewerId);
-        if (assignment is null)
-        {
-            return (false, GroupErrors.ReviewerAssignmentNotFound);
-        }
-
-        _dbContext.GroupReviewers.Remove(assignment);
-        await _dbContext.SaveChangesAsync();
-        SecurityLog.AdministratorAction(_logger, administratorId, "Deleted", "Group", groupId);
-        return (true, null);
     }
 
     private Task<Department?> FindDepartmentAsync(Guid departmentId)
@@ -460,16 +399,5 @@ public class GroupService : IGroupService
         AcademicYear = group.AcademicYear,
         CreatedAt = group.CreatedAt,
         UpdatedAt = group.UpdatedAt
-    };
-
-    private static GroupReviewerResponse MapReviewer(GroupReviewer groupReviewer) => new()
-    {
-        Id = groupReviewer.Id,
-        GroupId = groupReviewer.GroupId,
-        ReviewerId = groupReviewer.ReviewerId,
-        FirstName = groupReviewer.Reviewer.FirstName,
-        LastName = groupReviewer.Reviewer.LastName,
-        Email = groupReviewer.Reviewer.Email,
-        CreatedAt = groupReviewer.CreatedAt
     };
 }

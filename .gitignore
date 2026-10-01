@@ -365,3 +365,6 @@ FodyWeavers.xsd
 /backend/DiplomaTracker.Api/.github
 /.claude
 App_Data/
+
+# Deployment secrets (template: .env.example)
+/.env

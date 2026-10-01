@@ -88,11 +88,11 @@ public class GroupServiceTests
     }
 
     [Fact]
-    public async Task GetGroupStudentsAsync_ForTeacherWhoIsNotAReviewer_ReturnsGroupNotFound()
+    public async Task GetGroupStudentsAsync_ForTeacherWithNoStudentThere_ReturnsGroupNotFound()
     {
         await using var context = TestDbContextFactory.Create();
         var group = AddGroupWithOneStudent(context);
-        var outsider = TestData.AddUser(context, "Teacher", "outsider@kpi.ua");
+        var outsider = TestData.AddUser(context, "Staff", "outsider@kpi.ua");
 
         var (students, error) = await CreateService(context).GetGroupStudentsAsync(new UserContext(outsider.Id, "Teacher"), group.Id);
 
@@ -101,21 +101,13 @@ public class GroupServiceTests
     }
 
     [Fact]
-    public async Task GetGroupStudentsAsync_ForAssignedReviewer_ReturnsStudents()
+    public async Task GetGroupStudentsAsync_ForTheSupervisor_ReturnsStudents()
     {
         await using var context = TestDbContextFactory.Create();
         var group = AddGroupWithOneStudent(context);
-        var reviewer = TestData.AddUser(context, "Teacher", "reviewer@kpi.ua");
-        context.GroupReviewers.Add(new GroupReviewer
-        {
-            Id = Guid.NewGuid(),
-            GroupId = group.Id,
-            ReviewerId = reviewer.Id,
-            CreatedAt = TestData.Now
-        });
-        await context.SaveChangesAsync();
+        var supervisor = await context.Users.SingleAsync(u => u.Email == "supervisor@kpi.ua");
 
-        var (students, error) = await CreateService(context).GetGroupStudentsAsync(new UserContext(reviewer.Id, "Teacher"), group.Id);
+        var (students, error) = await CreateService(context).GetGroupStudentsAsync(new UserContext(supervisor.Id, "Teacher"), group.Id);
 
         Assert.Null(error);
         var student = Assert.Single(students!);
@@ -138,14 +130,19 @@ public class GroupServiceTests
     private static GroupService CreateService(AppDbContext context) =>
         new(context, NullLogger<GroupService>.Instance, new AccessScope(context),
             new ArchiveService(context, new LocalFileStorage(Path.GetTempPath()), NullLogger<ArchiveService>.Instance),
-            new ReservationService(context, new TopicSettingsService(context, NullLogger<TopicSettingsService>.Instance), NullLogger<ReservationService>.Instance));
+            new ReservationService(
+                context,
+                new TopicSettingsService(context, NullLogger<TopicSettingsService>.Instance),
+                new StudentWorkflowService(context, new AccessScope(context), new LocalFileStorage(Path.GetTempPath()), NullLogger<StudentWorkflowService>.Instance),
+                NullLogger<ReservationService>.Instance),
+            new DocumentService(context, new LocalFileStorage(Path.GetTempPath()), NullLogger<DocumentService>.Instance));
 
     private static Group AddGroupWithOneStudent(AppDbContext context)
     {
         var faculty = TestData.AddFaculty(context);
         var department = TestData.AddDepartment(context, faculty.Id);
         var group = TestData.AddGroup(context, department.Id);
-        var supervisor = TestData.AddUser(context, "Teacher", "supervisor@kpi.ua");
+        var supervisor = TestData.AddUser(context, "Staff", "supervisor@kpi.ua");
         var student = TestData.AddUser(context, "Student", "student@kpi.ua");
         TestData.AddStudentProfile(context, student.Id, group.Id, supervisor.Id);
         return group;

@@ -22,6 +22,7 @@ export function TopicDetailsModal({ topic, open, onClose, footer }: TopicDetails
             <TopicStatusBadge status={topic.status} />
           </div>
           <p><span className="font-medium text-heading">{t('topics.supervisor')}:</span> {topic.supervisorName}</p>
+          <p><span className="font-medium text-heading">{t('topics.direction')}:</span> {topic.directionName} · {topic.directionManagerName}</p>
           <p><span className="font-medium text-heading">{t('topics.department')}:</span> {topic.departmentName} · {topic.facultyName}</p>
           <p className="whitespace-pre-line text-text-strong">{topic.description || t('common.noDescription')}</p>
         </div>

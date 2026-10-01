@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using DiplomaTracker.Api.Data;
+using DiplomaTracker.Api.DTOs.Staff;
 using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Interfaces;
 using DiplomaTracker.Api.Models;
@@ -76,19 +77,46 @@ public class AuthService : IAuthService
             return null;
         }
 
-        SecurityLog.SignInSucceeded(_logger, user.Id, user.Role);
+        var actingRole = await DefaultActingRoleAsync(user);
+        SecurityLog.SignInSucceeded(_logger, user.Id, actingRole);
 
         return new LoginResponse
         {
-            Token = CreateToken(user),
-            User = MapCurrentUser(user)
+            Token = CreateToken(user, actingRole),
+            User = await MapCurrentUserAsync(user, actingRole)
         };
     }
 
-    public async Task<CurrentUserResponse?> GetCurrentUserAsync(Guid userId)
+    public async Task<CurrentUserResponse?> GetCurrentUserAsync(Guid userId, string actingRole)
     {
         var user = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
-        return user is null ? null : MapCurrentUser(user);
+        return user is null ? null : await MapCurrentUserAsync(user, actingRole);
+    }
+
+    /// Design 2026-09-27 (phase 12) §5: a new token in another role the staff member holds. The
+    /// session check re-reads the role on every request, so the old token stays valid only while
+    /// its own role is still held.
+    public async Task<(LoginResponse? result, string? error)> SwitchActingRoleAsync(Guid userId, string role)
+    {
+        var user = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
+        if (user is null)
+        {
+            return (null, OnboardingErrors.UserNotFound);
+        }
+
+        if (user.Role != AccountRoles.Staff
+            || !Enum.GetNames<StaffRole>().Contains(role)
+            || !await _dbContext.HoldsRoleAsync(userId, Enum.Parse<StaffRole>(role)))
+        {
+            return (null, RoleErrors.RoleNotHeld);
+        }
+
+        SecurityLog.ActingRoleSwitched(_logger, userId, role);
+        return (new LoginResponse
+        {
+            Token = CreateToken(user, role),
+            User = await MapCurrentUserAsync(user, role)
+        }, null);
     }
 
     public async Task<(LoginResponse? result, string? error)> ClaimAccountAsync(ClaimAccountRequest request)
@@ -107,7 +135,7 @@ public class AuthService : IAuthService
             .Include(p => p.User)
             .FirstOrDefaultAsync(p => p.StudentNumberCanonical == studentNumber
                 && p.User.Email == email
-                && p.User.Role == "Student"
+                && p.User.Role == AccountRoles.Student
                 && p.User.IsActive
                 && p.User.PasswordHash == null);
 
@@ -123,7 +151,7 @@ public class AuthService : IAuthService
             .Where(u => u.Id == profile.UserId
                 && u.PasswordHash == null
                 && u.IsActive
-                && u.Role == "Student"
+                && u.Role == AccountRoles.Student
                 && (registrationOpen || u.ClaimReopened))
             .ExecuteUpdateAsync(s => s
                 .SetProperty(u => u.PasswordHash, hash)
@@ -143,8 +171,8 @@ public class AuthService : IAuthService
 
         return (new LoginResponse
         {
-            Token = CreateToken(profile.User),
-            User = MapCurrentUser(profile.User)
+            Token = CreateToken(profile.User, AccountRoles.Student),
+            User = await MapCurrentUserAsync(profile.User, AccountRoles.Student)
         }, null);
     }
 
@@ -173,12 +201,12 @@ public class AuthService : IAuthService
             return (false, OnboardingErrors.CurrentPasswordIncorrect);
         }
 
-        var satisfied = user.Role == "Admin"
+        var satisfied = user.Role == AccountRoles.Admin
             ? PasswordPolicy.IsSatisfiedByElevated(request.NewPassword)
             : PasswordPolicy.IsSatisfiedBy(request.NewPassword);
         if (!satisfied)
         {
-            return (false, user.Role == "Admin" ? PasswordPolicy.ElevatedViolation : PasswordPolicy.Violation);
+            return (false, user.Role == AccountRoles.Admin ? PasswordPolicy.ElevatedViolation : PasswordPolicy.Violation);
         }
 
         var verifiedHash = user.PasswordHash;
@@ -198,7 +226,7 @@ public class AuthService : IAuthService
         return (true, null);
     }
 
-    private string CreateToken(AppUser user)
+    private string CreateToken(AppUser user, string actingRole)
     {
         var claims = new List<Claim>
         {
@@ -207,7 +235,7 @@ public class AuthService : IAuthService
             new(JwtRegisteredClaimNames.GivenName, user.FirstName),
             new(JwtRegisteredClaimNames.FamilyName, user.LastName),
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new(ClaimTypes.Role, user.Role)
+            new(ClaimTypes.Role, actingRole)
         };
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Secret));
@@ -224,15 +252,39 @@ public class AuthService : IAuthService
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private static CurrentUserResponse MapCurrentUser(AppUser user)
+    /// Design 2026-09-27 (phase 12) §5: a staff member starts in the first role they hold - teacher,
+    /// direction manager, standards controller - or in none. Everyone else acts in their account role.
+    private async Task<string> DefaultActingRoleAsync(AppUser user)
     {
+        if (user.Role != AccountRoles.Staff)
+        {
+            return user.Role;
+        }
+
+        var held = await _dbContext.RoleAssignments.AsNoTracking()
+            .Where(a => a.UserId == user.Id)
+            .Select(a => a.Role)
+            .Distinct()
+            .ToListAsync();
+
+        return held.Count == 0 ? ActingRoles.None : held.Min().ToString();
+    }
+
+    private async Task<CurrentUserResponse> MapCurrentUserAsync(AppUser user, string actingRole)
+    {
+        var assignments = user.Role == AccountRoles.Staff
+            ? await RoleAssignmentReader.ReadAsync(_dbContext, [user.Id])
+            : new Dictionary<Guid, List<RoleAssignmentResponse>>();
+
         return new CurrentUserResponse
         {
             Id = user.Id.ToString(),
             FirstName = user.FirstName,
             LastName = user.LastName,
             Email = user.Email,
-            Role = user.Role
+            Role = actingRole,
+            AccountRole = user.Role,
+            Assignments = assignments.TryGetValue(user.Id, out var list) ? list : []
         };
     }
 }

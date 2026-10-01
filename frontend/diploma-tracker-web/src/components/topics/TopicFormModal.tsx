@@ -8,15 +8,23 @@ import { Select, type SelectOption } from '../ui/Select'
 import { TextField } from '../ui/TextField'
 import { Textarea } from '../ui/Textarea'
 import { optional } from '../../utils/optional'
-import type { Department, Teacher, Topic } from '../../api/types'
+import type { Direction, SupervisorOption, Topic } from '../../api/types'
 
 type TopicFormModalProps = {
   open: boolean
   mode: 'create' | 'edit'
   initial?: Topic
   showSupervisor: boolean
-  departments: Department[]
-  teachers: Teacher[]
+  directions: Direction[]
+  supervisors: SupervisorOption[]
+  /** Phase 12 §4: when given, the supervisors on offer are loaded for the chosen direction's
+   *  department (the teachers who cover it) instead of taken from `supervisors`. */
+  loadSupervisors?: (departmentId: string) => Promise<SupervisorOption[]>
+  /** Pre-selects the direction and hides the picker (a direction manager's "Add topic" on a direction row). */
+  fixedDirectionId?: string
+  /** Design 2026-09-27 §4.3: only an administrator moves a topic to another direction, so the
+   *  picker is locked when anyone else edits a topic. */
+  canMoveDirection?: boolean
   onClose: () => void
   onSaved: () => void
 }
@@ -24,21 +32,22 @@ type TopicFormModalProps = {
 type FormState = {
   title: string
   description: string
-  departmentId: string
+  directionId: string
   supervisorId: string
 }
 
-const emptyForm: FormState = { title: '', description: '', departmentId: '', supervisorId: '' }
+const emptyForm: FormState = { title: '', description: '', directionId: '', supervisorId: '' }
 
-export function TopicFormModal({ open, mode, initial, showSupervisor, departments, teachers, onClose, onSaved }: TopicFormModalProps) {
+export function TopicFormModal({ open, mode, initial, showSupervisor, directions, supervisors, loadSupervisors, fixedDirectionId, canMoveDirection = true, onClose, onSaved }: TopicFormModalProps) {
   const { t } = useTranslation()
   const errorMessage = useErrorMessage()
 
   const [form, setForm] = useState<FormState>(emptyForm)
-  const [departmentError, setDepartmentError] = useState('')
+  const [directionError, setDirectionError] = useState('')
   const [supervisorError, setSupervisorError] = useState('')
   const [error, setError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [loadedSupervisors, setLoadedSupervisors] = useState<SupervisorOption[]>([])
 
   useEffect(() => {
     if (!open) return
@@ -47,33 +56,67 @@ export function TopicFormModal({ open, mode, initial, showSupervisor, department
         ? {
             title: initial.title,
             description: initial.description ?? '',
-            departmentId: initial.departmentId,
+            directionId: initial.directionId,
             supervisorId: initial.supervisorId
           }
-        : emptyForm
+        : { ...emptyForm, directionId: fixedDirectionId ?? '' }
     )
-    setDepartmentError('')
+    setDirectionError('')
     setSupervisorError('')
     setError('')
-  }, [open, initial])
+  }, [open, initial, fixedDirectionId])
 
-  const departmentOptions: SelectOption[] = departments.map((department) => ({
-    value: department.id,
-    label: `${department.name} · ${department.facultyName}`
-  }))
+  const selectedDepartmentId = directions.find((d) => d.id === form.directionId)?.departmentId ?? ''
+  // The topic's supervisor is held work: kept while the topic stays in its department.
+  const keepsInitialSupervisor = Boolean(initial) && selectedDepartmentId === initial?.departmentId
 
-  const activeTeachers = teachers.filter((teacher) => teacher.isActive)
-  const supervisorOptions: SelectOption[] = activeTeachers.map((teacher) => ({
-    value: teacher.id,
-    label: `${teacher.lastName} ${teacher.firstName}`
-  }))
+  useEffect(() => {
+    if (!open || !loadSupervisors) return
+    if (!selectedDepartmentId) {
+      setLoadedSupervisors([])
+      return
+    }
+
+    let cancelled = false
+    loadSupervisors(selectedDepartmentId)
+      .then((options) => {
+        if (cancelled) return
+        setLoadedSupervisors(options)
+        // A supervisor picked for another department does not carry over.
+        setForm((prev) =>
+          options.some((s) => s.id === prev.supervisorId) || (keepsInitialSupervisor && prev.supervisorId === initial?.supervisorId)
+            ? prev
+            : { ...prev, supervisorId: '' })
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setLoadedSupervisors([])
+        setError(errorMessage(err))
+      })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, selectedDepartmentId])
+
+  // §8: the picker lists the directions by department.
+  const directionOptions: SelectOption[] = [...directions]
+    .sort((a, b) => a.departmentName.localeCompare(b.departmentName) || a.name.localeCompare(b.name))
+    .map((direction) => ({
+      value: direction.id,
+      label: `${direction.departmentName} · ${direction.name}`
+    }))
+  const directionLocked = mode === 'edit' && !canMoveDirection
+
+  const offeredSupervisors = loadSupervisors ? loadedSupervisors : supervisors
+  const supervisorOptions: SelectOption[] = offeredSupervisors.map((s) => ({ value: s.id, label: s.name }))
   // A topic's supervisor can be deactivated after the topic was created; keep them selectable and
   // labelled so editing the topic (e.g. to fix a typo) doesn't appear to show "no supervisor".
-  if (initial?.supervisorId && !activeTeachers.some((teacher) => teacher.id === initial.supervisorId)) {
+  if (initial?.supervisorId && (!loadSupervisors || keepsInitialSupervisor) && !offeredSupervisors.some((s) => s.id === initial.supervisorId)) {
     supervisorOptions.push({ value: initial.supervisorId, label: t('students.inactiveSupervisor', { name: initial.supervisorName }) })
   }
 
-  const showSupervisorMoveWarning = showSupervisor && initial && (initial.status === 'Reserved' || initial.status === 'Approved')
+  // A Reserved topic's requester takes the supervisor only when the request completes (§5.2), so
+  // only a topic a student already holds moves their supervisor at once.
+  const showSupervisorMoveWarning = showSupervisor && initial && initial.status === 'Approved'
 
   const close = () => {
     if (isSaving) return
@@ -83,19 +126,19 @@ export function TopicFormModal({ open, mode, initial, showSupervisor, department
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
-    const departmentMissing = !form.departmentId
+    const directionMissing = !form.directionId
     const supervisorMissing = showSupervisor && !form.supervisorId
-    setDepartmentError(departmentMissing ? t('validation.required') : '')
+    setDirectionError(directionMissing ? t('validation.required') : '')
     setSupervisorError(supervisorMissing ? t('validation.required') : '')
 
-    if (departmentMissing || supervisorMissing) {
+    if (directionMissing || supervisorMissing) {
       return
     }
 
     const request = {
       title: form.title.trim(),
       description: optional(form.description),
-      departmentId: form.departmentId,
+      directionId: form.directionId,
       supervisorId: showSupervisor ? optional(form.supervisorId) : undefined
     }
 
@@ -142,14 +185,18 @@ export function TopicFormModal({ open, mode, initial, showSupervisor, department
           value={form.description}
           onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
         />
-        <Select
-          label={t('topics.department')}
-          value={form.departmentId}
-          onChange={(value) => setForm((prev) => ({ ...prev, departmentId: value }))}
-          options={departmentOptions}
-          placeholder={t('common.select')}
-          error={departmentError}
-        />
+        {!fixedDirectionId && (
+          <Select
+            label={t('topics.direction')}
+            value={form.directionId}
+            onChange={(value) => setForm((prev) => ({ ...prev, directionId: value }))}
+            options={directionOptions}
+            placeholder={t('common.select')}
+            disabled={directionLocked}
+            hint={directionLocked ? t('topics.directionLocked') : undefined}
+            error={directionError}
+          />
+        )}
         {showSupervisor && (
           <Select
             label={t('topics.supervisor')}

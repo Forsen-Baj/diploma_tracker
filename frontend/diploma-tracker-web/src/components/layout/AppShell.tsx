@@ -5,12 +5,22 @@ import { useAuth } from '../../auth/useAuth'
 import { LanguageSwitch } from './LanguageSwitch'
 import { navigationByRole } from './navigation'
 import { TabNav } from './TabNav'
+import { useDocumentCounts } from './useDocumentCounts'
 import { UserMenu } from './UserMenu'
 
 export function AppShell() {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const items = user ? navigationByRole[user.role].map((item) => ({ to: item.to, label: t(item.labelKey) })) : []
+  const waitingDocuments = useDocumentCounts(Boolean(user))
+  const items = user
+    ? navigationByRole[user.role]
+        .map((item) => ({
+          to: item.to,
+          label: t(item.labelKey),
+          badge: item.badge === 'documents' ? waitingDocuments : undefined,
+          badgeLabel: item.badge === 'documents' ? t('nav.documentsWaiting', { count: waitingDocuments }) : undefined
+        }))
+    : []
 
   return (
     <div className="min-h-screen bg-background">

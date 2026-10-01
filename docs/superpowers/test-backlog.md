@@ -440,3 +440,191 @@ its review completes.
 - **`TopicSettingsService`**: one query per scope when read repeatedly; the cache is reset after `SetDeadlineAsync`.
 - **Last-active-administrator guard**: after refinements checks 28/29 were rewritten, nothing reaches it through the API. It needs a unit test at the service level.
 - **`request.tooLarge`**: confirm that a body over the limit on a multipart form actually reaches the exception handler as a 413. `BadHttpRequestException` derives from `IOException`, and form model binding may turn it into a 400 `validation.failed`. No check script covers it.
+
+## Phase 9 — Review panels
+
+- `ReviewPanel.Evaluate`: the supervisor seat is satisfied by the current supervisor or an administrator, not by a former supervisor, and a null supervisor leaves it to an administrator. An extra seat ignores approvals older than its `AddedAt` (the equal case counts). An extra row naming the supervisor is absorbed. Rounding is half away from zero (85.5 → 86, 86.5 → 87), including one seat and the 1/3 and 2/3 cases.
+- `ReviewPanel.SeatFor`: the caller's own supervisor seat first, then their extra seat, then an administrator's stand-in; null for a group reviewer or a teacher with no seat.
+- Decisions (SQL Server): the last open seat completes the step with the average; a return keeps earlier approvals; `review.seatSatisfied` for a satisfied seat, including an administrator once the supervisor seat is satisfied; two concurrent decisions (approvals or returns) yield one success and one `submission.alreadyDecided`; a decision racing a panel change; an administrator's stand-in return. A reviewer who is removed and re-added after approving the pending version re-decides, and the new decision overwrites their row.
+- Resubmission: a new version that finds every seat already approved (the returning reviewer was removed while `Returned`) is approved at once with the average. A submission that races a panel change answers `panel.changed`.
+- Panel changes: refused on an approved step, for an archived student and for a moved step; `panel.notAllowed` for an extra reviewer and for a group reviewer adding themselves; `submission.notFound`/`studentTask.notFound` for an outsider; `panel.reviewerInvalid` for a deactivated user, a student or an unknown id; a removal that completes a submitted step approves it; the unique index turns a racing duplicate into `panel.reviewerExists`; a deactivated reviewer can be removed.
+- Supervisor change mid-panel: the former supervisor's approval stops counting; an extra who becomes the supervisor is absorbed; a released topic leaves the seat to an administrator.
+- Visibility: `CanSeeStudentTaskAsync` grants an extra reviewer that step only (page, files, queue item), and nothing once the student is archived, until they are restored; no `/students/{id}/progress` or group progress for an extra; a group reviewer's queue is empty but their step pages work; `GET /student-tasks/{id}/reviewers` equals the step detail's panel for every role; no decision on an archived student's step.
+- Queue and dashboards: a teacher's queue lists only open seats; an extra who became the supervisor appears once; students who moved group are left out of the queue and the administrator's waiting count; a teacher's `waitingReviews` equals their queue total; the student's latest decision is the newest `SubmissionReview`, attributed to its reviewer.
+- Archive: `ArchivedReview` rows copied once across two archiving events (`SourceReviewId` dedupe); `ArchivedFile.Mark` is the step mark on the approving version only; purging deletes the reviews. Group deletion cascades `StudentTaskReviewer` and `SubmissionReview` rows away while the referenced staff users remain.
+- Staff search: `%`, `_` and `[` escaped; terms over 100 characters cut; inactive users and students excluded; at most 20 results.
+- Frontend: a 409 refreshes the step; `canDecide` hides the decision form for a satisfied seat; `canManagePanel` hides add and remove for extras and students; the "1 of 3" text in *My work* and the queue; the Add reviewer dialog drops a selection the list no longer shows.
+
+## Phase 10 — Document routing
+
+- `DocumentRules.SignedCopyMissing`: only on a signing turn; a version added before the current hand-off does not count; one added by someone else does not count.
+- `DocumentRules.RejectCandidates`: excludes the holder; default is the hand-off's actor, else the owner; a document forwarded to its owner offers only earlier holders.
+- `DocumentRules.LastPurposeOf`: the purpose of the latest hand-off to that person; Review when none.
+- Writes: each refused on a stale `expectedSequence`; recipient rules (student → student refused, archived student refused, self refused); delete refused once sent; owner edit only while `WithOwner`; version upload allowed to the holder and to the owner while `WithOwner`/`Completed`.
+- Concurrency: two holders' writes on the same sequence yield one success and one `document.changed`; the files stored by the loser are deleted.
+- Visibility: a non-participant (administrators included) gets `document.notFound` for the document and its versions.
+- Account deletion (needs SQL Server or SQLite - InMemory cannot run `ExecuteDelete`): own documents and blobs removed after commit; held documents returned with a `Recalled` event with no actor id; ids nulled, names kept.
+- Frontend: default section chooses review, then signing, then mine; the badge keeps its last value on a failed read.
+
+From the whole-phase review:
+
+Behaviours the check script does not cover yet:
+
+1. **Recipient rules:** sending to an archived student is refused, and sending to yourself is
+   refused (both give `document.recipientInvalid`). A deactivated teacher is refused.
+2. **The concurrency race:** two writes with the same `expectedSequence`, fired in parallel,
+   give one 200 and one `document.changed`, and the loser's stored blob is gone from
+   `App_Data`.
+3. **Version rights:** the owner cannot add a version while someone else holds the document
+   (`document.notHolder`). The owner can add one while the document is `Completed`. A
+   non-holder participant is refused.
+4. **Edit:** refused for a non-owner (`document.notOwner`) and outside `WithOwner`
+   (`document.wrongState`).
+5. **Recall:** refused while `WithOwner`/`Completed`, and refused when the owner is the holder
+   (forwarded back to the owner).
+6. **Forward and Done with a file in the same request** satisfy the signing rule, and the version
+   count goes up by one.
+7. **A file error on Forward/Done:** a bad file with a valid recipient gives `file.*`, and
+   nothing is stored.
+8. **Reject:** a deactivated earlier participant is not offered as a target, the owner is
+   always offered, and rejecting to a non-owner restores that person's last purpose (the
+   Signing case).
+9. **An administrator is not a participant:** an admin gets `document.notFound` for someone
+   else's document, and the version download returns 404.
+10. **Account deletion:** the blobs of the deleted student's own documents are removed from
+    storage after the commit. The `UploadedById`, `ActorId` and `RecipientId` of the removed
+    account are null while the names are kept (check this for a *version* the student uploaded
+    to someone else's document).
+11. **Download content type:** an image version is served as `application/octet-stream`, and the
+    `.pdf`/`.docx` types are served as themselves.
+12. **Unit candidates for `DocumentRules`** (pure, cheap): `SignedCopyMissing` across
+    Sent → VersionAdded → Rejected → back; `RejectCandidates` with a repeated recipient, a
+    deleted recipient (null id) and an owner who holds the document; `LastPurposeOf` falling
+    back to `Review`.
+13. **Frontend:** stale-view handling in the dialogs, the badge keeping its
+    value when `/counts` fails, and the default section choice in `DocumentsPage`.
+
+---
+
+## Phase 11 — Directions, topic approval and standards control
+
+- `TopicApprovalPanel.Evaluate`:
+  - the administration seat is filled by any administrator's approval, the direction seat only by the current manager's, the supervision seat only by the current supervisor's;
+  - approvals older than `ContentChangedAt` do not count;
+  - an `Edited` decision counts as an approval;
+  - one person's approval fills both of their seats.
+- `TopicApprovalPanel.SeatsOf`: an administrator holds only the administration seat; a teacher who manages the direction and supervises the topic holds two.
+- `ReservationService`:
+  - the creator's approval is written only for an active creator who holds a seat;
+  - approve / return / edit need `Pending`, reject works on `Returned`, resubmit needs `Returned` and the owning student;
+  - a rejection or cancellation restores a catalogue topic's wording, a release does not;
+  - the administrator's assignment completes at once when the creator's seats cover the rest, and otherwise leaves a held topic in place until completion;
+  - two concurrent approvals of the last seat yield one completion and one `reservation.changed`.
+- `ReviewPanel.Evaluate`:
+  - seat order;
+  - absorption of the manager into the supervisor seat and of a controller into any earlier seat;
+  - a standards control approval before `StandardsControllerAssignedAt` does not count;
+  - `AverageMark` ignores the standards control seat.
+- `StudentWorkflowService.SetStandardsControllerAsync`:
+  - approved steps untouched;
+  - a removal completes a submitted step waiting only for the controller;
+  - the same controller again is a no-op.
+- `AccessScope`: a direction manager sees their direction's students like a supervisor; a standards controller sees only the steps they control.
+- `TeacherService`: clearing a capability in use and deactivating its holder are refused.
+- `DirectionService`: department change refused with topics; only an administrator changes the manager; a manager change completes requests the new manager already approved.
+
+From the whole-phase review:
+
+1. **Direction manager change** (`DirectionService.UpdateDirectionAsync` with a new `managerId`):
+   - an open request completes when the new manager had already approved;
+   - the old manager's approval stops counting;
+   - step panel seat moves (and I2's stuck step).
+2. **Administrator moves a Reserved topic to another direction**, where the new manager already
+   approved and completes it.
+3. **Administrator moves an Approved topic's supervisor or direction** while a step is Submitted:
+   the panel is recomputed and completes when satisfied.
+4. **Change request completed by approval where the held topic is a student proposal:** the
+   proposal is deleted, the Released history row keeps its snapshot, and phase 1/phase 2 ordering
+   holds against `ApprovedPerStudent` and the `StudentProfiles.TopicId` index.
+5. **Concurrency** (two requests fired in parallel; exactly one wins with `reservation.changed`):
+   approve+approve completing; approve+return; approve+reject; wording+approve;
+   resubmit+reject; cancel+approve.
+6. **Admin form edit of a Pending request's wording** racing an approval (M2 code).
+7. **Resubmit of a catalogue topic, then reject:** the wording is restored to the *original*
+   snapshot, not the resubmitted one. **Cancel after an approver's edit:** restored too.
+8. **Resubmit and edit wording validation:** empty title, 301-character title, 4001-character
+   description → `validation.failed`.
+9. **Creator approval counts only while the creator is active:** request made after the creator's
+   deactivation → no creator row.
+10. **Admin-created topic reserved by a student** starts with the Administration seat filled. Also
+    cover the duplicate-row case of M4.
+11. **Release by the direction manager** (not the supervisor) of an Approved topic, including
+    `reservation.hasSubmissions`.
+12. **Returned requests:**
+    - in the teacher list as "waiting for the student";
+    - `canDecide` false;
+    - reject allowed;
+    - approve, return and wording → `reservation.invalidState`.
+13. **Standards controller:**
+    - replacement (old approvals stop counting, `AssignedAt` reset);
+    - no-op (`affectedSteps: 0`);
+    - clearing auto-approves a Submitted step whose only open seat was the controller's
+      (`approvedSteps` count);
+    - approved steps untouched (I3);
+    - clearing after deactivation is attempted.
+14. **One person, one seat, for every combination:**
+    - controller == supervisor (approves once with a mark);
+    - controller == direction manager;
+    - controller == existing extra;
+    - manager == supervisor;
+    - manager == existing extra whose Extra approval then stops counting.
+    - For each, check that `WaitingForCallerQuery`, `isMyDecision`, `canDecide` and `mySeat`
+      agree.
+15. **`MySeat` absent when `canDecide` is false.** The administrator stand-in reports
+    `Supervisor`, never `StandardsControl`.
+16. **Visibility negatives:**
+    - the controller cannot open other steps of the student (404 `studentTask.notFound`);
+    - the controller cannot download files of another step;
+    - the controller cannot manage the panel (`panel.notAllowed`);
+    - the direction manager loses access at once after reassignment.
+17. **`GET /api/reservations/{id}`:** a former supervisor or manager after reassignment gets
+    404; a student reading another student's request gets 404.
+18. **Capabilities are not cached:** clear a flag with the account signed in; the next
+    `POST /api/directions` answers `access.forbidden` without a re-login.
+19. **`GET /api/staff/options?capability=`:** an invalid value → `validation.failed`; an inactive
+    flagged teacher is excluded.
+20. **Department change of a direction:** allowed with no topics, `direction.hasTopics` with
+    topics, `direction.nameTaken` in the target department.
+21. **Student directions:** a student of another department gets `direction.notFound` on
+    `GET /api/directions/{id}`, and the proposal picker lists only their department's directions.
+22. **Archiving a student with a Returned request:** the request is cancelled and the catalogue
+    wording restored in the same save.
+23. **Frontend:**
+    - `RequestActions` refreshes on 409;
+    - the resubmit dialog prefills the live wording;
+    - the decision form hides the mark for `StandardsControl`;
+    - `ReviewPanelCard` shows "Approved" without a mark;
+    - the Directions tab is hidden without the capability, and a direct URL redirects.
+24. **Unit tests for the pure functions:**
+    - `TopicApprovalPanel.Evaluate`/`SeatsOf`/`HasOpenSeat`: equality at `ContentChangedAt`,
+      edits and returns, an administrator who is also the supervisor, `Rejected` rows ignored.
+    - `ReviewPanel.Evaluate` absorption order and `AverageMark` ignoring standards control.
+
+---
+
+## Phase 12 — Scoped staff roles
+
+- `RoleCoverage`: a faculty assignment covers its departments and groups, a department assignment its groups, a group assignment only itself; a group assignment never covers a department; an inactive account covers nothing; an Admin account never covers. `DepartmentsCoveredBy` agrees with `CoversDepartmentAsync`.
+- `RoleAssignmentUsage.FindBlockersAsync`: each kind of work blocks in its own role only (`supervisedStudent`, `supervisedTopic` for an available and an asked-for topic, `panelSeat`, `managedDirection`, `controlledStep`); work outside the scope does not block; a group-scope teacher assignment is never blocked by an available topic; another assignment of the same role covering the place frees it (faculty frees department and the reverse); archived students and approved steps do not block.
+- `StaffService.AddAssignmentAsync`: role and scope kind by name only (numeric strings refused); a direction manager at group level refused; an unknown place refused; a duplicate refused, including the unique-index race (`roleAssignment.exists`). `StaffRoleName.TryParse` in the list and options queries refuses numbers.
+- `AuthService`: the first held role in sign-in order; none gives `Staff`; switching to a role not held refused; a non-staff account cannot switch.
+- `SessionStateValidator`: every claim that does not fit its account (Admin↔Staff, Student↔Staff, an unknown or lowercase name) gives `RoleChanged`; a held role passes; `Staff` always passes for a staff account; `RoleWithdrawn` after the last assignment of the role is removed, and after its scope is deleted.
+- `ReviewPanel.SeatFor` / `ActsFor`: a seat is decided only in its role (a direction manager acting as teacher cannot decide their manager seat); an administrator may decide an extra seat.
+- `WaitingForCallerQuery`: one person holding two seats (supervisor + manager, manager + extra, extra + controller) appears only in the queue of their first seat's role.
+- `BuildReviewStudentProjection.CanOpen` per acting role, including a standards controller seeing only controlled steps.
+- `TopicApprovalPanel.SeatsOf`: the direction seat only while acting as direction manager, the supervision seat only while acting as teacher.
+- `AccessScope`: each acting role's students, groups and steps; a standards controller opens only the steps of the group steps they control.
+- Coverage at take-on: topic edit re-checks only a new supervisor or a department move; a direction move needs a manager covering the target (`direction.managerInvalid` for an admin, `scope.notCovered` for the manager); the student form keeps an unchanged supervisor across a group move and refuses a new uncovered one (`AssignSupervisorAsync`, `ResolveAssignmentAsync`); `SetStandardsControllerAsync` refuses an uncovered controller and accepts the unchanged one as a no-op.
+- `ReservationService.CompleteAsync`: a replacement refreshes the student's unfinished steps and approves a Submitted step whose new panel is satisfied, also through `CompleteSatisfiedRequestsAsync`; a first topic touches nothing.
+- `ArchiveService`: rows stamped with the supervisor at archiving time, taken before reservations are settled (both `StudentService` and `GroupService` paths); two supervisors in one archived group each see only their own rows, counts and search hits; a download of another supervisor's file answers 404; a restored and re-archived student keeps the old stamp on old rows.
+- Deleting a faculty, department or group deletes the assignments scoped to it, in the same save.

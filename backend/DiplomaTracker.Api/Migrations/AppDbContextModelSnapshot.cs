@@ -118,14 +118,6 @@ namespace DiplomaTracker.Api.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
 
-                    b.Property<string>("ReviewerComment")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<string>("ReviewerName")
-                        .HasMaxLength(300)
-                        .HasColumnType("nvarchar(300)");
-
                     b.Property<long>("SizeBytes")
                         .HasColumnType("bigint");
 
@@ -155,10 +147,15 @@ namespace DiplomaTracker.Api.Migrations
                     b.Property<DateTime>("SubmittedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<Guid?>("SupervisorId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int>("Version")
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("SupervisorId");
 
                     b.HasIndex("ArchivedGroupId", "StorageKey")
                         .IsUnique();
@@ -216,31 +213,78 @@ namespace DiplomaTracker.Api.Migrations
                     b.ToTable("ArchivedGroups", (string)null);
                 });
 
-            modelBuilder.Entity("DiplomaTracker.Api.Entities.ArchivedGroupReviewer", b =>
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.ArchivedReview", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTime>("ArchivedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<Guid>("ArchivedGroupId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid>("ReviewerId")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<string>("Comment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime>("DecidedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("Mark")
+                        .HasColumnType("int");
 
                     b.Property<string>("ReviewerName")
                         .IsRequired()
                         .HasMaxLength(302)
                         .HasColumnType("nvarchar(302)");
 
+                    b.Property<string>("Seat")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("SourceReviewId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("StepOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("StepTitle")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("StudentName")
+                        .IsRequired()
+                        .HasMaxLength(302)
+                        .HasColumnType("nvarchar(302)");
+
+                    b.Property<string>("StudentNumber")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid?>("SupervisorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("ReviewerId");
+                    b.HasIndex("SupervisorId");
 
-                    b.HasIndex("ArchivedGroupId", "ReviewerId")
+                    b.HasIndex("ArchivedGroupId", "SourceReviewId")
                         .IsUnique();
 
-                    b.ToTable("ArchivedGroupReviewers", (string)null);
+                    b.ToTable("ArchivedReviews", (string)null);
                 });
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.Department", b =>
@@ -319,6 +363,101 @@ namespace DiplomaTracker.Api.Migrations
                         .IsUnique();
 
                     b.ToTable("DiplomaTaskTemplates", (string)null);
+                });
+
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.Direction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("DepartmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("ManagerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ManagerId");
+
+                    b.HasIndex("DepartmentId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("Directions", (string)null);
+                });
+
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.DocumentEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ActorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorName")
+                        .IsRequired()
+                        .HasMaxLength(302)
+                        .HasColumnType("nvarchar(302)");
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Purpose")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid?>("RecipientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RecipientName")
+                        .HasMaxLength(302)
+                        .HasColumnType("nvarchar(302)");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("VersionNumber")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorId");
+
+                    b.HasIndex("RecipientId");
+
+                    b.HasIndex("DocumentId", "Sequence")
+                        .IsUnique();
+
+                    b.ToTable("DocumentEvents", (string)null);
                 });
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.DocumentTemplate", b =>
@@ -407,6 +546,57 @@ namespace DiplomaTracker.Api.Migrations
                     b.ToTable("DocumentTemplateTeachers", (string)null);
                 });
 
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.DocumentVersion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("int");
+
+                    b.Property<string>("OriginalName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UploadedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("UploadedByName")
+                        .IsRequired()
+                        .HasMaxLength(302)
+                        .HasColumnType("nvarchar(302)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UploadedById");
+
+                    b.HasIndex("DocumentId", "Number")
+                        .IsUnique();
+
+                    b.ToTable("DocumentVersions", (string)null);
+                });
+
             modelBuilder.Entity("DiplomaTracker.Api.Entities.Faculty", b =>
                 {
                     b.Property<Guid>("Id")
@@ -479,31 +669,6 @@ namespace DiplomaTracker.Api.Migrations
                     b.ToTable("Groups", (string)null);
                 });
 
-            modelBuilder.Entity("DiplomaTracker.Api.Entities.GroupReviewer", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("GroupId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("ReviewerId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ReviewerId");
-
-                    b.HasIndex("GroupId", "ReviewerId")
-                        .IsUnique();
-
-                    b.ToTable("GroupReviewers", (string)null);
-                });
-
             modelBuilder.Entity("DiplomaTracker.Api.Entities.GroupTask", b =>
                 {
                     b.Property<Guid>("Id")
@@ -522,6 +687,12 @@ namespace DiplomaTracker.Api.Migrations
                     b.Property<Guid>("GroupId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTime?>("StandardsControllerAssignedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("StandardsControllerId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTime?>("StartDate")
                         .HasColumnType("datetime2");
 
@@ -531,6 +702,8 @@ namespace DiplomaTracker.Api.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("DiplomaTaskTemplateId");
+
+                    b.HasIndex("StandardsControllerId");
 
                     b.HasIndex("GroupId", "DiplomaTaskTemplateId")
                         .IsUnique();
@@ -559,6 +732,133 @@ namespace DiplomaTracker.Api.Migrations
                             Id = 1,
                             RegistrationOpen = false
                         });
+                });
+
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.ReservationDecision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime>("DecidedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("DeciderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("DeciderWasAdministrator")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("ReservationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeciderId");
+
+                    b.HasIndex("ReservationId", "DecidedAt");
+
+                    b.ToTable("ReservationDecisions", (string)null);
+                });
+
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.RoleAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("ScopeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ScopeKind")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedById");
+
+                    b.HasIndex("ScopeKind", "ScopeId");
+
+                    b.HasIndex("UserId", "Role", "ScopeKind", "ScopeId")
+                        .IsUnique();
+
+                    b.ToTable("RoleAssignments", (string)null);
+                });
+
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.RoutedDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid?>("HolderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Purpose")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId");
+
+                    b.HasIndex("HolderId", "State", "Purpose");
+
+                    b.ToTable("RoutedDocuments", (string)null);
                 });
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.StudentProfile", b =>
@@ -662,6 +962,36 @@ namespace DiplomaTracker.Api.Migrations
                     b.ToTable("StudentTasks", (string)null);
                 });
 
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.StudentTaskReviewer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("AddedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("AddedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ReviewerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("StudentTaskId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AddedById");
+
+                    b.HasIndex("ReviewerId");
+
+                    b.HasIndex("StudentTaskId", "ReviewerId")
+                        .IsUnique();
+
+                    b.ToTable("StudentTaskReviewers", (string)null);
+                });
+
             modelBuilder.Entity("DiplomaTracker.Api.Entities.Submission", b =>
                 {
                     b.Property<Guid>("Id")
@@ -678,19 +1008,9 @@ namespace DiplomaTracker.Api.Migrations
                     b.Property<bool>("IsLate")
                         .HasColumnType("bit");
 
-                    b.Property<int?>("Mark")
-                        .HasColumnType("int");
-
                     b.Property<string>("Message")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
-
-                    b.Property<string>("ReviewerComment")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<Guid?>("ReviewerId")
-                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("StudentTaskId")
                         .HasColumnType("uniqueidentifier");
@@ -702,8 +1022,6 @@ namespace DiplomaTracker.Api.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("ReviewerId");
 
                     b.HasIndex("Decision", "SubmittedAt");
 
@@ -752,6 +1070,48 @@ namespace DiplomaTracker.Api.Migrations
                     b.ToTable("SubmissionFiles", (string)null);
                 });
 
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.SubmissionReview", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime>("DecidedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("Mark")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ReviewerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Seat")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("SubmissionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReviewerId");
+
+                    b.HasIndex("SubmissionId", "ReviewerId")
+                        .IsUnique();
+
+                    b.ToTable("SubmissionReviews", (string)null);
+                });
+
             modelBuilder.Entity("DiplomaTracker.Api.Entities.Topic", b =>
                 {
                     b.Property<Guid>("Id")
@@ -761,12 +1121,15 @@ namespace DiplomaTracker.Api.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<Guid>("DepartmentId")
+                    b.Property<Guid?>("CreatedById")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Description")
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
+
+                    b.Property<Guid>("DirectionId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Origin")
                         .IsRequired()
@@ -797,9 +1160,11 @@ namespace DiplomaTracker.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedById");
+
                     b.HasIndex("SupervisorId");
 
-                    b.HasIndex("DepartmentId", "Status");
+                    b.HasIndex("DirectionId", "Status");
 
                     b.ToTable("Topics", (string)null);
                 });
@@ -809,6 +1174,9 @@ namespace DiplomaTracker.Api.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ContentChangedAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -828,6 +1196,10 @@ namespace DiplomaTracker.Api.Migrations
                     b.Property<Guid>("StudentProfileId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("TopicDescription")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
                     b.Property<Guid?>("TopicId")
                         .HasColumnType("uniqueidentifier");
 
@@ -841,7 +1213,7 @@ namespace DiplomaTracker.Api.Migrations
                     b.HasIndex("TopicId")
                         .IsUnique()
                         .HasDatabaseName("IX_TopicReservations_ActivePerTopic")
-                        .HasFilter("[TopicId] IS NOT NULL AND [Status] IN ('Pending', 'Approved')");
+                        .HasFilter("[TopicId] IS NOT NULL AND [Status] IN ('Pending', 'Returned', 'Approved')");
 
                     b.HasIndex("StudentProfileId", "CreatedAt");
 
@@ -849,9 +1221,9 @@ namespace DiplomaTracker.Api.Migrations
                         .IsUnique()
                         .HasFilter("[Status] = 'Approved'");
 
-                    b.HasIndex(new[] { "StudentProfileId" }, "IX_TopicReservations_PendingPerStudent")
+                    b.HasIndex(new[] { "StudentProfileId" }, "IX_TopicReservations_OpenPerStudent")
                         .IsUnique()
-                        .HasFilter("[Status] = 'Pending'");
+                        .HasFilter("[Status] IN ('Pending', 'Returned')");
 
                     b.ToTable("TopicReservations", (string)null);
                 });
@@ -867,10 +1239,10 @@ namespace DiplomaTracker.Api.Migrations
                     b.Navigation("ArchivedGroup");
                 });
 
-            modelBuilder.Entity("DiplomaTracker.Api.Entities.ArchivedGroupReviewer", b =>
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.ArchivedReview", b =>
                 {
                     b.HasOne("DiplomaTracker.Api.Entities.ArchivedGroup", "ArchivedGroup")
-                        .WithMany("Reviewers")
+                        .WithMany("Reviews")
                         .HasForeignKey("ArchivedGroupId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -898,6 +1270,44 @@ namespace DiplomaTracker.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Faculty");
+                });
+
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.Direction", b =>
+                {
+                    b.HasOne("DiplomaTracker.Api.Entities.Department", "Department")
+                        .WithMany("Directions")
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", "Manager")
+                        .WithMany("ManagedDirections")
+                        .HasForeignKey("ManagerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Department");
+
+                    b.Navigation("Manager");
+                });
+
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.DocumentEvent", b =>
+                {
+                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("ActorId");
+
+                    b.HasOne("DiplomaTracker.Api.Entities.RoutedDocument", "Document")
+                        .WithMany("Events")
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("RecipientId");
+
+                    b.Navigation("Document");
                 });
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.DocumentTemplate", b =>
@@ -949,6 +1359,21 @@ namespace DiplomaTracker.Api.Migrations
                     b.Navigation("Template");
                 });
 
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.DocumentVersion", b =>
+                {
+                    b.HasOne("DiplomaTracker.Api.Entities.RoutedDocument", "Document")
+                        .WithMany("Versions")
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UploadedById");
+
+                    b.Navigation("Document");
+                });
+
             modelBuilder.Entity("DiplomaTracker.Api.Entities.Group", b =>
                 {
                     b.HasOne("DiplomaTracker.Api.Entities.Department", "Department")
@@ -958,25 +1383,6 @@ namespace DiplomaTracker.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Department");
-                });
-
-            modelBuilder.Entity("DiplomaTracker.Api.Entities.GroupReviewer", b =>
-                {
-                    b.HasOne("DiplomaTracker.Api.Entities.Group", "Group")
-                        .WithMany("Reviewers")
-                        .HasForeignKey("GroupId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", "Reviewer")
-                        .WithMany("GroupReviews")
-                        .HasForeignKey("ReviewerId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Group");
-
-                    b.Navigation("Reviewer");
                 });
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.GroupTask", b =>
@@ -993,9 +1399,72 @@ namespace DiplomaTracker.Api.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", "StandardsController")
+                        .WithMany()
+                        .HasForeignKey("StandardsControllerId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("DiplomaTaskTemplate");
 
                     b.Navigation("Group");
+
+                    b.Navigation("StandardsController");
+                });
+
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.ReservationDecision", b =>
+                {
+                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", "Decider")
+                        .WithMany()
+                        .HasForeignKey("DeciderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DiplomaTracker.Api.Entities.TopicReservation", "Reservation")
+                        .WithMany("Decisions")
+                        .HasForeignKey("ReservationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Decider");
+
+                    b.Navigation("Reservation");
+                });
+
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.RoleAssignment", b =>
+                {
+                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", "CreatedBy")
+                        .WithMany()
+                        .HasForeignKey("CreatedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", "User")
+                        .WithMany("RoleAssignments")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CreatedBy");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.RoutedDocument", b =>
+                {
+                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", "Holder")
+                        .WithMany()
+                        .HasForeignKey("HolderId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Holder");
+
+                    b.Navigation("Owner");
                 });
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.StudentProfile", b =>
@@ -1050,20 +1519,40 @@ namespace DiplomaTracker.Api.Migrations
                     b.Navigation("StudentProfile");
                 });
 
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.StudentTaskReviewer", b =>
+                {
+                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", "AddedBy")
+                        .WithMany()
+                        .HasForeignKey("AddedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", "Reviewer")
+                        .WithMany()
+                        .HasForeignKey("ReviewerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DiplomaTracker.Api.Entities.StudentTask", "StudentTask")
+                        .WithMany("Reviewers")
+                        .HasForeignKey("StudentTaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AddedBy");
+
+                    b.Navigation("Reviewer");
+
+                    b.Navigation("StudentTask");
+                });
+
             modelBuilder.Entity("DiplomaTracker.Api.Entities.Submission", b =>
                 {
-                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", "Reviewer")
-                        .WithMany("ReviewedSubmissions")
-                        .HasForeignKey("ReviewerId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("DiplomaTracker.Api.Entities.StudentTask", "StudentTask")
                         .WithMany("Submissions")
                         .HasForeignKey("StudentTaskId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("Reviewer");
 
                     b.Navigation("StudentTask");
                 });
@@ -1079,11 +1568,35 @@ namespace DiplomaTracker.Api.Migrations
                     b.Navigation("Submission");
                 });
 
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.SubmissionReview", b =>
+                {
+                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", "Reviewer")
+                        .WithMany()
+                        .HasForeignKey("ReviewerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DiplomaTracker.Api.Entities.Submission", "Submission")
+                        .WithMany("Reviews")
+                        .HasForeignKey("SubmissionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Reviewer");
+
+                    b.Navigation("Submission");
+                });
+
             modelBuilder.Entity("DiplomaTracker.Api.Entities.Topic", b =>
                 {
-                    b.HasOne("DiplomaTracker.Api.Entities.Department", "Department")
+                    b.HasOne("DiplomaTracker.Api.Entities.AppUser", "CreatedBy")
+                        .WithMany()
+                        .HasForeignKey("CreatedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("DiplomaTracker.Api.Entities.Direction", "Direction")
                         .WithMany("Topics")
-                        .HasForeignKey("DepartmentId")
+                        .HasForeignKey("DirectionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -1093,7 +1606,9 @@ namespace DiplomaTracker.Api.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("Department");
+                    b.Navigation("CreatedBy");
+
+                    b.Navigation("Direction");
 
                     b.Navigation("Supervisor");
                 });
@@ -1118,9 +1633,9 @@ namespace DiplomaTracker.Api.Migrations
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.AppUser", b =>
                 {
-                    b.Navigation("GroupReviews");
+                    b.Navigation("ManagedDirections");
 
-                    b.Navigation("ReviewedSubmissions");
+                    b.Navigation("RoleAssignments");
 
                     b.Navigation("StudentProfile");
 
@@ -1133,19 +1648,24 @@ namespace DiplomaTracker.Api.Migrations
                 {
                     b.Navigation("Files");
 
-                    b.Navigation("Reviewers");
+                    b.Navigation("Reviews");
                 });
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.Department", b =>
                 {
-                    b.Navigation("Groups");
+                    b.Navigation("Directions");
 
-                    b.Navigation("Topics");
+                    b.Navigation("Groups");
                 });
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.DiplomaTaskTemplate", b =>
                 {
                     b.Navigation("GroupTasks");
+                });
+
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.Direction", b =>
+                {
+                    b.Navigation("Topics");
                 });
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.DocumentTemplate", b =>
@@ -1166,14 +1686,19 @@ namespace DiplomaTracker.Api.Migrations
                 {
                     b.Navigation("GroupTasks");
 
-                    b.Navigation("Reviewers");
-
                     b.Navigation("Students");
                 });
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.GroupTask", b =>
                 {
                     b.Navigation("StudentTasks");
+                });
+
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.RoutedDocument", b =>
+                {
+                    b.Navigation("Events");
+
+                    b.Navigation("Versions");
                 });
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.StudentProfile", b =>
@@ -1185,12 +1710,16 @@ namespace DiplomaTracker.Api.Migrations
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.StudentTask", b =>
                 {
+                    b.Navigation("Reviewers");
+
                     b.Navigation("Submissions");
                 });
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.Submission", b =>
                 {
                     b.Navigation("Files");
+
+                    b.Navigation("Reviews");
                 });
 
             modelBuilder.Entity("DiplomaTracker.Api.Entities.Topic", b =>
@@ -1198,6 +1727,11 @@ namespace DiplomaTracker.Api.Migrations
                     b.Navigation("Holders");
 
                     b.Navigation("Reservations");
+                });
+
+            modelBuilder.Entity("DiplomaTracker.Api.Entities.TopicReservation", b =>
+                {
+                    b.Navigation("Decisions");
                 });
 #pragma warning restore 612, 618
         }

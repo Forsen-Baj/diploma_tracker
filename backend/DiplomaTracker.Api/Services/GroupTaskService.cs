@@ -25,7 +25,7 @@ public class GroupTaskService : IGroupTaskService
     {
         var query = _dbContext.GroupTasks.AsNoTracking().AsQueryable();
 
-        if (role != "Admin")
+        if (role != AccountRoles.Admin)
         {
             var visibleGroupIds = _accessScope.VisibleGroups(new UserContext(userId, role)).Select(g => g.Id);
             query = query.Where(x => visibleGroupIds.Contains(x.GroupId));
@@ -82,21 +82,6 @@ public class GroupTaskService : IGroupTaskService
         if (group is null)
         {
             return (null, TaskErrors.GroupTaskGroupNotFound);
-        }
-
-        if (role == "Teacher")
-        {
-            var allowed = await IsTeacherReviewerOfGroupAsync(userId, request.GroupId);
-            if (!allowed)
-            {
-                // A group that exists but this teacher does not review must look identical to a
-                // group that does not exist at all (spec §6) - Forbidden would let a teacher
-                // distinguish the two on this write path exactly as the read paths already refuse
-                // to. The authorisation rule itself is unchanged: writes stay reviewer-only.
-                // GroupId comes from the request body, so this must match the same
-                // GroupTaskGroupNotFound (400) code used above for an unknown GroupId.
-                return (null, TaskErrors.GroupTaskGroupNotFound);
-            }
         }
 
         var template = await _dbContext.DiplomaTaskTemplates.FirstOrDefaultAsync(t => t.Id == request.TaskTemplateId);
@@ -178,16 +163,6 @@ public class GroupTaskService : IGroupTaskService
         if (group is null)
         {
             return (null, GroupErrors.NotFound);
-        }
-
-        if (role == "Teacher")
-        {
-            var allowed = await IsTeacherReviewerOfGroupAsync(userId, groupId);
-            if (!allowed)
-            {
-                // See CreateGroupTaskAsync: not-found, not forbidden, so existence isn't leaked.
-                return (null, GroupErrors.NotFound);
-            }
         }
 
         if (request.Items.Count == 0)
@@ -323,18 +298,6 @@ public class GroupTaskService : IGroupTaskService
             return (null, TaskErrors.GroupTaskNotFound);
         }
 
-        if (role == "Teacher")
-        {
-            var allowed = await IsTeacherReviewerOfGroupAsync(userId, groupTask.GroupId);
-            if (!allowed)
-            {
-                // See CreateGroupTaskAsync: not-found, not forbidden, so existence isn't leaked.
-                // Id comes from the URL here, so this must match the same GroupTaskNotFound (404)
-                // code used above for an unknown group task id.
-                return (null, TaskErrors.GroupTaskNotFound);
-            }
-        }
-
         if (request.StartDate is not null && request.StartDate > request.Deadline)
         {
             return (null, TaskErrors.GroupTaskStartAfterDeadline);
@@ -377,11 +340,6 @@ public class GroupTaskService : IGroupTaskService
         return (true, null);
     }
 
-    private async Task<bool> IsTeacherReviewerOfGroupAsync(Guid teacherId, Guid groupId)
-    {
-        return await _dbContext.GroupReviewers.AnyAsync(gr => gr.GroupId == groupId && gr.ReviewerId == teacherId);
-    }
-
     private static IQueryable<GroupTaskResponse> ProjectGroupTasks(IQueryable<GroupTask> query)
     {
         return query.Select(x => new GroupTaskResponse
@@ -397,7 +355,24 @@ public class GroupTaskService : IGroupTaskService
             Deadline = x.Deadline,
             CreatedAt = x.CreatedAt,
             UpdatedAt = x.UpdatedAt,
-            StudentTaskCount = x.StudentTasks.Count(st => st.StudentProfile.ArchivedAt == null)
+            StudentTaskCount = x.StudentTasks.Count(st => st.StudentProfile.ArchivedAt == null),
+            StandardsControllerId = x.StandardsControllerId,
+            StandardsControllerName = x.StandardsController == null
+                ? null
+                : x.StandardsController.LastName + " " + x.StandardsController.FirstName,
+            StandardsControlApproved = x.StandardsControllerId == null
+                ? 0
+                : x.StudentTasks.Count(st => st.StudentProfile.ArchivedAt == null
+                    && st.Submissions.SelectMany(s => s.Reviews).Any(r =>
+                        r.Seat == ReviewSeat.StandardsControl
+                        && r.Decision == SubmissionDecision.Approved
+                        && r.ReviewerId == x.StandardsControllerId
+                        && r.DecidedAt >= x.StandardsControllerAssignedAt)),
+            StandardsControlTotal = x.StandardsControllerId == null
+                ? 0
+                : x.StudentTasks.Count(st => st.StudentProfile.ArchivedAt == null
+                    && !(st.Status == StudentTaskStatus.Approved && st.CompletedAt < x.StandardsControllerAssignedAt)),
+            ApprovedStepCount = x.StudentTasks.Count(st => st.StudentProfile.ArchivedAt == null && st.Status == StudentTaskStatus.Approved)
         });
     }
 
@@ -416,7 +391,8 @@ public class GroupTaskService : IGroupTaskService
             Deadline = groupTask.Deadline,
             CreatedAt = groupTask.CreatedAt,
             UpdatedAt = groupTask.UpdatedAt,
-            StudentTaskCount = groupTask.StudentTasks.Count
+            StudentTaskCount = groupTask.StudentTasks.Count,
+            StandardsControllerId = groupTask.StandardsControllerId
         };
     }
 

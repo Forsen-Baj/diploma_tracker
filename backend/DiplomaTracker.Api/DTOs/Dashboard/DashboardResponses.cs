@@ -53,6 +53,26 @@ public class OverdueStepRow
     public int DaysOverdue { get; set; }
 }
 
+/// Task 7 bug 5: a submission that is late (submitted after its deadline, or still awaiting a
+/// decision past it) and waiting for the caller's own decision (R1). Teacher-dashboard-only.
+/// Review I3: IsLate tells the two owner cases apart per row - the submission itself was late, or
+/// it was on time and the deadline has since passed while it waits.
+public class LateAwaitingReviewRow
+{
+    public Guid StudentTaskId { get; set; }
+    public Guid StudentProfileId { get; set; }
+    public string StudentName { get; set; } = string.Empty;
+    public Guid GroupId { get; set; }
+    public string GroupCode { get; set; } = string.Empty;
+    public string StepTitle { get; set; } = string.Empty;
+    public int StepOrder { get; set; }
+    public int Version { get; set; }
+    public DateTime SubmittedAt { get; set; }
+    public DateTime Deadline { get; set; }
+    public int DaysOverdue { get; set; }
+    public bool IsLate { get; set; }
+}
+
 public class SupervisedStudentRow
 {
     public Guid StudentProfileId { get; set; }
@@ -70,6 +90,7 @@ public class TeacherDashboardResponse
     public int WaitingReviews { get; set; }
     public IReadOnlyList<ReviewQueueItem> LatestForReview { get; set; } = [];
     public IReadOnlyList<OverdueStepRow> OverdueSteps { get; set; } = [];
+    public IReadOnlyList<LateAwaitingReviewRow> LateAwaitingReview { get; set; } = [];
     public IReadOnlyList<SupervisedStudentRow> SupervisedStudents { get; set; } = [];
     public IReadOnlyList<DashboardGroupRow> Groups { get; set; } = [];
 }

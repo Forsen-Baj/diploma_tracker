@@ -16,7 +16,7 @@ public static class SecurityLog
     public static void SignInFailed(ILogger logger, string email, string reason) =>
         logger.LogWarning("Sign-in failed: Email={Email}, Reason={Reason}", email, reason);
 
-    /// Reason is one of Missing, Inactive, Unclaimed, RoleChanged, Malformed.
+    /// Reason is one of Missing, Inactive, Unclaimed, RoleChanged, RoleWithdrawn, Malformed.
     public static void SessionRejected(ILogger logger, Guid userId, string reason) =>
         logger.LogWarning("Session rejected: UserId={UserId}, Reason={Reason}", userId, reason);
 
@@ -29,6 +29,9 @@ public static class SecurityLog
 
     public static void PasswordChanged(ILogger logger, Guid userId) =>
         logger.LogInformation("Password changed: UserId={UserId}", userId);
+
+    public static void ActingRoleSwitched(ILogger logger, Guid userId, string role) =>
+        logger.LogInformation("Acting role switched: UserId={UserId}, Role={Role}", userId, role);
 
     public static void AccessReset(ILogger logger, Guid studentUserId, Guid administratorId) =>
         logger.LogInformation(
@@ -57,21 +60,39 @@ public static class SecurityLog
 
     /// Action is Created, Updated, Deleted, Activated, Deactivated, PasswordSet or Reordered;
     /// entity is the entity type name (Faculty, Department, Group, TaskTemplate, GroupTask,
-    /// Teacher, Administrator, Student, Topic, Settings).
+    /// Staff, Administrator, Student, Topic, Settings).
     public static void AdministratorAction(ILogger logger, Guid administratorId, string action, string entity, Guid entityId) =>
         logger.LogInformation(
             "Administrator action: AdministratorId={AdministratorId}, Action={Action}, Entity={Entity}, EntityId={EntityId}",
             administratorId, action, entity, entityId);
+
+    /// Action is Added or Removed (design 2026-09-27, phase 12, §6).
+    public static void RoleAssignmentChanged(ILogger logger, Guid administratorId, string action, Guid userId, string role, string scopeKind, Guid scopeId) =>
+        logger.LogInformation(
+            "Role assignment changed: AdministratorId={AdministratorId}, Action={Action}, UserId={UserId}, Role={Role}, ScopeKind={ScopeKind}, ScopeId={ScopeId}",
+            administratorId, action, userId, role, scopeKind, scopeId);
 
     public static void TopicAssigned(ILogger logger, Guid studentProfileId, Guid administratorId, Guid? topicId) =>
         logger.LogInformation(
             "Topic assigned: StudentProfileId={StudentProfileId}, AdministratorId={AdministratorId}, TopicId={TopicId}",
             studentProfileId, administratorId, topicId);
 
+    /// Action is Approved, Returned, Rejected, Edited, Resubmitted or Completed.
+    public static void TopicRequestAction(ILogger logger, Guid actorUserId, string action, Guid reservationId) =>
+        logger.LogInformation(
+            "Topic request {Action}: ActorUserId={ActorUserId}, ReservationId={ReservationId}",
+            action, actorUserId, reservationId);
+
     public static void SubmissionDecided(ILogger logger, Guid reviewerId, Guid submissionId, string decision, int? mark) =>
         logger.LogInformation(
             "Submission decided: ReviewerId={ReviewerId}, SubmissionId={SubmissionId}, Decision={Decision}, Mark={Mark}",
             reviewerId, submissionId, decision, mark);
+
+    /// Action is Added or Removed.
+    public static void ReviewPanelChanged(ILogger logger, Guid actorUserId, string action, Guid studentTaskId, Guid reviewerId) =>
+        logger.LogInformation(
+            "Review panel changed: ActorUserId={ActorUserId}, Action={Action}, StudentTaskId={StudentTaskId}, ReviewerId={ReviewerId}",
+            actorUserId, action, studentTaskId, reviewerId);
 
     public static void FileDownloaded(ILogger logger, Guid actorUserId, Guid fileId, Guid studentProfileId) =>
         logger.LogInformation(
@@ -93,4 +114,10 @@ public static class SecurityLog
         logger.LogWarning(
             "Archive purged: AdministratorId={AdministratorId}, ArchivedGroupId={ArchivedGroupId}, FileCount={FileCount}, Bytes={Bytes}",
             administratorId, archivedGroupId, fileCount, bytes);
+
+    /// Action is Created, VersionAdded, Updated, Sent, Forwarded, Rejected, Done, Recalled, Deleted or Downloaded.
+    public static void DocumentAction(ILogger logger, Guid actorUserId, string action, Guid documentId) =>
+        logger.LogInformation(
+            "Document action: ActorUserId={ActorUserId}, Action={Action}, DocumentId={DocumentId}",
+            actorUserId, action, documentId);
 }

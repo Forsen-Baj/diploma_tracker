@@ -4,17 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/apiClient'
 import { getDepartments } from '../api/departmentsApi'
-import {
-  addGroupReviewer,
-  createGroup,
-  deleteGroup,
-  getGroupDeletionPreview,
-  getGroupReviewers,
-  getGroups,
-  removeGroupReviewer,
-  updateGroup
-} from '../api/groupsApi'
-import { getTeachers } from '../api/teachersApi'
+import { createGroup, deleteGroup, getGroupDeletionPreview, getGroups, updateGroup } from '../api/groupsApi'
 import { useErrorMessage } from '../api/useErrorMessage'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -28,7 +18,7 @@ import { Textarea } from '../components/ui/Textarea'
 import { TextField } from '../components/ui/TextField'
 import { useToast } from '../components/ui/useToast'
 import { optional } from '../utils/optional'
-import type { Department, Group, GroupDeletionPreview, GroupReviewer, Teacher } from '../api/types'
+import type { Department, Group, GroupDeletionPreview } from '../api/types'
 
 type GroupFormState = {
   departmentId: string
@@ -46,9 +36,7 @@ export function GroupsPage() {
   const navigate = useNavigate()
 
   const [groups, setGroups] = useState<Group[]>([])
-  const [teachers, setTeachers] = useState<Teacher[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
-  const [reviewers, setReviewers] = useState<GroupReviewer[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
@@ -64,47 +52,22 @@ export function GroupsPage() {
   const [isDeletingGroup, setIsDeletingGroup] = useState(false)
   const [previewLoadingGroupId, setPreviewLoadingGroupId] = useState<string | null>(null)
 
-  const [selectedGroupId, setSelectedGroupId] = useState<string>('')
-  const [selectedReviewerId, setSelectedReviewerId] = useState<string>('')
-  const [isLoadingReviewers, setIsLoadingReviewers] = useState(false)
-  const [isAddingReviewer, setIsAddingReviewer] = useState(false)
-  const [removingReviewer, setRemovingReviewer] = useState<GroupReviewer | null>(null)
-  const [isRemovingReviewer, setIsRemovingReviewer] = useState(false)
-
   const sortedGroups = useMemo(
     () => [...groups].sort((a, b) => a.code.localeCompare(b.code) || a.academicYear.localeCompare(b.academicYear)),
     [groups]
   )
-  const activeTeachers = useMemo(() => teachers.filter((teacher) => teacher.isActive), [teachers])
-  const availableTeachers = useMemo(
-    () => activeTeachers.filter((teacher) => !reviewers.some((reviewer) => reviewer.reviewerId === teacher.id)),
-    [activeTeachers, reviewers]
-  )
-
   const departmentOptions: SelectOption[] = useMemo(
     () => departments.map((department) => ({ value: department.id, label: `${department.name} · ${department.facultyName}` })),
     [departments]
   )
 
-  const groupOptions: SelectOption[] = useMemo(
-    () => sortedGroups.map((group) => ({ value: group.id, label: `${group.code} (${group.academicYear})` })),
-    [sortedGroups]
-  )
-
-  const reviewerOptions: SelectOption[] = useMemo(
-    () => availableTeachers.map((teacher) => ({ value: teacher.id, label: `${teacher.firstName} ${teacher.lastName}` })),
-    [availableTeachers]
-  )
-
-  const loadGroupsAndTeachers = async () => {
+  const loadGroups = async () => {
     setIsLoading(true)
     setLoadError('')
     try {
-      const [groupsData, teachersData, departmentsData] = await Promise.all([getGroups(), getTeachers(), getDepartments()])
+      const [groupsData, departmentsData] = await Promise.all([getGroups(), getDepartments()])
       setGroups(groupsData)
-      setTeachers(teachersData)
       setDepartments(departmentsData)
-      setSelectedGroupId((current) => (current || groupsData[0]?.id) ?? '')
     } catch (err) {
       setLoadError(errorMessage(err))
     } finally {
@@ -112,33 +75,10 @@ export function GroupsPage() {
     }
   }
 
-  const loadReviewers = async (groupId: string) => {
-    setIsLoadingReviewers(true)
-    try {
-      const data = await getGroupReviewers(groupId)
-      setReviewers(data)
-    } catch (err) {
-      toast.error(errorMessage(err))
-      setReviewers([])
-    } finally {
-      setIsLoadingReviewers(false)
-    }
-  }
-
   useEffect(() => {
-    void loadGroupsAndTeachers()
+    void loadGroups()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  useEffect(() => {
-    setSelectedReviewerId('')
-    if (selectedGroupId) {
-      void loadReviewers(selectedGroupId)
-    } else {
-      setReviewers([])
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupId])
 
   const openCreateGroup = () => {
     setEditingGroup(null)
@@ -195,11 +135,11 @@ export function GroupsPage() {
       }
       setIsGroupModalOpen(false)
       toast.success(t('common.savedToast'))
-      await loadGroupsAndTeachers()
+      await loadGroups()
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
         // The department list may be stale (for example, deleted from another tab).
-        await loadGroupsAndTeachers()
+        await loadGroups()
       }
       toast.error(errorMessage(err))
     } finally {
@@ -232,52 +172,14 @@ export function GroupsPage() {
     setIsDeletingGroup(true)
     try {
       await deleteGroup(deletingGroup.id)
-      if (selectedGroupId === deletingGroup.id) {
-        setSelectedGroupId('')
-      }
       setDeletingGroup(null)
       setDeletionPreview(null)
       toast.success(t('common.deletedToast'))
-      await loadGroupsAndTeachers()
+      await loadGroups()
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
       setIsDeletingGroup(false)
-    }
-  }
-
-  const handleAddReviewer = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedGroupId || !selectedReviewerId) {
-      return
-    }
-
-    setIsAddingReviewer(true)
-    try {
-      await addGroupReviewer(selectedGroupId, selectedReviewerId)
-      setSelectedReviewerId('')
-      toast.success(t('common.savedToast'))
-      await loadReviewers(selectedGroupId)
-    } catch (err) {
-      toast.error(errorMessage(err))
-    } finally {
-      setIsAddingReviewer(false)
-    }
-  }
-
-  const removeReviewer = async () => {
-    if (!selectedGroupId || !removingReviewer) return
-
-    setIsRemovingReviewer(true)
-    try {
-      await removeGroupReviewer(selectedGroupId, removingReviewer.reviewerId)
-      setRemovingReviewer(null)
-      toast.success(t('common.deletedToast'))
-      await loadReviewers(selectedGroupId)
-    } catch (err) {
-      toast.error(errorMessage(err))
-    } finally {
-      setIsRemovingReviewer(false)
     }
   }
 
@@ -294,6 +196,7 @@ export function GroupsPage() {
             <p>{t('groups.deleteAccounts', { count: deletionPreview.archivedStudentCount })}</p>
           )}
           {deletionPreview.fileCount > 0 && <p>{t('groups.deleteFiles', { count: deletionPreview.fileCount })}</p>}
+          {deletionPreview.documentCount > 0 && <p>{t('groups.deleteDocuments', { count: deletionPreview.documentCount })}</p>}
         </>
       )}
     </>
@@ -336,18 +239,6 @@ export function GroupsPage() {
     }
   ]
 
-  const reviewerColumns: DataTableColumn<GroupReviewer>[] = [
-    { key: 'name', header: t('groups.reviewer'), render: (reviewer) => `${reviewer.firstName} ${reviewer.lastName}` },
-    { key: 'email', header: t('auth.email'), render: (reviewer) => reviewer.email },
-    {
-      key: 'actions',
-      header: t('common.actions'),
-      render: (reviewer) => (
-        <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('common.remove')} onClick={() => setRemovingReviewer(reviewer)} />
-      )
-    }
-  ]
-
   return (
     <>
       <PageHeader
@@ -355,7 +246,7 @@ export function GroupsPage() {
         actions={<Button icon={Plus} onClick={openCreateGroup}>{t('groups.addGroup')}</Button>}
       />
 
-      <Card className="mb-6">
+      <Card>
         {loadError && <p className="text-sm text-danger">{loadError}</p>}
         {!loadError && (
           <DataTable
@@ -365,45 +256,6 @@ export function GroupsPage() {
             loading={isLoading}
             emptyState={<EmptyState message={t('groups.noGroups')} />}
           />
-        )}
-      </Card>
-
-      <Card title={t('groups.reviewersTitle')}>
-        <div className="mb-4 max-w-sm">
-          <Select
-            label={t('groups.group')}
-            value={selectedGroupId}
-            onChange={setSelectedGroupId}
-            options={groupOptions}
-            placeholder={t('common.select')}
-          />
-        </div>
-
-        {selectedGroupId && (
-          <>
-            <form onSubmit={handleAddReviewer} className="mb-4 flex items-end gap-3">
-              <div className="max-w-sm flex-1">
-                <Select
-                  label={t('groups.reviewer')}
-                  value={selectedReviewerId}
-                  onChange={setSelectedReviewerId}
-                  options={reviewerOptions}
-                  placeholder={t('common.select')}
-                />
-              </div>
-              <Button type="submit" loading={isAddingReviewer} disabled={!selectedReviewerId}>
-                {t('groups.assignReviewer')}
-              </Button>
-            </form>
-
-            <DataTable
-              columns={reviewerColumns}
-              rows={reviewers}
-              getRowKey={(reviewer) => reviewer.id}
-              loading={isLoadingReviewers}
-              emptyState={<EmptyState message={t('groups.noReviewers')} />}
-            />
-          </>
         )}
       </Card>
 
@@ -461,15 +313,6 @@ export function GroupsPage() {
         loading={isDeletingGroup}
         onConfirm={() => void removeGroup()}
         onCancel={closeDeleteGroup}
-      />
-
-      <ConfirmDialog
-        open={Boolean(removingReviewer)}
-        title={t('common.remove')}
-        message={t('groups.removeReviewerConfirm')}
-        loading={isRemovingReviewer}
-        onConfirm={() => void removeReviewer()}
-        onCancel={() => setRemovingReviewer(null)}
       />
     </>
   )

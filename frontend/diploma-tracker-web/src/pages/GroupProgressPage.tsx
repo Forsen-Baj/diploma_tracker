@@ -1,7 +1,7 @@
 import { ArrowLeft } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { getGroupStudents } from '../api/groupsApi'
 import { getGroupProgress } from '../api/workflowApi'
 import { useErrorMessage } from '../api/useErrorMessage'
@@ -13,19 +13,21 @@ import { EmptyState } from '../components/ui/EmptyState'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Spinner } from '../components/ui/Spinner'
 import { GroupProgressMatrix } from '../components/workflow/GroupProgressMatrix'
+import { stepBackNavigation } from '../utils/reviewStepBack'
 import type { GroupProgress, GroupStudent } from '../api/types'
 
 export function GroupProgressPage() {
   const { t } = useTranslation()
   const errorMessage = useErrorMessage()
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
   const { groupId } = useParams<{ groupId: string }>()
 
   // Reached both from the teacher's own group list and from the shared dashboard group table
   // (task-15 brief, Step 5), so the back link has to return to whichever list the viewer owns.
   const isAdmin = user?.role === 'Admin'
-  const backToGroupsPath = isAdmin ? '/admin/groups' : '/teacher/groups'
+  const backToGroupsPath = isAdmin ? '/admin/groups' : '/staff/groups'
   // The admin's groups list uses the wording "Back to groups"; teachers keep the "my groups" wording.
   const backToGroupsLabel = isAdmin ? t('groups.backToGroups') : t('progress.backToGroups')
 
@@ -108,7 +110,10 @@ export function GroupProgressPage() {
           <PageHeader title={progress.groupCode} />
 
           <Card title={t('progress.title')} className="mb-6">
-            <GroupProgressMatrix progress={progress} onOpenStep={(studentTaskId) => navigate(`/review/steps/${studentTaskId}`)} />
+            <GroupProgressMatrix
+              progress={progress}
+              onOpenStep={(studentTaskId) => navigate(`/review/steps/${studentTaskId}`, stepBackNavigation(location, 'group'))}
+            />
           </Card>
 
           <Card title={t('groupDetails.students')}>

@@ -50,18 +50,32 @@ public class AuthController : ApiControllerBase
     [HttpGet("me")]
     public async Task<IActionResult> Me()
     {
-        if (!TryGetUserContext(out _, out var userId))
+        if (!TryGetUserContext(out var role, out var userId))
         {
             return ErrorResult(OnboardingErrors.UserNotFound);
         }
 
-        var user = await _authService.GetCurrentUserAsync(userId);
+        var user = await _authService.GetCurrentUserAsync(userId, role);
         if (user is null)
         {
             return ErrorResult(OnboardingErrors.UserNotFound);
         }
 
         return Ok(user);
+    }
+
+    /// Design 2026-09-27 (phase 12) §5: a new token acting in another role the caller holds.
+    [Authorize]
+    [HttpPost("acting-role")]
+    public async Task<IActionResult> SwitchActingRole([FromBody] ActingRoleRequest request)
+    {
+        if (!TryGetUserContext(out _, out var userId))
+        {
+            return ErrorResult(OnboardingErrors.UserNotFound);
+        }
+
+        var (result, error) = await _authService.SwitchActingRoleAsync(userId, request.Role);
+        return result is null ? ErrorResult(error) : Ok(result);
     }
 
     [Authorize]

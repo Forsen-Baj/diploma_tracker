@@ -28,18 +28,32 @@ public class ArchivedFileResponse
     public bool IsLate { get; set; }
     public string? Decision { get; set; }
     public int? Mark { get; set; }
-    public string? ReviewerName { get; set; }
-    public string? ReviewerComment { get; set; }
     public DateTime? DecidedAt { get; set; }
     public string Kind { get; set; } = string.Empty;
     public string OriginalName { get; set; } = string.Empty;
     public long SizeBytes { get; set; }
 }
 
+public class ArchivedReviewResponse
+{
+    public Guid Id { get; set; }
+    public string StudentName { get; set; } = string.Empty;
+    public string StudentNumber { get; set; } = string.Empty;
+    public string StepTitle { get; set; } = string.Empty;
+    public int StepOrder { get; set; }
+    public int Version { get; set; }
+    public string ReviewerName { get; set; } = string.Empty;
+    public string Seat { get; set; } = string.Empty;
+    public string Decision { get; set; } = string.Empty;
+    public int? Mark { get; set; }
+    public string? Comment { get; set; }
+    public DateTime DecidedAt { get; set; }
+}
+
 public class ArchivedGroupDetailsResponse : ArchivedGroupSummaryResponse
 {
-    public IReadOnlyList<string> ReviewerNames { get; set; } = [];
     public IReadOnlyList<ArchivedFileResponse> Files { get; set; } = [];
+    public IReadOnlyList<ArchivedReviewResponse> Reviews { get; set; } = [];
 }
 
 public class ArchiveUsageResponse

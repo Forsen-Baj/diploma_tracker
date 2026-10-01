@@ -1,6 +1,8 @@
 import { CalendarX, Lightbulb } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ApiError } from '../api/apiClient'
+import { getDirections } from '../api/directionsApi'
 import { getMyReservations, proposeTopic, reserveTopic } from '../api/reservationsApi'
 import { getTopicSelectionSettings } from '../api/settingsApi'
 import { getTopics, getTopicSupervisors } from '../api/topicsApi'
@@ -22,15 +24,16 @@ import { MyTopicCard } from '../components/topics/MyTopicCard'
 import { TopicDetailsModal } from '../components/topics/TopicDetailsModal'
 import { TopicStatusBadge } from '../components/topics/TopicStatusBadge'
 import { optional } from '../utils/optional'
-import type { Reservation, SupervisorOption, Topic } from '../api/types'
+import type { Direction, Reservation, SupervisorOption, Topic } from '../api/types'
 
 type ProposeFormState = {
   title: string
   description: string
   supervisorId: string
+  directionId: string
 }
 
-const emptyProposeForm: ProposeFormState = { title: '', description: '', supervisorId: '' }
+const emptyProposeForm: ProposeFormState = { title: '', description: '', supervisorId: '', directionId: '' }
 
 export function StudentTopicsPage() {
   const { t, i18n } = useTranslation()
@@ -39,6 +42,7 @@ export function StudentTopicsPage() {
 
   const [topics, setTopics] = useState<Topic[]>([])
   const [supervisors, setSupervisors] = useState<SupervisorOption[]>([])
+  const [directions, setDirections] = useState<Direction[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [deadline, setDeadline] = useState<string | null>(null)
   const [pageLoading, setPageLoading] = useState(true)
@@ -50,6 +54,7 @@ export function StudentTopicsPage() {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [supervisorId, setSupervisorId] = useState('')
+  const [directionId, setDirectionId] = useState('')
 
   const [viewingTopic, setViewingTopic] = useState<Topic | null>(null)
 
@@ -59,6 +64,7 @@ export function StudentTopicsPage() {
   const [isProposeOpen, setIsProposeOpen] = useState(false)
   const [proposeForm, setProposeForm] = useState<ProposeFormState>(emptyProposeForm)
   const [proposeSupervisorError, setProposeSupervisorError] = useState('')
+  const [proposeDirectionError, setProposeDirectionError] = useState('')
   const [isProposing, setIsProposing] = useState(false)
 
   const dateFormat = useMemo(
@@ -75,12 +81,14 @@ export function StudentTopicsPage() {
     setPageLoading(true)
     setLoadError('')
     try {
-      const [supervisorsData, reservationsData, settings] = await Promise.all([
+      const [supervisorsData, directionsData, reservationsData, settings] = await Promise.all([
         getTopicSupervisors(),
+        getDirections(),
         getMyReservations(),
         getTopicSelectionSettings()
       ])
       setSupervisors(supervisorsData)
+      setDirections(directionsData)
       setReservations(reservationsData)
       setDeadline(settings.deadline)
     } catch (err) {
@@ -95,7 +103,7 @@ export function StudentTopicsPage() {
     setTopicsLoading(true)
     setTopicsError('')
     try {
-      const data = await getTopics({ search, supervisorId: supervisorId || undefined })
+      const data = await getTopics({ search, supervisorId: supervisorId || undefined, directionId: directionId || undefined })
       if (topicsRequestRef.current !== requestId) return
       setTopics(data)
     } catch (err) {
@@ -114,7 +122,7 @@ export function StudentTopicsPage() {
   useEffect(() => {
     void loadTopics()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, supervisorId])
+  }, [search, supervisorId, directionId])
 
   const [now, setNow] = useState(() => Date.now())
 
@@ -138,9 +146,9 @@ export function StudentTopicsPage() {
   }, [])
 
   const approvedReservation = reservations.find((reservation) => reservation.status === 'Approved') ?? null
-  const pendingReservation = reservations.find((reservation) => reservation.status === 'Pending') ?? null
+  const openReservation = reservations.find((r) => r.status === 'Pending' || r.status === 'Returned') ?? null
   const hasTopic = Boolean(approvedReservation)
-  const hasPending = Boolean(pendingReservation)
+  const hasPending = Boolean(openReservation)
   const selectionClosedRaw = deadline !== null && new Date(deadline).getTime() <= now
   const noTopicAndClosed = !hasTopic && selectionClosedRaw
 
@@ -154,6 +162,11 @@ export function StudentTopicsPage() {
   ]
 
   const proposeSupervisorOptions: SelectOption[] = supervisors.map((supervisor) => ({ value: supervisor.id, label: supervisor.name }))
+  const directionFilterOptions: SelectOption[] = [
+    { value: '', label: t('topics.allDirections') },
+    ...directions.map((direction) => ({ value: direction.id, label: direction.name }))
+  ]
+  const proposeDirectionOptions: SelectOption[] = directions.map((direction) => ({ value: direction.id, label: direction.name }))
 
   const openReserveConfirm = (topic: Topic) => setReservingTopic(topic)
 
@@ -168,6 +181,14 @@ export function StudentTopicsPage() {
       await Promise.all([loadContext(), loadTopics()])
     } catch (err) {
       toast.error(errorMessage(err))
+      // Review M6 (task 7 fix round 1): a page left open since before the topic was approved
+      // still offered Reserve; the server's topicHeld refusal used to show only as a toast, with
+      // the stale Reserve button still sitting there. Refresh so hasTopic catches up and the
+      // catalogue re-renders without it.
+      if (err instanceof ApiError && err.code === 'reservation.topicHeld') {
+        setReservingTopic(null)
+        refreshAfterChange()
+      }
     } finally {
       setIsReserving(false)
     }
@@ -176,6 +197,7 @@ export function StudentTopicsPage() {
   const openProposeModal = () => {
     setProposeForm(emptyProposeForm)
     setProposeSupervisorError('')
+    setProposeDirectionError('')
     setIsProposeOpen(true)
   }
 
@@ -187,18 +209,22 @@ export function StudentTopicsPage() {
   const submitPropose = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
-    if (!proposeForm.supervisorId) {
-      setProposeSupervisorError(t('validation.required'))
+    const supervisorMissing = !proposeForm.supervisorId
+    const directionMissing = !proposeForm.directionId
+    setProposeSupervisorError(supervisorMissing ? t('validation.required') : '')
+    setProposeDirectionError(directionMissing ? t('validation.required') : '')
+
+    if (supervisorMissing || directionMissing) {
       return
     }
-    setProposeSupervisorError('')
 
     setIsProposing(true)
     try {
       await proposeTopic({
         title: proposeForm.title.trim(),
         description: optional(proposeForm.description),
-        supervisorId: proposeForm.supervisorId
+        supervisorId: proposeForm.supervisorId,
+        directionId: proposeForm.directionId
       })
       setIsProposeOpen(false)
       toast.success(t('topics.proposed'))
@@ -220,41 +246,46 @@ export function StudentTopicsPage() {
         </button>
       )
     },
+    { key: 'direction', header: t('topics.direction'), render: (topic) => topic.directionName },
     { key: 'supervisor', header: t('topics.supervisor'), render: (topic) => topic.supervisorName },
     { key: 'status', header: t('common.status'), render: (topic) => <TopicStatusBadge status={topic.status} /> },
-    {
-      key: 'actions',
-      header: t('common.actions'),
-      render: (topic) => {
-        const isOwnCurrentTopic = topic.id === approvedReservation?.topicId
-        const disabled = hasPending || isOwnCurrentTopic || (!hasTopic && selectionClosedRaw)
-        const reason: ReactNode = !disabled
-          ? undefined
-          : isOwnCurrentTopic
-            ? t('topics.reserveDisabledOwnTopic')
-            : hasPending
-              ? t('topics.reserveDisabledPending')
-              : t('topics.reserveDisabledClosed')
+    // Review M6 (task 7 fix round 1): dropping the whole column when hasTopic - rather than just
+    // returning null from every row's render - avoids an "Actions" header sitting over a column
+    // of empty cells.
+    ...(hasTopic
+      ? []
+      : [
+          {
+            key: 'actions',
+            header: t('common.actions'),
+            render: (topic: Topic) => {
+              const disabled = hasPending || selectionClosedRaw
+              const reason: ReactNode = !disabled
+                ? undefined
+                : hasPending
+                  ? t('topics.reserveDisabledPending')
+                  : t('topics.reserveDisabledClosed')
 
-        const actionButton = (
-          <Button variant="primary" size="sm" onClick={() => openReserveConfirm(topic)} disabled={disabled}>
-            {t(hasTopic ? 'topics.requestChange' : 'topics.reserve')}
-          </Button>
-        )
+              const actionButton = (
+                <Button variant="primary" size="sm" onClick={() => openReserveConfirm(topic)} disabled={disabled}>
+                  {t('topics.reserve')}
+                </Button>
+              )
 
-        if (!disabled) {
-          return actionButton
-        }
+              if (!disabled) {
+                return actionButton
+              }
 
-        return (
-          <Tooltip content={reason}>
-            <span tabIndex={0} className="inline-flex rounded-control">
-              {actionButton}
-            </span>
-          </Tooltip>
-        )
-      }
-    }
+              return (
+                <Tooltip content={reason}>
+                  <span tabIndex={0} className="inline-flex rounded-control">
+                    {actionButton}
+                  </span>
+                </Tooltip>
+              )
+            }
+          }
+        ])
   ]
 
   return (
@@ -269,7 +300,9 @@ export function StudentTopicsPage() {
               : t('topics.noDeadline')
         }
         actions={
-          !pageLoading && !noTopicAndClosed ? (
+          // Bug 9 (task 7): Propose is hidden entirely once the student holds an approved topic,
+          // same as Reserve below - filing a change request is no longer offered anywhere.
+          !pageLoading && !noTopicAndClosed && !hasTopic ? (
             <Button
               variant="secondary"
               icon={Lightbulb}
@@ -277,13 +310,19 @@ export function StudentTopicsPage() {
               disabled={hasPending}
               className="[&>svg]:transition [&>svg]:duration-200 hover:[&>svg]:text-glow hover:[&>svg]:drop-shadow-[0_0_var(--glow-radius)_var(--color-glow)] focus-visible:[&>svg]:text-glow focus-visible:[&>svg]:drop-shadow-[0_0_var(--glow-radius)_var(--color-glow)] motion-reduce:[&>svg]:transition-none"
             >
-              {t(hasTopic ? 'topics.proposeDifferent' : 'topics.propose')}
+              {t('topics.propose')}
             </Button>
           ) : undefined
         }
       />
 
       {!loadError && <MyTopicCard reservations={reservations} loading={pageLoading} onChanged={refreshAfterChange} />}
+
+      {!pageLoading && !loadError && hasTopic && (
+        <Card className="mb-6">
+          <EmptyState message={t('topics.topicHeldNotice')} />
+        </Card>
+      )}
 
       {pageLoading && (
         <div className="flex justify-center py-10">
@@ -318,6 +357,9 @@ export function StudentTopicsPage() {
               <div className="max-w-xs flex-1">
                 <Select label={t('topics.supervisor')} value={supervisorId} onChange={setSupervisorId} options={supervisorFilterOptions} />
               </div>
+              <div className="max-w-xs flex-1">
+                <Select label={t('topics.direction')} value={directionId} onChange={setDirectionId} options={directionFilterOptions} />
+              </div>
             </div>
 
             {topicsError && <p className="mb-4 text-sm text-danger">{topicsError}</p>}
@@ -337,14 +379,8 @@ export function StudentTopicsPage() {
 
       <ConfirmDialog
         open={Boolean(reservingTopic)}
-        title={t(hasTopic ? 'topics.requestChange' : 'topics.reserve')}
-        message={
-          reservingTopic
-            ? hasTopic && approvedReservation
-              ? t('topics.changeConfirm', { next: reservingTopic.title, current: approvedReservation.topicTitle })
-              : t('topics.reserveConfirm', { title: reservingTopic.title })
-            : ''
-        }
+        title={t('topics.reserve')}
+        message={reservingTopic ? t('topics.reserveConfirm', { title: reservingTopic.title }) : ''}
         tone="primary"
         loading={isReserving}
         onConfirm={() => void confirmReserve()}
@@ -358,7 +394,7 @@ export function StudentTopicsPage() {
         footer={
           <>
             <Button variant="secondary" onClick={closeProposeModal} disabled={isProposing}>{t('common.cancel')}</Button>
-            <Button form="propose-topic-form" type="submit" loading={isProposing} disabled={proposeSupervisorOptions.length === 0}>
+            <Button form="propose-topic-form" type="submit" loading={isProposing} disabled={proposeSupervisorOptions.length === 0 || directions.length === 0}>
               {t('topics.propose')}
             </Button>
           </>
@@ -379,6 +415,18 @@ export function StudentTopicsPage() {
             value={proposeForm.description}
             onChange={(e) => setProposeForm((prev) => ({ ...prev, description: e.target.value }))}
           />
+          {directions.length === 0 ? (
+            <p className="text-sm text-text-muted">{t('topics.noDirectionsForProposal')}</p>
+          ) : (
+            <Select
+              label={t('topics.direction')}
+              value={proposeForm.directionId}
+              onChange={(value) => setProposeForm((prev) => ({ ...prev, directionId: value }))}
+              options={proposeDirectionOptions}
+              placeholder={t('common.select')}
+              error={proposeDirectionError}
+            />
+          )}
           {proposeSupervisorOptions.length === 0 ? (
             <p className="text-sm text-text-muted">{t('topics.noTeachersAvailable')}</p>
           ) : (

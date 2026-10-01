@@ -68,7 +68,7 @@ public class DocumentTemplateService : IDocumentTemplateService
     private async Task LoadManageableAudienceAsync(UserContext user, List<DocumentTemplate> templates)
     {
         var manageableIds = templates
-            .Where(t => user.IsAdmin || (user.IsTeacher && t.OwnerId == user.UserId))
+            .Where(t => user.IsAdmin || (user.IsStaff && t.OwnerId == user.UserId))
             .Select(t => t.Id)
             .ToList();
 
@@ -97,7 +97,7 @@ public class DocumentTemplateService : IDocumentTemplateService
     public async Task<(TemplateResponse? template, string? error, IReadOnlyList<string>? unknownMarkers)> CreateAsync(
         UserContext user, TemplateForm form, CancellationToken cancellationToken)
     {
-        if (!user.IsAdmin && !user.IsTeacher)
+        if (!user.IsAdmin && !user.IsStaff)
         {
             return (null, CommonErrors.Forbidden, null);
         }
@@ -363,7 +363,7 @@ public class DocumentTemplateService : IDocumentTemplateService
             return _dbContext.DocumentTemplates;
         }
 
-        if (user.IsTeacher)
+        if (user.IsStaff)
         {
             return _dbContext.DocumentTemplates.Where(t =>
                 t.OwnerId == user.UserId
@@ -393,7 +393,7 @@ public class DocumentTemplateService : IDocumentTemplateService
             return (null, TemplateErrors.NotFound);
         }
 
-        if (user.IsAdmin || (user.IsTeacher && template.OwnerId == user.UserId))
+        if (user.IsAdmin || (user.IsStaff && template.OwnerId == user.UserId))
         {
             return (template, null);
         }
@@ -407,7 +407,7 @@ public class DocumentTemplateService : IDocumentTemplateService
     /// of them are already saved.
     private async Task<string?> ValidateAudienceAsync(UserContext user, bool allStudents, IReadOnlyCollection<Guid> groupIds, IReadOnlyCollection<Guid> teacherIds)
     {
-        if (user.IsTeacher && allStudents)
+        if (user.IsStaff && allStudents)
         {
             return TemplateErrors.AudienceNotAllowed;
         }
@@ -430,7 +430,7 @@ public class DocumentTemplateService : IDocumentTemplateService
     /// silently downgraded to false because the teacher's own request always sends false.
     private async Task<string?> ValidateAudienceUpdateAsync(UserContext user, DocumentTemplate template, bool wantAllStudents, IReadOnlyCollection<Guid> groupIds, IReadOnlyCollection<Guid> teacherIds)
     {
-        if (user.IsTeacher && wantAllStudents && !template.VisibleToAllStudents)
+        if (user.IsStaff && wantAllStudents && !template.VisibleToAllStudents)
         {
             return TemplateErrors.AudienceNotAllowed;
         }
@@ -458,7 +458,7 @@ public class DocumentTemplateService : IDocumentTemplateService
             return null;
         }
 
-        if (user.IsTeacher)
+        if (user.IsStaff)
         {
             var visible = await _accessScope.VisibleGroups(user).CountAsync(g => distinctGroups.Contains(g.Id));
             return visible == distinctGroups.Count ? null : TemplateErrors.AudienceNotAllowed;
@@ -476,7 +476,7 @@ public class DocumentTemplateService : IDocumentTemplateService
             return null;
         }
 
-        var existing = await _dbContext.Users.CountAsync(u => distinctTeachers.Contains(u.Id) && u.Role == "Teacher" && u.IsActive);
+        var existing = await _dbContext.Users.CountAsync(u => distinctTeachers.Contains(u.Id) && u.Role == AccountRoles.Staff && u.IsActive);
         return existing == distinctTeachers.Count ? null : TemplateErrors.TeacherInvalid;
     }
 
@@ -619,7 +619,7 @@ public class DocumentTemplateService : IDocumentTemplateService
                     .Include(t => t.Supervisor)
                     .FirstOrDefaultAsync(t => t.Id == request.TopicId
                         && (t.Id == student.TopicId
-                            || t.Reservations.Any(r => r.StudentProfileId == student.Id && r.Status == ReservationStatus.Pending)),
+                            || t.Reservations.Any(r => r.StudentProfileId == student.Id && (r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Returned))),
                         cancellationToken);
 
                 if (topic is null)
@@ -678,13 +678,13 @@ public class DocumentTemplateService : IDocumentTemplateService
 
         return await _dbContext.Topics.AsNoTracking()
             .Include(t => t.Supervisor)
-            .Where(t => t.Reservations.Any(r => r.StudentProfileId == student.Id && r.Status == ReservationStatus.Pending))
+            .Where(t => t.Reservations.Any(r => r.StudentProfileId == student.Id && (r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Returned)))
             .FirstOrDefaultAsync(cancellationToken);
     }
 
     private static TemplateResponse Map(DocumentTemplate template, UserContext user)
     {
-        var canManage = user.IsAdmin || (user.IsTeacher && template.OwnerId == user.UserId);
+        var canManage = user.IsAdmin || (user.IsStaff && template.OwnerId == user.UserId);
         return new TemplateResponse
         {
             Id = template.Id,

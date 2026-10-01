@@ -1,9 +1,38 @@
+export type StaffRole = 'Teacher' | 'DirectionManager' | 'StandardsController'
+
+/** The role a session acts in (design 2026-09-27, phase 12, §5). `Staff` is a staff member acting in no role. */
+export type ActingRole = 'Admin' | StaffRole | 'Staff' | 'Student'
+
+export type RoleScopeKind = 'Faculty' | 'Department' | 'Group'
+
+export type RoleAssignment = {
+  id: string
+  role: StaffRole
+  scopeKind: RoleScopeKind
+  scopeId: string
+  /** The faculty's or department's name, or the group's code. */
+  scopeName: string
+  /** Short names from the faculty down, e.g. "ФІОТ / ІПЗ / ІП-21". */
+  scopePath: string
+  facultyId: string
+  departmentId: string | null
+  groupId: string | null
+  createdAt: string
+}
+
+export type RoleAssignmentBlocker = {
+  kind: 'supervisedStudent' | 'supervisedTopic' | 'panelSeat' | 'managedDirection' | 'controlledStep'
+  label: string
+}
+
 export type CurrentUser = {
   id: string
   firstName: string
   lastName: string
   email: string
-  role: 'Admin' | 'Teacher' | 'Student'
+  role: ActingRole
+  accountRole: 'Admin' | 'Staff' | 'Student'
+  assignments: RoleAssignment[]
 }
 
 export type LoginRequest = {
@@ -21,18 +50,19 @@ export type HealthResponse = {
   application: string
 }
 
-export type Teacher = {
+export type StaffMember = {
   id: string
   firstName: string
   lastName: string
   patronymic: string | null
   email: string
   isActive: boolean
+  assignments: RoleAssignment[]
   createdAt: string
   updatedAt: string
 }
 
-export type CreateTeacherRequest = {
+export type CreateStaffRequest = {
   firstName: string
   lastName: string
   patronymic?: string
@@ -40,11 +70,26 @@ export type CreateTeacherRequest = {
   password: string
 }
 
-export type UpdateTeacherRequest = {
+export type UpdateStaffRequest = {
   firstName: string
   lastName: string
   patronymic?: string
   email: string
+}
+
+export type AddRoleAssignmentRequest = {
+  role: StaffRole
+  scopeKind: RoleScopeKind
+  scopeId: string
+}
+
+/** `studentTaskId` asks for the extra-reviewer picker of that step; otherwise `role` narrows to staff
+ *  holding it, for `groupId` or `departmentId` when given. */
+export type StaffOptionsQuery = {
+  role?: StaffRole
+  groupId?: string
+  departmentId?: string
+  studentTaskId?: string
 }
 
 export type Student = {
@@ -61,6 +106,7 @@ export type Student = {
   claimReopened: boolean
   topicId: string | null
   topicTitle: string | null
+  hasSubmissions: boolean
   groupId: string | null
   groupCode: string | null
   supervisorId: string | null
@@ -124,20 +170,7 @@ export type GroupDeletionPreview = {
   activeStudentCount: number
   archivedStudentCount: number
   fileCount: number
-}
-
-export type GroupReviewer = {
-  id: string
-  groupId: string
-  reviewerId: string
-  firstName: string
-  lastName: string
-  email: string
-  createdAt: string
-}
-
-export type AddGroupReviewerRequest = {
-  reviewerId: string
+  documentCount: number
 }
 
 export type GroupStudent = {
@@ -199,6 +232,14 @@ export type GroupTask = {
   createdAt: string
   updatedAt: string | null
   studentTaskCount: number
+  standardsControllerId: string | null
+  standardsControllerName: string | null
+  /** Students whose step the current standards controller has approved. */
+  standardsControlApproved: number
+  /** Students whose step the current standards controller checks (not approved before they were assigned). */
+  standardsControlTotal: number
+  /** Students whose step is approved now; a newly assigned controller leaves them alone. */
+  approvedStepCount: number
 }
 
 export type CreateGroupTaskRequest = {
@@ -344,7 +385,7 @@ export type ArchiveGroupStudentsResponse = {
 
 export type TopicStatus = 'Available' | 'Reserved' | 'Approved'
 export type TopicOrigin = 'Catalogue' | 'StudentProposal'
-export type ReservationStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | 'Released'
+export type ReservationStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | 'Released' | 'Returned'
 
 export type Topic = {
   id: string
@@ -355,6 +396,10 @@ export type Topic = {
   departmentId: string
   departmentName: string
   facultyName: string
+  directionId: string
+  directionName: string
+  directionManagerId: string
+  directionManagerName: string
   origin: TopicOrigin
   status: TopicStatus
   activeReservationId: string | null
@@ -362,6 +407,11 @@ export type Topic = {
   studentProfileId: string | null
   studentName: string | null
   groupCode: string | null
+  /** Set only for the topic's holder: whether releasing it would be refused (O1). */
+  hasSubmissions: boolean
+  /** Whether the caller may open the topic form / delete the topic. */
+  canEdit: boolean
+  canDelete: boolean
   createdAt: string
   updatedAt: string
 }
@@ -369,7 +419,7 @@ export type Topic = {
 export type TopicRequest = {
   title: string
   description?: string
-  departmentId: string
+  directionId: string
   supervisorId?: string
 }
 
@@ -377,7 +427,65 @@ export type TopicQuery = {
   search?: string
   supervisorId?: string
   departmentId?: string
+  directionId?: string
   status?: TopicStatus
+}
+
+export type Direction = {
+  id: string
+  name: string
+  description: string | null
+  departmentId: string
+  departmentName: string
+  facultyId: string
+  facultyName: string
+  managerId: string
+  managerName: string
+  topicsAvailable: number
+  topicsReserved: number
+  topicsApproved: number
+  canManage: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type DirectionRequest = {
+  departmentId: string
+  name: string
+  description?: string
+  /** Administrators only. */
+  managerId?: string
+}
+
+export type DirectionQuery = {
+  departmentId?: string
+  managerId?: string
+  mine?: boolean
+  covered?: boolean
+}
+
+export type ApprovalSeatName = 'Administration' | 'Direction' | 'Supervision'
+
+export type ApprovalSeat = {
+  seat: ApprovalSeatName
+  holderName: string | null
+  isSatisfied: boolean
+  approvedByName: string | null
+  approvedAt: string | null
+}
+
+export type ReservationDecisionKind = 'Approved' | 'Returned' | 'Rejected' | 'Edited'
+
+export type ReservationDecision = {
+  kind: ReservationDecisionKind
+  deciderName: string
+  comment: string | null
+  decidedAt: string
+}
+
+export type WordingRequest = {
+  title: string
+  description?: string
 }
 
 export type Reservation = {
@@ -388,6 +496,9 @@ export type Reservation = {
   origin: TopicOrigin | null
   supervisorId: string | null
   supervisorName: string | null
+  directionId: string | null
+  directionName: string | null
+  directionManagerName: string | null
   studentProfileId: string
   studentName: string
   studentEmail: string
@@ -396,16 +507,31 @@ export type Reservation = {
   decisionComment: string | null
   createdAt: string
   decidedAt: string | null
+  /** Phase 11 follow-up D: when the wording last changed while the request was open - decisions
+   *  decided before this no longer count, and a resubmission line belongs here in the timeline. */
+  contentChangedAt: string
   canCancel: boolean
-  /** Set only on a pending change request: the topic the student holds today. */
+  /** Set only on an open request from a student who already holds a topic: that topic. */
   currentTopicId: string | null
   currentTopicTitle: string | null
+  /** Whether releasing this reservation would be refused (O1). */
+  hasSubmissions: boolean
+  /** The three seats of an open request; empty otherwise. */
+  seats: ApprovalSeat[]
+  timeline: ReservationDecision[]
+  returnComment: string | null
+  canDecide: boolean
+  canEditWording: boolean
+  canReject: boolean
+  canRelease: boolean
+  canResubmit: boolean
 }
 
 export type ProposeTopicRequest = {
   title: string
   description?: string
   supervisorId: string
+  directionId: string
 }
 
 export type TopicSelectionSettings = {
@@ -418,6 +544,36 @@ export type SupervisorOption = {
 }
 
 export type StudentTaskStatus = 'Pending' | 'Submitted' | 'Approved' | 'Returned'
+
+export type ReviewSeat = 'Supervisor' | 'DirectionManager' | 'Extra' | 'StandardsControl'
+
+export type PanelSeat = {
+  seat: ReviewSeat
+  /** Null only for a supervisor seat whose student has no supervisor. */
+  reviewerId: string | null
+  reviewerName: string | null
+  isActive: boolean
+  state: 'Approved' | 'Returned' | 'Waiting'
+  mark: number | null
+  canRemove: boolean
+}
+
+export type SubmissionReview = {
+  id: string
+  reviewerName: string
+  seat: ReviewSeat
+  decision: 'Approved' | 'Returned'
+  mark: number | null
+  comment: string | null
+  decidedAt: string
+}
+
+export type StaffOption = {
+  id: string
+  name: string
+  role: 'Admin' | 'Staff'
+  email: string
+}
 
 export type StudentStep = {
   id: string
@@ -433,6 +589,8 @@ export type StudentStep = {
   latestSubmittedAt: string | null
   canSubmit: boolean
   blockReason: string | null
+  panelSize: number
+  panelApproved: number
 }
 
 export type SubmissionFileInfo = {
@@ -448,11 +606,10 @@ export type Submission = {
   message: string | null
   submittedAt: string
   isLate: boolean
+  /** The version's outcome: null while the panel decides. */
   decision: 'Approved' | 'Returned' | null
-  reviewerName: string | null
-  reviewerComment: string | null
-  mark: number | null
   decidedAt: string | null
+  reviews: SubmissionReview[]
   files: SubmissionFileInfo[]
 }
 
@@ -460,9 +617,19 @@ export type StepDetails = StudentStep & {
   studentProfileId: string
   studentName: string
   groupCode: string
-  canReview: boolean
+  canDecide: boolean
   pendingSubmissionId: string | null
+  /** The caller's seat when they can decide. */
+  mySeat: ReviewSeat | null
+  canManagePanel: boolean
+  panel: PanelSeat[]
   timeline: Submission[]
+}
+
+export type StandardsControllerChange = {
+  groupTaskId: string
+  affectedSteps: number
+  approvedSteps: number
 }
 
 export type ReviewQueueItem = {
@@ -477,7 +644,33 @@ export type ReviewQueueItem = {
   version: number
   submittedAt: string
   isLate: boolean
+  panelSize: number
+  panelApproved: number
 }
+
+/** O3: one row of the Review tab's overview - a student and where they are. */
+export type ReviewStudentItem = {
+  studentProfileId: string
+  studentName: string
+  groupId: string
+  groupCode: string
+  /** Null when the student has no steps at all - the row shows "No steps" and has no link. */
+  studentTaskId: string | null
+  stepTitle: string | null
+  stepOrder: number | null
+  status: StudentTaskStatus | null
+  /** Whether the caller could actually open studentTaskId - false (and no link) when it's null, too. */
+  canOpen: boolean
+  version: number | null
+  submittedAt: string | null
+  isLate: boolean
+  isOverdue: boolean
+  panelSize: number | null
+  panelApproved: number | null
+  isMyDecision: boolean
+}
+
+export type ReviewStateFilter = 'All' | 'Waiting' | 'NotStarted' | 'Submitted' | 'Returned' | 'Approved'
 
 export type GroupProgress = {
   groupId: string
@@ -486,6 +679,8 @@ export type GroupProgress = {
   students: {
     studentProfileId: string
     name: string
+    canOpen: boolean
+    isMine: boolean
     cells: {
       groupTaskId: string
       studentTaskId: string
@@ -493,6 +688,8 @@ export type GroupProgress = {
       mark: number | null
       isLate: boolean
       isOverdue: boolean
+      panelApproved: number | null
+      panelSize: number | null
     }[]
   }[]
 }
@@ -606,6 +803,23 @@ export type OverdueStepRow = {
   daysOverdue: number
 }
 
+/** Task 7 bug 5: a late submission (submitted after its deadline, or still waiting past it) that
+ *  is also waiting for the caller's own decision (R1). Teacher-dashboard-only. */
+export type LateAwaitingReviewRow = {
+  studentTaskId: string
+  studentProfileId: string
+  studentName: string
+  groupId: string
+  groupCode: string
+  stepTitle: string
+  stepOrder: number
+  version: number
+  submittedAt: string
+  deadline: string
+  daysOverdue: number
+  isLate: boolean
+}
+
 export type SupervisedStudentRow = {
   studentProfileId: string
   studentName: string
@@ -621,6 +835,7 @@ export type TeacherDashboard = {
   waitingReviews: number
   latestForReview: ReviewQueueItem[]
   overdueSteps: OverdueStepRow[]
+  lateAwaitingReview: LateAwaitingReviewRow[]
   supervisedStudents: SupervisedStudentRow[]
   groups: DashboardGroupRow[]
 }
@@ -679,21 +894,119 @@ export type ArchivedFile = {
   isLate: boolean
   decision: 'Approved' | 'Returned' | null
   mark: number | null
-  reviewerName: string | null
-  reviewerComment: string | null
   decidedAt: string | null
   kind: 'Main' | 'Supporting'
   originalName: string
   sizeBytes: number
 }
 
+export type ArchivedReview = {
+  id: string
+  studentName: string
+  studentNumber: string
+  stepTitle: string
+  stepOrder: number
+  version: number
+  reviewerName: string
+  seat: ReviewSeat
+  decision: 'Approved' | 'Returned'
+  mark: number | null
+  comment: string | null
+  decidedAt: string
+}
+
 export type ArchivedGroupDetails = ArchivedGroupSummary & {
-  reviewerNames: string[]
   files: ArchivedFile[]
+  reviews: ArchivedReview[]
 }
 
 export type ArchiveUsage = {
   groupCount: number
   fileCount: number
   totalSizeBytes: number
+}
+
+export type DocumentState = 'WithOwner' | 'InCirculation' | 'Completed'
+export type DocumentPurpose = 'Review' | 'Signing'
+export type DocumentBoxName = 'review' | 'signing' | 'mine' | 'handled'
+export type DocumentEventKind = 'Created' | 'VersionAdded' | 'Sent' | 'Forwarded' | 'Done' | 'Rejected' | 'Recalled'
+
+export type DocumentListItem = {
+  id: string
+  title: string
+  ownerName: string
+  state: DocumentState
+  purpose: DocumentPurpose | null
+  holderName: string | null
+  fromName: string | null
+  comment: string | null
+  since: string | null
+  updatedAt: string
+  isRejected: boolean
+}
+
+export type DocumentCounts = {
+  review: number
+  signing: number
+}
+
+export type DocumentVersion = {
+  id: string
+  number: number
+  uploadedByName: string
+  originalName: string
+  sizeBytes: number
+  uploadedAt: string
+}
+
+export type DocumentEvent = {
+  sequence: number
+  kind: DocumentEventKind
+  actorName: string
+  actorRemoved: boolean
+  recipientName: string | null
+  purpose: DocumentPurpose | null
+  comment: string | null
+  versionNumber: number | null
+  at: string
+}
+
+export type DocumentPerson = {
+  id: string
+  name: string
+  isDefault: boolean
+}
+
+export type DocumentDetails = {
+  id: string
+  title: string
+  description: string | null
+  ownerName: string
+  isOwner: boolean
+  state: DocumentState
+  purpose: DocumentPurpose | null
+  holderName: string | null
+  isHolder: boolean
+  sequence: number
+  completedByName: string | null
+  rejection: { fromName: string; comment: string | null; at: string } | null
+  versions: DocumentVersion[]
+  events: DocumentEvent[]
+  canEdit: boolean
+  canDelete: boolean
+  canSend: boolean
+  canAddVersion: boolean
+  canForward: boolean
+  canReject: boolean
+  canDone: boolean
+  canRecall: boolean
+  signedCopyRequired: boolean
+  rejectTargets: DocumentPerson[]
+}
+
+export type DocumentRecipient = {
+  id: string
+  name: string
+  role: 'Admin' | 'Staff' | 'Student'
+  groupCode: string | null
 }
