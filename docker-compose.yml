@@ -1,0 +1,78 @@
+# Diploma Tracker production stack: SQL Server, the .NET API, and nginx serving the React app.
+# Only `web` is published. The API and the database sit on internal networks: nothing outside
+# the stack can reach them, and they cannot reach the internet. `db` is reachable from `api` only.
+# Settings come from `.env` next to this file (copy `.env.example`).
+name: diploma-tracker
+
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Express
+      MSSQL_SA_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      # The server is shared; keep SQL Server from taking memory other projects need.
+      MSSQL_MEMORY_LIMIT_MB: "2048"
+    volumes:
+      - db-data:/var/opt/mssql
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -b -Q \"SELECT 1\" -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        # The API applies migrations on startup, so it must wait until SQL Server accepts logins.
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: "Server=db,1433;Database=DiplomaTracker;User Id=sa;Password=${DB_PASSWORD};Encrypt=False;TrustServerCertificate=True;"
+      Jwt__Secret: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      Cors__AllowedOrigins__0: ${PUBLIC_URL:?Set PUBLIC_URL in .env}
+      Bootstrap__AdminEmail: ${ADMIN_EMAIL:?Set ADMIN_EMAIL in .env}
+      Bootstrap__AdminPassword: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      Storage__RootPath: /data/uploads
+      # Behind nginx every request arrives from the proxy's address, so per-client limits would
+      # put all users in one bucket. Stays off until the API reads X-Forwarded-For.
+      RateLimiting__Enabled: "false"
+    volumes:
+      - uploads:/data/uploads
+    networks:
+      - app
+      - data
+
+  web:
+    build:
+      context: ./frontend/diploma-tracker-web
+      args:
+        VITE_API_BASE_URL: ${PUBLIC_URL:?Set PUBLIC_URL in .env}
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${APP_PORT:?Set APP_PORT in .env}:80"
+    networks:
+      - edge
+      - app
+
+networks:
+  # The only network with a route outside, needed to publish APP_PORT.
+  edge:
+  # nginx to API.
+  app:
+    internal: true
+  # API to SQL Server.
+  data:
+    internal: true
+
+volumes:
+  db-data:
+  uploads:
