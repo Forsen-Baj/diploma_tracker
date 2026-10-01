@@ -1,6 +1,7 @@
 using DiplomaTracker.Api.DTOs.Topics;
 using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
+using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -42,12 +43,17 @@ public class TopicsController : ApiControllerBase
     }
 
     [HttpGet("supervisors")]
-    public async Task<IActionResult> GetSupervisors()
+    public async Task<IActionResult> GetSupervisors([FromQuery] Guid? departmentId)
     {
-        return Ok(await _topicService.GetSupervisorsAsync());
+        if (!TryGetCurrentUser(out var user))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        return Ok(await _topicService.GetSupervisorsAsync(user, departmentId));
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminTeacherOrManager)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateTopicRequest request)
     {
@@ -60,7 +66,7 @@ public class TopicsController : ApiControllerBase
         return topic is null ? ErrorResult(error) : CreatedAtAction(nameof(GetById), new { id = topic.Id }, topic);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminTeacherOrManager)]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateTopicRequest request)
     {
@@ -73,7 +79,7 @@ public class TopicsController : ApiControllerBase
         return topic is null ? ErrorResult(error) : Ok(topic);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminTeacherOrManager)]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {

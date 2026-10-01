@@ -24,6 +24,7 @@ public static class TaskErrors
     public const string GroupTaskHasProgress = "groupTask.hasProgress";
     public const string GroupTaskStartAfterDeadline = "groupTask.startAfterDeadline";
     public const string GroupTaskTemplateFacultyMismatch = "groupTask.templateFacultyMismatch";
+    public const string GroupTaskControllerInvalid = "groupTask.controllerInvalid";
 
     public const string StudentTaskNotFound = "studentTask.notFound";
     public const string StudentProfileNotFound = "student.profileNotFound";
@@ -49,6 +50,7 @@ public static class TaskErrors
         new(GroupTaskHasProgress, StatusCodes.Status409Conflict, "Cannot delete group task because related student tasks are no longer pending."),
         new(GroupTaskStartAfterDeadline, StatusCodes.Status400BadRequest, "Start date cannot be later than the deadline."),
         new(GroupTaskTemplateFacultyMismatch, StatusCodes.Status400BadRequest, "The task template's faculty does not match the group's faculty."),
+        new(GroupTaskControllerInvalid, StatusCodes.Status400BadRequest, "Choose an active standards controller whose role covers the group."),
         new(StudentTaskNotFound, StatusCodes.Status404NotFound, "Task not found."),
         new(StudentProfileNotFound, StatusCodes.Status404NotFound, "Student profile not found.")
     ];

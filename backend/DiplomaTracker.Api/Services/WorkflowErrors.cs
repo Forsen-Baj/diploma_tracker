@@ -40,7 +40,7 @@ public static class WorkflowErrors
         new(SubmissionAlreadyDecided, StatusCodes.Status409Conflict, "This submission has already been decided."),
         new(NotOnPanel, StatusCodes.Status403Forbidden, "You are not on this step's review panel."),
         new(SeatSatisfied, StatusCodes.Status409Conflict, "Your approval of this step is already recorded."),
-        new(PanelReviewerInvalid, StatusCodes.Status400BadRequest, "Choose an active teacher or administrator."),
+        new(PanelReviewerInvalid, StatusCodes.Status400BadRequest, "Choose an administrator or an active teacher whose role covers the student's group."),
         new(PanelReviewerIsSupervisor, StatusCodes.Status409Conflict, "The student's supervisor already reviews this step."),
         new(PanelReviewerExists, StatusCodes.Status409Conflict, "This person already reviews this step."),
         new(PanelReviewerNotFound, StatusCodes.Status404NotFound, "This person is not an extra reviewer of this step."),

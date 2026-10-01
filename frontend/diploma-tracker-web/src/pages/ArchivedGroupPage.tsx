@@ -210,10 +210,6 @@ export function ArchivedGroupPage() {
             actions={isAdmin ? <Button variant="danger" onClick={() => setIsPurgeOpen(true)}>{t('archive.purge')}</Button> : undefined}
           />
 
-          {details.reviewerNames.length > 0 && (
-            <p className="mb-4 text-sm text-text-muted">{t('archive.reviewers')}: {details.reviewerNames.join(', ')}</p>
-          )}
-
           {details.files.length === 0 && (
             <Card>
               <EmptyState message={t('archive.noFiles')} />

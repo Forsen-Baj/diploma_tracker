@@ -1,5 +1,5 @@
 import { apiDownload, apiRequest, saveBlob } from './apiClient'
-import type { GroupProgress, Paged, ReviewStateFilter, ReviewStudentItem, StaffOption, StepDetails, StudentProgress, StudentStep } from './types'
+import type { GroupProgress, Paged, ReviewStateFilter, ReviewStudentItem, StepDetails, StudentProgress, StudentStep } from './types'
 
 export function getMySteps(): Promise<StudentStep[]> {
   return apiRequest<StudentStep[]>('/api/student-tasks/mine')
@@ -17,8 +17,8 @@ export function submitWork(id: string, mainFile: File, supportingFiles: File[], 
   return apiRequest<StepDetails>(`/api/student-tasks/${id}/submissions`, { method: 'POST', body: form })
 }
 
-export function approveSubmission(id: string, mark: number, comment?: string): Promise<StepDetails> {
-  return apiRequest<StepDetails>(`/api/submissions/${id}/approve`, { method: 'POST', body: JSON.stringify({ mark, comment }) })
+export function approveSubmission(id: string, mark: number | null, comment?: string): Promise<StepDetails> {
+  return apiRequest<StepDetails>(`/api/submissions/${id}/approve`, { method: 'POST', body: JSON.stringify({ mark: mark ?? undefined, comment }) })
 }
 
 export function returnSubmission(id: string, comment: string): Promise<StepDetails> {
@@ -63,11 +63,4 @@ export function addPanelReviewer(stepId: string, reviewerId: string): Promise<St
 
 export function removePanelReviewer(stepId: string, reviewerId: string): Promise<StepDetails> {
   return apiRequest<StepDetails>(`/api/student-tasks/${stepId}/reviewers/${reviewerId}`, { method: 'DELETE' })
-}
-
-export function searchStaff(search: string): Promise<StaffOption[]> {
-  const params = new URLSearchParams()
-  if (search) params.set('search', search)
-  const query = params.toString()
-  return apiRequest<StaffOption[]>(`/api/staff/options${query ? `?${query}` : ''}`)
 }

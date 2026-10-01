@@ -35,7 +35,7 @@ public class DepartmentsController : ApiControllerBase
         return department is null ? ErrorResult(AcademicStructureErrors.DepartmentNotFound) : Ok(department);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateDepartmentRequest request)
     {
@@ -50,7 +50,7 @@ public class DepartmentsController : ApiControllerBase
             : CreatedAtAction(nameof(GetById), new { id = department.Id }, department);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateDepartmentRequest request)
     {
@@ -63,7 +63,7 @@ public class DepartmentsController : ApiControllerBase
         return department is null ? ErrorResult(error) : Ok(department);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {

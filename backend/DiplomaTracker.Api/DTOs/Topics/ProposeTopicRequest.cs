@@ -11,4 +11,7 @@ public class ProposeTopicRequest
     public string? Description { get; set; }
 
     public Guid SupervisorId { get; set; }
+
+    /// Design 2026-09-27 §4.3: a direction of the student's own department.
+    public Guid DirectionId { get; set; }
 }

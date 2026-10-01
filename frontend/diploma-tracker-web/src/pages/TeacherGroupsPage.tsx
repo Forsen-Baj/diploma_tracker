@@ -53,7 +53,7 @@ export function TeacherGroupsPage() {
             getRowKey={(group) => group.id}
             loading={isLoading}
             emptyState={<EmptyState message={t('progress.noGroups')} />}
-            onRowClick={(group) => navigate(`/teacher/groups/${group.id}`)}
+            onRowClick={(group) => navigate(`/staff/groups/${group.id}`)}
           />
         )}
       </Card>

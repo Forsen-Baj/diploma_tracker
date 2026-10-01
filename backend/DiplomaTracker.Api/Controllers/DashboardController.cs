@@ -1,5 +1,6 @@
 using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
+using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,7 +17,7 @@ public class DashboardController : ApiControllerBase
         _dashboard = dashboard;
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpGet("admin")]
     public async Task<IActionResult> Admin()
     {
@@ -28,7 +29,7 @@ public class DashboardController : ApiControllerBase
         return Ok(await _dashboard.GetAdminAsync(user));
     }
 
-    [Authorize(Roles = "Teacher")]
+    [Authorize(Roles = AuthRoles.AnyStaffRole)]
     [HttpGet("teacher")]
     public async Task<IActionResult> Teacher()
     {
@@ -40,7 +41,7 @@ public class DashboardController : ApiControllerBase
         return Ok(await _dashboard.GetTeacherAsync(user));
     }
 
-    [Authorize(Roles = "Student")]
+    [Authorize(Roles = AccountRoles.Student)]
     [HttpGet("student")]
     public async Task<IActionResult> Student()
     {

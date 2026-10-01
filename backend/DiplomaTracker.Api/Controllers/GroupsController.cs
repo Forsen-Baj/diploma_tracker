@@ -10,7 +10,7 @@ namespace DiplomaTracker.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Teacher")]
+[Authorize(Roles = AuthRoles.AdminOrAnyStaffRole)]
 public class GroupsController : ApiControllerBase
 {
     private readonly IGroupService _groupService;
@@ -56,7 +56,7 @@ public class GroupsController : ApiControllerBase
         return students is null ? ErrorResult(error) : Ok(students);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateGroupRequest request)
     {
@@ -71,7 +71,7 @@ public class GroupsController : ApiControllerBase
             : CreatedAtAction(nameof(GetById), new { id = group.Id }, group);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateGroupRequest request)
     {
@@ -84,7 +84,7 @@ public class GroupsController : ApiControllerBase
         return group is null ? ErrorResult(error) : Ok(group);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
@@ -97,7 +97,7 @@ public class GroupsController : ApiControllerBase
         return success ? NoContent() : ErrorResult(error);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpGet("{id:guid}/deletion-preview")]
     public async Task<IActionResult> GetDeletionPreview(Guid id)
     {
@@ -105,7 +105,7 @@ public class GroupsController : ApiControllerBase
         return preview is null ? ErrorResult(error) : Ok(preview);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpPost("{groupId:guid}/students/archive")]
     public async Task<IActionResult> ArchiveStudents(Guid groupId)
     {
@@ -116,43 +116,5 @@ public class GroupsController : ApiControllerBase
 
         var (archived, error) = await _groupService.ArchiveGroupStudentsAsync(groupId, administratorId);
         return archived is null ? ErrorResult(error) : Ok(new ArchiveResultResponse { Archived = archived.Value });
-    }
-
-    [HttpGet("{groupId:guid}/reviewers")]
-    public async Task<IActionResult> GetReviewers(Guid groupId)
-    {
-        if (!TryGetCurrentUser(out var user))
-        {
-            return ErrorResult(CommonErrors.Forbidden);
-        }
-
-        var reviewers = await _groupService.GetGroupReviewersAsync(user, groupId);
-        return reviewers is null ? ErrorResult(GroupErrors.NotFound) : Ok(reviewers);
-    }
-
-    [Authorize(Roles = "Admin")]
-    [HttpPost("{groupId:guid}/reviewers")]
-    public async Task<IActionResult> AddReviewer(Guid groupId, [FromBody] AddGroupReviewerRequest request)
-    {
-        if (!TryGetUserContext(out _, out var administratorId))
-        {
-            return ErrorResult(CommonErrors.Forbidden);
-        }
-
-        var (reviewer, error) = await _groupService.AddGroupReviewerAsync(groupId, request, administratorId);
-        return reviewer is null ? ErrorResult(error) : Ok(reviewer);
-    }
-
-    [Authorize(Roles = "Admin")]
-    [HttpDelete("{groupId:guid}/reviewers/{reviewerId:guid}")]
-    public async Task<IActionResult> RemoveReviewer(Guid groupId, Guid reviewerId)
-    {
-        if (!TryGetUserContext(out _, out var administratorId))
-        {
-            return ErrorResult(CommonErrors.Forbidden);
-        }
-
-        var (success, error) = await _groupService.RemoveGroupReviewerAsync(groupId, reviewerId, administratorId);
-        return success ? NoContent() : ErrorResult(error);
     }
 }

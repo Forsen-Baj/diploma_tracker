@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ApiError } from '../../api/apiClient'
-import { addPanelReviewer, getStep, searchStaff } from '../../api/workflowApi'
+import { searchStaff } from '../../api/staffApi'
+import { addPanelReviewer, getStep } from '../../api/workflowApi'
 import { useErrorMessage } from '../../api/useErrorMessage'
 import { Button } from '../ui/Button'
 import { cn } from '../ui/cn'
@@ -36,7 +37,7 @@ export function AddReviewerDialog({ step, onClose, onAdded }: AddReviewerDialogP
       setIsLoading(true)
       setLoadError('')
       try {
-        const result = await searchStaff(search.trim())
+        const result = await searchStaff(search.trim(), { studentTaskId: step.id })
         if (requestRef.current !== requestId) return
         setOptions(result)
       } catch (err) {
@@ -133,7 +134,7 @@ export function AddReviewerDialog({ step, onClose, onAdded }: AddReviewerDialogP
               >
                 <span className="block text-text-strong">{option.name}</span>
                 <span className="block text-xs text-text-muted">
-                  {t(`roles.${option.role}`)} · {option.email}
+                  {t(`accountRoles.${option.role}`)} · {option.email}
                 </span>
               </button>
             </li>

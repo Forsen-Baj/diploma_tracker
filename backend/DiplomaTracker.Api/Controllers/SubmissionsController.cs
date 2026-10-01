@@ -1,6 +1,7 @@
 using DiplomaTracker.Api.DTOs.Workflow;
 using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
+using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,7 +18,7 @@ public class SubmissionsController : ApiControllerBase
         _workflow = workflow;
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminOrAnyStaffRole)]
     [HttpPost("submissions/{id:guid}/approve")]
     public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveSubmissionRequest request)
     {
@@ -30,7 +31,7 @@ public class SubmissionsController : ApiControllerBase
         return step is null ? ErrorResult(error) : Ok(step);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminOrAnyStaffRole)]
     [HttpPost("submissions/{id:guid}/return")]
     public async Task<IActionResult> Return(Guid id, [FromBody] ReturnSubmissionRequest request)
     {

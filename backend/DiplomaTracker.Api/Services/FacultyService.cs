@@ -124,6 +124,11 @@ public class FacultyService : IFacultyService
             return (false, AcademicStructureErrors.FacultyHasTaskTemplates);
         }
 
+        // Design 2026-09-27 (phase 12) §3: the roles assigned for this faculty go with it.
+        _dbContext.RoleAssignments.RemoveRange(await _dbContext.RoleAssignments
+            .Where(a => a.ScopeKind == RoleScopeKind.Faculty && a.ScopeId == id)
+            .ToListAsync());
+
         _dbContext.Faculties.Remove(faculty);
 
         try

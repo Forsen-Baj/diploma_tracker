@@ -3,10 +3,9 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { assignAllTaskTemplates, createGroupTask, deleteGroupTask, getTasksForGroup, updateGroupTask } from '../api/groupTasksApi'
-import { addGroupReviewer, getGroupReviewers, getGroups, getGroupStudents, removeGroupReviewer } from '../api/groupsApi'
+import { getGroups, getGroupStudents } from '../api/groupsApi'
 import { archiveGroupStudents } from '../api/studentsApi'
 import { getTaskTemplates } from '../api/taskTemplatesApi'
-import { getTeachers } from '../api/teachersApi'
 import { getGroupProgress } from '../api/workflowApi'
 import { useErrorMessage } from '../api/useErrorMessage'
 import { useAuth } from '../auth/useAuth'
@@ -27,7 +26,7 @@ import { GroupProgressMatrix } from '../components/workflow/GroupProgressMatrix'
 import { fromDatetimeLocalValue, toDatetimeLocalValue } from '../utils/datetime'
 import { formatPeriod } from '../utils/period'
 import { stepBackNavigation } from '../utils/reviewStepBack'
-import type { Group, GroupProgress, GroupReviewer, GroupStudent, GroupTask, TaskTemplate, Teacher } from '../api/types'
+import type { Group, GroupProgress, GroupStudent, GroupTask, TaskTemplate } from '../api/types'
 
 type BulkSelection = {
   startDate: string
@@ -44,21 +43,14 @@ export function GroupDetailsPage() {
   const location = useLocation()
 
   const [group, setGroup] = useState<Group | null>(null)
-  const [reviewers, setReviewers] = useState<GroupReviewer[]>([])
   const [students, setStudents] = useState<GroupStudent[]>([])
   const [tasks, setTasks] = useState<GroupTask[]>([])
-  const [teachers, setTeachers] = useState<Teacher[]>([])
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([])
   const [progress, setProgress] = useState<GroupProgress | null>(null)
   const [isProgressLoading, setIsProgressLoading] = useState(true)
   const [progressError, setProgressError] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-
-  const [selectedReviewerId, setSelectedReviewerId] = useState('')
-  const [isAssigningReviewer, setIsAssigningReviewer] = useState(false)
-  const [removingReviewer, setRemovingReviewer] = useState<GroupReviewer | null>(null)
-  const [isRemovingReviewer, setIsRemovingReviewer] = useState(false)
 
   const [newTaskTemplateId, setNewTaskTemplateId] = useState('')
   const [newTaskStartDate, setNewTaskStartDate] = useState('')
@@ -81,16 +73,6 @@ export function GroupDetailsPage() {
   const dateFormat = useMemo(
     () => new Intl.DateTimeFormat(i18n.language === 'en' ? 'en-GB' : 'uk-UA', { dateStyle: 'medium', timeStyle: 'short' }),
     [i18n.language]
-  )
-
-  const availableTeachers = useMemo(
-    () => teachers.filter((teacher) => teacher.isActive && !reviewers.some((reviewer) => reviewer.reviewerId === teacher.id)),
-    [teachers, reviewers]
-  )
-
-  const reviewerOptions: SelectOption[] = useMemo(
-    () => availableTeachers.map((teacher) => ({ value: teacher.id, label: `${teacher.firstName} ${teacher.lastName}` })),
-    [availableTeachers]
   )
 
   const availableTemplates = useMemo(() => {
@@ -118,18 +100,14 @@ export function GroupDetailsPage() {
     setIsLoading(true)
     setLoadError('')
     try {
-      const [groupsData, reviewersData, studentsData, teachersData, templatesData, tasksData] = await Promise.all([
+      const [groupsData, studentsData, templatesData, tasksData] = await Promise.all([
         getGroups(),
-        getGroupReviewers(groupId),
         getGroupStudents(groupId),
-        getTeachers(),
         getTaskTemplates(),
         getTasksForGroup(groupId)
       ])
       setGroup(groupsData.find((item) => item.id === groupId) ?? null)
-      setReviewers(reviewersData)
       setStudents(studentsData)
-      setTeachers(teachersData)
       setTaskTemplates(templatesData)
       setTasks(tasksData)
     } catch (err) {
@@ -139,7 +117,7 @@ export function GroupDetailsPage() {
     }
 
     // The progress matrix is a read-only, decorative projection: its failure must not take down
-    // group details, reviewers, students, templates or the step-assignment UI.
+    // group details, students, templates or the step-assignment UI.
     setIsProgressLoading(true)
     setProgressError('')
     try {
@@ -156,39 +134,6 @@ export function GroupDetailsPage() {
     void loadDetails()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId])
-
-  const handleAssignReviewer = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!groupId || !selectedReviewerId) return
-
-    setIsAssigningReviewer(true)
-    try {
-      await addGroupReviewer(groupId, selectedReviewerId)
-      setSelectedReviewerId('')
-      toast.success(t('common.savedToast'))
-      await loadDetails()
-    } catch (err) {
-      toast.error(errorMessage(err))
-    } finally {
-      setIsAssigningReviewer(false)
-    }
-  }
-
-  const removeReviewer = async () => {
-    if (!groupId || !removingReviewer) return
-
-    setIsRemovingReviewer(true)
-    try {
-      await removeGroupReviewer(groupId, removingReviewer.reviewerId)
-      setRemovingReviewer(null)
-      toast.success(t('common.deletedToast'))
-      await loadDetails()
-    } catch (err) {
-      toast.error(errorMessage(err))
-    } finally {
-      setIsRemovingReviewer(false)
-    }
-  }
 
   const handleCreateTask = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -416,18 +361,6 @@ export function GroupDetailsPage() {
     }
   ]
 
-  const reviewerColumns: DataTableColumn<GroupReviewer>[] = [
-    { key: 'name', header: t('groups.reviewer'), render: (reviewer) => `${reviewer.firstName} ${reviewer.lastName}` },
-    { key: 'email', header: t('auth.email'), render: (reviewer) => reviewer.email },
-    {
-      key: 'actions',
-      header: t('common.actions'),
-      render: (reviewer) => (
-        <Button variant="ghost" size="sm" icon={Trash2} aria-label={t('common.remove')} onClick={() => setRemovingReviewer(reviewer)} />
-      )
-    }
-  ]
-
   const studentColumns: DataTableColumn<GroupStudent>[] = [
     { key: 'name', header: t('students.lastName'), render: (student) => `${student.firstName} ${student.lastName}` },
     { key: 'studentNumber', header: t('groups.studentNumber'), render: (student) => student.studentNumber },
@@ -478,29 +411,6 @@ export function GroupDetailsPage() {
         <>
           <PageHeader title={groupTitle} description={`${group.academicYear} · ${group.departmentName}`} />
 
-          <Card title={t('groupDetails.reviewers')} className="mb-6">
-            <form onSubmit={handleAssignReviewer} className="mb-4 flex items-end gap-3">
-              <div className="max-w-sm flex-1">
-                <Select
-                  label={t('groups.reviewer')}
-                  value={selectedReviewerId}
-                  onChange={setSelectedReviewerId}
-                  options={reviewerOptions}
-                  placeholder={t('common.select')}
-                />
-              </div>
-              <Button type="submit" loading={isAssigningReviewer} disabled={!selectedReviewerId}>
-                {t('groups.assignReviewer')}
-              </Button>
-            </form>
-            <DataTable
-              columns={reviewerColumns}
-              rows={reviewers}
-              getRowKey={(reviewer) => reviewer.id}
-              emptyState={<EmptyState message={t('groups.noReviewers')} />}
-            />
-          </Card>
-
           <Card title={t('groupDetails.tasks')} className="mb-6">
             <form onSubmit={handleCreateTask} className="mb-6 flex items-end gap-3">
               <div className="max-w-sm flex-1">
@@ -514,8 +424,7 @@ export function GroupDetailsPage() {
               </div>
               <div className="max-w-xs flex-1">
                 <TextField
-                  label={t('groupDetails.startDate')}
-                  hint={t('common.optional')}
+                  label={`${t('groupDetails.startDate')} (${t('common.optional')})`}
                   type="datetime-local"
                   value={newTaskStartDate}
                   onChange={(e) => setNewTaskStartDate(e.target.value)}
@@ -611,8 +520,7 @@ export function GroupDetailsPage() {
       >
         <form id="edit-task-deadline-form" onSubmit={handleSaveTaskDeadline} className="flex flex-col gap-4">
           <TextField
-            label={t('groupDetails.startDate')}
-            hint={t('common.optional')}
+            label={`${t('groupDetails.startDate')} (${t('common.optional')})`}
             type="datetime-local"
             value={editingTaskStartDate}
             onChange={(e) => setEditingTaskStartDate(e.target.value)}
@@ -633,15 +541,6 @@ export function GroupDetailsPage() {
         loading={isDeletingTask}
         onConfirm={() => void removeTask()}
         onCancel={() => setDeletingTask(null)}
-      />
-
-      <ConfirmDialog
-        open={Boolean(removingReviewer)}
-        title={t('common.remove')}
-        message={t('groups.removeReviewerConfirm')}
-        loading={isRemovingReviewer}
-        onConfirm={() => void removeReviewer()}
-        onCancel={() => setRemovingReviewer(null)}
       />
 
       <ConfirmDialog

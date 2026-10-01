@@ -13,12 +13,13 @@ export function AppShell() {
   const { user } = useAuth()
   const waitingDocuments = useDocumentCounts(Boolean(user))
   const items = user
-    ? navigationByRole[user.role].map((item) => ({
-        to: item.to,
-        label: t(item.labelKey),
-        badge: item.badge === 'documents' ? waitingDocuments : undefined,
-        badgeLabel: item.badge === 'documents' ? t('nav.documentsWaiting', { count: waitingDocuments }) : undefined
-      }))
+    ? navigationByRole[user.role]
+        .map((item) => ({
+          to: item.to,
+          label: t(item.labelKey),
+          badge: item.badge === 'documents' ? waitingDocuments : undefined,
+          badgeLabel: item.badge === 'documents' ? t('nav.documentsWaiting', { count: waitingDocuments }) : undefined
+        }))
     : []
 
   return (

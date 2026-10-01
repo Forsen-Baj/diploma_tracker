@@ -11,6 +11,5 @@ public class Group
     public DateTime UpdatedAt { get; set; }
     public Department Department { get; set; } = null!;
     public ICollection<StudentProfile> Students { get; set; } = new List<StudentProfile>();
-    public ICollection<GroupReviewer> Reviewers { get; set; } = new List<GroupReviewer>();
     public ICollection<GroupTask> GroupTasks { get; set; } = new List<GroupTask>();
 }

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { getTeacherDashboard } from '../api/dashboardApi'
 import { useErrorMessage } from '../api/useErrorMessage'
+import { useAuth } from '../auth/useAuth'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -21,6 +22,7 @@ export function TeacherDashboardPage() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const errorMessage = useErrorMessage()
+  const { user } = useAuth()
 
   const [dashboard, setDashboard] = useState<TeacherDashboard | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -126,9 +128,18 @@ export function TeacherDashboardPage() {
     }
   ]
 
+  // Design 2026-09-27 (phase 12) §4.2: one dashboard for the three staff roles, titled after the
+  // role the user acts in. A standards controller supervises no one, so that card is left out.
+  const role = user?.role
+  const title =
+    role === 'DirectionManager' ? t('dashboard.managerTitle')
+      : role === 'StandardsController' ? t('dashboard.controllerTitle')
+        : t('dashboard.teacherTitle')
+  const showSupervised = role !== 'StandardsController'
+
   return (
     <>
-      <PageHeader title={t('dashboard.teacherTitle')} />
+      <PageHeader title={title} />
 
       {isLoading && (
         <div className="flex justify-center py-10">
@@ -146,7 +157,7 @@ export function TeacherDashboardPage() {
         <>
           <div className="mb-6 grid grid-cols-2 gap-4">
             <StatTile label={t('dashboard.waiting')} value={dashboard.waitingReviews} onClick={() => navigate('/review')} />
-            <StatTile label={t('nav.groups')} value={dashboard.groups.length} onClick={() => navigate('/teacher/groups')} />
+            <StatTile label={t('nav.groups')} value={dashboard.groups.length} onClick={() => navigate('/staff/groups')} />
           </div>
 
           <Card title={t('dashboard.latestForReview')} className="mb-6">
@@ -186,14 +197,16 @@ export function TeacherDashboardPage() {
             />
           </Card>
 
-          <Card title={t('dashboard.supervisedStudents')} className="mb-6">
-            <DataTable
-              columns={supervisedColumns}
-              rows={dashboard.supervisedStudents}
-              getRowKey={(row) => row.studentProfileId}
-              emptyState={<EmptyState message={t('dashboard.supervisedEmpty')} />}
-            />
-          </Card>
+          {showSupervised && (
+            <Card title={t('dashboard.supervisedStudents')} className="mb-6">
+              <DataTable
+                columns={supervisedColumns}
+                rows={dashboard.supervisedStudents}
+                getRowKey={(row) => row.studentProfileId}
+                emptyState={<EmptyState message={t('dashboard.supervisedEmpty')} />}
+              />
+            </Card>
+          )}
 
           <Card title={t('dashboard.groupsBreakdown')} className="mb-6">
             <GroupTable rows={sortedGroups} sort={groupSort} onSortChange={(key) => setGroupSort((current) => nextGroupSort(current, key))} />

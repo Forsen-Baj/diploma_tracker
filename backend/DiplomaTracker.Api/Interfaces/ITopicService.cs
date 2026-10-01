@@ -10,5 +10,5 @@ public interface ITopicService
     Task<(TopicResponse? topic, string? error)> CreateTopicAsync(UserContext user, CreateTopicRequest request);
     Task<(TopicResponse? topic, string? error)> UpdateTopicAsync(UserContext user, Guid id, UpdateTopicRequest request);
     Task<(bool success, string? error)> DeleteTopicAsync(UserContext user, Guid id);
-    Task<IReadOnlyList<SupervisorOption>> GetSupervisorsAsync();
+    Task<IReadOnlyList<SupervisorOption>> GetSupervisorsAsync(UserContext user, Guid? departmentId);
 }

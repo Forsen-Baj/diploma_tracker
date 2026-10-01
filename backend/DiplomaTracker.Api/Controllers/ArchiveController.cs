@@ -1,12 +1,13 @@
 using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
+using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DiplomaTracker.Api.Controllers;
 
 [Route("api/archive")]
-[Authorize(Roles = "Admin,Teacher")]
+[Authorize(Roles = AuthRoles.AdminOrTeacher)]
 public class ArchiveController : ApiControllerBase
 {
     private readonly IArchiveService _archive;
@@ -57,11 +58,11 @@ public class ArchiveController : ApiControllerBase
         return File(file.Content, file.ContentType, file.FileName);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpGet("usage")]
     public async Task<IActionResult> Usage() => Ok(await _archive.GetUsageAsync());
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpDelete("groups/{id:guid}")]
     public async Task<IActionResult> Purge(Guid id)
     {

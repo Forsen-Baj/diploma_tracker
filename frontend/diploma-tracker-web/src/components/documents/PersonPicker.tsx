@@ -84,7 +84,7 @@ export function PersonPicker({ value, onChange, error }: PersonPickerProps) {
               >
                 <span className="block text-text-strong">{option.name}</span>
                 <span className="block text-xs text-text-muted">
-                  {t(`roles.${option.role}`)}
+                  {t(`accountRoles.${option.role}`)}
                   {option.groupCode ? ` · ${option.groupCode}` : ''}
                 </span>
               </button>

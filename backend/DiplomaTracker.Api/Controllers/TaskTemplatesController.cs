@@ -9,7 +9,7 @@ namespace DiplomaTracker.Api.Controllers;
 
 [ApiController]
 [Route("api/task-templates")]
-[Authorize(Roles = "Admin,Teacher")]
+[Authorize(Roles = AuthRoles.AdminOrTeacher)]
 public class TaskTemplatesController : ApiControllerBase
 {
     private readonly ITaskTemplateService _taskTemplateService;
@@ -34,7 +34,7 @@ public class TaskTemplatesController : ApiControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     public async Task<IActionResult> Create([FromBody] CreateTaskTemplateRequest request)
     {
         if (!TryGetUserContext(out _, out var administratorId))
@@ -49,7 +49,7 @@ public class TaskTemplatesController : ApiControllerBase
     }
 
     [HttpPut("order")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     public async Task<IActionResult> Reorder([FromBody] ReorderTaskTemplatesRequest request)
     {
         if (!TryGetUserContext(out _, out var administratorId))
@@ -62,7 +62,7 @@ public class TaskTemplatesController : ApiControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateTaskTemplateRequest request)
     {
         if (!TryGetUserContext(out _, out var administratorId))
@@ -75,7 +75,7 @@ public class TaskTemplatesController : ApiControllerBase
     }
 
     [HttpPatch("{id:guid}/activate")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     public async Task<IActionResult> Activate(Guid id)
     {
         if (!TryGetUserContext(out _, out var administratorId))
@@ -88,7 +88,7 @@ public class TaskTemplatesController : ApiControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     public async Task<IActionResult> Delete(Guid id)
     {
         if (!TryGetUserContext(out _, out var administratorId))
@@ -101,7 +101,7 @@ public class TaskTemplatesController : ApiControllerBase
     }
 
     [HttpPatch("{id:guid}/deactivate")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     public async Task<IActionResult> Deactivate(Guid id)
     {
         if (!TryGetUserContext(out _, out var administratorId))

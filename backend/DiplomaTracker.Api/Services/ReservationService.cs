@@ -3,22 +3,32 @@ using DiplomaTracker.Api.DTOs.Topics;
 using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace DiplomaTracker.Api.Services;
 
+/// Design 2026-09-27 §5. A request holds its topic while it is open (Pending or Returned). It
+/// becomes the student's topic the moment an administrator, the direction's manager and the
+/// supervisor have all approved the current wording; TopicApprovalPanel decides that from the
+/// ReservationDecision rows. StudentProfile.TopicId stays the single source of truth for which topic
+/// a student holds - it is written only when a request completes.
 public class ReservationService : IReservationService
 {
     private readonly AppDbContext _dbContext;
     private readonly ITopicSettingsService _settings;
+    private readonly IStudentWorkflowService _workflow;
     private readonly ILogger<ReservationService> _logger;
 
-    public ReservationService(AppDbContext dbContext, ITopicSettingsService settings, ILogger<ReservationService> logger)
+    public ReservationService(AppDbContext dbContext, ITopicSettingsService settings, IStudentWorkflowService workflow, ILogger<ReservationService> logger)
     {
         _dbContext = dbContext;
         _settings = settings;
+        _workflow = workflow;
         _logger = logger;
     }
+
+    // ---------- the student's requests ----------
 
     public async Task<(ReservationResponse? reservation, string? error)> ReserveAsync(UserContext user, Guid topicId)
     {
@@ -36,23 +46,15 @@ public class ReservationService : IReservationService
 
         var topic = await _dbContext.Topics
             .Include(t => t.Supervisor)
+            .Include(t => t.Direction)
             .FirstOrDefaultAsync(t => t.Id == topicId);
 
-        if (topic is null)
+        if (topic is null || topic.Origin != TopicOrigin.Catalogue)
         {
             return (null, TopicErrors.TopicNotFound);
         }
 
-        // Review M2 (task 7 fix round 1): a "student.TopicId == topic.Id" branch used to sit here
-        // for a student reserving the topic they already hold. It is unreachable now -
-        // CheckStudentMayRequestAsync above already refuses with reservation.topicHeld the moment
-        // student.TopicId is set, for ANY topic id, before this line is ever reached.
-        if (topic.Origin != TopicOrigin.Catalogue)
-        {
-            return (null, TopicErrors.TopicNotFound);
-        }
-
-        if (topic.DepartmentId != student.Group.DepartmentId)
+        if (topic.Direction.DepartmentId != student.Group.DepartmentId)
         {
             return (null, TopicErrors.TopicNotInYourDepartment);
         }
@@ -66,16 +68,11 @@ public class ReservationService : IReservationService
         topic.Status = TopicStatus.Reserved;
         topic.UpdatedAt = now;
 
-        var reservation = new TopicReservation
-        {
-            Id = Guid.NewGuid(),
-            TopicId = topic.Id,
-            TopicTitle = topic.Title,
-            StudentProfileId = student.Id,
-            Status = ReservationStatus.Pending,
-            CreatedAt = now
-        };
+        var reservation = NewRequest(topic, student, now);
         _dbContext.TopicReservations.Add(reservation);
+
+        // Nobody holds all three seats, so a request made by a student never completes at once.
+        await AddCreatorApprovalAsync(reservation, topic, now);
 
         var conflict = await SaveRequestAsync(student.Id, TopicErrors.TopicNotAvailable);
         return conflict is not null ? (null, conflict) : (await LoadResponseAsync(reservation.Id, user), null);
@@ -95,10 +92,19 @@ public class ReservationService : IReservationService
             return (null, precondition);
         }
 
-        var teacherIsValid = await _dbContext.Users.AnyAsync(u => u.Id == request.SupervisorId && u.Role == "Teacher" && u.IsActive);
-        if (!teacherIsValid)
+        // Phase 12 §4: the proposal picker lists the teachers who cover the student's group; the named
+        // supervisor must be one of them.
+        if (!await _dbContext.CoversGroupAsync(request.SupervisorId, StaffRole.Teacher, student.GroupId))
         {
             return (null, TopicErrors.ProposalTeacherInvalid);
+        }
+
+        // §4.3: a proposal names a direction of the student's own department.
+        var direction = await _dbContext.Directions
+            .FirstOrDefaultAsync(d => d.Id == request.DirectionId && d.DepartmentId == student.Group.DepartmentId);
+        if (direction is null)
+        {
+            return (null, DirectionErrors.Invalid);
         }
 
         var now = DateTime.UtcNow;
@@ -108,23 +114,16 @@ public class ReservationService : IReservationService
             Title = request.Title.Trim(),
             Description = IdentityNormalizer.Optional(request.Description),
             SupervisorId = request.SupervisorId,
-            DepartmentId = student.Group.DepartmentId,
+            DirectionId = direction.Id,
+            Direction = direction,
             Origin = TopicOrigin.StudentProposal,
             Status = TopicStatus.Reserved,
             CreatedAt = now,
             UpdatedAt = now
         };
 
-        var reservation = new TopicReservation
-        {
-            Id = Guid.NewGuid(),
-            TopicId = topic.Id,
-            TopicTitle = topic.Title,
-            StudentProfileId = student.Id,
-            Status = ReservationStatus.Pending,
-            CreatedAt = now
-        };
-
+        // A proposal's creator is the student, who holds no seat: it starts with no approvals.
+        var reservation = NewRequest(topic, student, now);
         _dbContext.Topics.Add(topic);
         _dbContext.TopicReservations.Add(reservation);
 
@@ -132,84 +131,11 @@ public class ReservationService : IReservationService
         return conflict is not null ? (null, conflict) : (await LoadResponseAsync(reservation.Id, user), null);
     }
 
-    public async Task<(ReservationResponse? reservation, string? error)> ApproveAsync(UserContext user, Guid reservationId)
+    /// §5.3: the returned student edits the wording - a catalogue topic's too - and sends the
+    /// request again. Every approval must then be given again, the creator's included.
+    public async Task<(ReservationResponse? reservation, string? error)> ResubmitAsync(UserContext user, Guid reservationId, WordingRequest request)
     {
-        var reservation = await LoadForDecisionAsync(reservationId);
-        var error = CheckDecider(user, reservation, ReservationStatus.Pending);
-        if (error is not null)
-        {
-            return (null, error);
-        }
-
-        if (reservation!.StudentProfile.ArchivedAt is not null)
-        {
-            return (null, OnboardingErrors.StudentArchived);
-        }
-
-        if (!reservation.Topic!.Supervisor.IsActive)
-        {
-            return (null, TopicErrors.TopicNotAvailable);
-        }
-
-        var now = DateTime.UtcNow;
-
-        // Approving a request from a student who already holds a topic is approving a change
-        // request: the topic they are leaving goes back to the catalogue, or disappears if they
-        // had proposed it.
-        //
-        // The release must be saved BEFORE the new reservation becomes Approved. Both rows are
-        // keyed by the same student under IX_TopicReservations_ApprovedPerStudent, so doing both
-        // in one SaveChanges transiently violates that index whenever EF emits the new row's
-        // UPDATE before the old one's — which it is free to do, so the failure is intermittent
-        // and surfaces as a bogus reservation.invalidState. The transaction keeps the pair
-        // atomic: a student is never left between topics, and nothing commits unless both do.
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
-
-        await ReleaseCurrentTopicAsync(reservation.StudentProfileId, now, null);
-        var phase1Conflict = await SaveRequestAsync(reservation.StudentProfileId, TopicErrors.TopicNotAvailable);
-        if (phase1Conflict is not null)
-        {
-            return (null, phase1Conflict);
-        }
-
-        reservation.Status = ReservationStatus.Approved;
-        reservation.DecidedAt = now;
-        reservation.Topic!.Status = TopicStatus.Approved;
-        reservation.Topic.UpdatedAt = now;
-        reservation.StudentProfile.TopicId = reservation.Topic.Id;
-        reservation.StudentProfile.SupervisorId = reservation.Topic.SupervisorId;
-        reservation.StudentProfile.UpdatedAt = now;
-
-        var result = await SaveDecisionAsync(reservation.Id, user);
-        if (result.error is null)
-        {
-            await transaction.CommitAsync();
-        }
-
-        return result;
-    }
-
-    public async Task<(ReservationResponse? reservation, string? error)> RejectAsync(UserContext user, Guid reservationId, DecisionRequest request)
-    {
-        var reservation = await LoadForDecisionAsync(reservationId);
-        var error = CheckDecider(user, reservation, ReservationStatus.Pending);
-        if (error is not null)
-        {
-            return (null, error);
-        }
-
-        var now = DateTime.UtcNow;
-        reservation!.Status = ReservationStatus.Rejected;
-        reservation.DecisionComment = IdentityNormalizer.Optional(request.Comment);
-        reservation.DecidedAt = now;
-        ReturnOrRemoveTopic(reservation.Topic!, now);
-
-        return await SaveDecisionAsync(reservation.Id, user);
-    }
-
-    public async Task<(ReservationResponse? reservation, string? error)> CancelAsync(UserContext user, Guid reservationId)
-    {
-        var reservation = await LoadForDecisionAsync(reservationId);
+        var reservation = await LoadForActionAsync(reservationId);
         if (reservation is null)
         {
             return (null, TopicErrors.ReservationNotFound);
@@ -220,14 +146,49 @@ public class ReservationService : IReservationService
             return (null, TopicErrors.ReservationNotYours);
         }
 
-        if (reservation.Status != ReservationStatus.Pending || reservation.Topic is null)
+        if (reservation.Status != ReservationStatus.Returned || reservation.Topic is null)
         {
             return (null, TopicErrors.ReservationInvalidState);
         }
 
-        // The deadline blocks cancelling a first reservation, but not withdrawing a change
-        // request: a student who already holds a topic is revising, not still choosing.
-        // Checked after the state, so cancelling a reservation that is not Pending is always
+        var now = DateTime.UtcNow;
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+
+        reservation.Topic.Title = request.Title.Trim();
+        reservation.Topic.Description = IdentityNormalizer.Optional(request.Description);
+        reservation.Topic.UpdatedAt = now;
+        reservation.ContentChangedAt = now;
+        reservation.Status = ReservationStatus.Pending;
+
+        var result = await CommitAsync(transaction, reservation.Id, user);
+        if (result.error is null)
+        {
+            SecurityLog.TopicRequestAction(_logger, user.UserId, "Resubmitted", reservationId);
+        }
+
+        return result;
+    }
+
+    public async Task<(ReservationResponse? reservation, string? error)> CancelAsync(UserContext user, Guid reservationId)
+    {
+        var reservation = await LoadForActionAsync(reservationId);
+        if (reservation is null)
+        {
+            return (null, TopicErrors.ReservationNotFound);
+        }
+
+        if (reservation.StudentProfile.UserId != user.UserId)
+        {
+            return (null, TopicErrors.ReservationNotYours);
+        }
+
+        if (!IsOpen(reservation.Status) || reservation.Topic is null)
+        {
+            return (null, TopicErrors.ReservationInvalidState);
+        }
+
+        // The deadline blocks cancelling a first request, but not one made while the student
+        // already holds a topic. Checked after the state, so cancelling a closed request is always
         // reported as an invalid state rather than a closed selection.
         if (!await _settings.IsSelectionOpenAsync()
             && !await HasApprovedReservationAsync(reservation.StudentProfileId))
@@ -236,31 +197,208 @@ public class ReservationService : IReservationService
         }
 
         var now = DateTime.UtcNow;
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+
         reservation.Status = ReservationStatus.Cancelled;
         reservation.DecidedAt = now;
-        ReturnOrRemoveTopic(reservation.Topic, now);
+        CloseWithoutApproval(reservation, now);
 
-        return await SaveDecisionAsync(reservation.Id, user);
+        return await CommitAsync(transaction, reservation.Id, user);
     }
 
-    public async Task<(ReservationResponse? reservation, string? error)> ReleaseAsync(UserContext user, Guid reservationId, DecisionRequest request)
+    // ---------- the approvers ----------
+
+    public async Task<(ReservationResponse? reservation, string? error)> ApproveAsync(UserContext user, Guid reservationId)
     {
-        var reservation = await LoadForDecisionAsync(reservationId);
-        var error = CheckDecider(user, reservation, ReservationStatus.Approved);
+        var reservation = await LoadForActionAsync(reservationId);
+        var (seats, error) = CheckApprover(user, reservation);
         if (error is not null)
         {
             return (null, error);
         }
 
-        // O1: a topic cannot be taken away (left with no topic) once the student has submitted
-        // at least one step - whatever that submission's status. Checked here, not just in the
-        // UI, because the UI flag is only a convenience.
-        if (await HasSubmissionsAsync(reservation!.StudentProfileId))
+        if (reservation!.Status != ReservationStatus.Pending)
+        {
+            return (null, TopicErrors.ReservationInvalidState);
+        }
+
+        if (reservation.StudentProfile.ArchivedAt is not null)
+        {
+            return (null, OnboardingErrors.StudentArchived);
+        }
+
+        if (!TopicApprovalPanel.HasOpenSeat(Evaluate(reservation), seats))
+        {
+            return (null, TopicErrors.ApprovalSeatSatisfied);
+        }
+
+        if (!reservation.Topic!.Supervisor.IsActive)
+        {
+            return (null, TopicErrors.TopicNotAvailable);
+        }
+
+        var now = DateTime.UtcNow;
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+
+        var decision = AddDecision(reservation, user, ReservationDecisionKind.Approved, null, now);
+        reservation.Topic.UpdatedAt = now;
+
+        var completes = Evaluate(reservation, decision).IsComplete;
+        if (completes)
+        {
+            var completeError = await CompleteAsync(reservation, now);
+            if (completeError is not null)
+            {
+                return (null, completeError);
+            }
+        }
+
+        var result = await CommitAsync(transaction, reservation.Id, user);
+        if (result.error is null)
+        {
+            SecurityLog.TopicRequestAction(_logger, user.UserId, completes ? "Completed" : "Approved", reservationId);
+        }
+
+        return result;
+    }
+
+    public async Task<(ReservationResponse? reservation, string? error)> ReturnAsync(UserContext user, Guid reservationId, ReturnReservationRequest request)
+    {
+        var reservation = await LoadForActionAsync(reservationId);
+        var (seats, error) = CheckApprover(user, reservation);
+        if (error is not null)
+        {
+            return (null, error);
+        }
+
+        if (reservation!.Status != ReservationStatus.Pending)
+        {
+            return (null, TopicErrors.ReservationInvalidState);
+        }
+
+        if (reservation.StudentProfile.ArchivedAt is not null)
+        {
+            return (null, OnboardingErrors.StudentArchived);
+        }
+
+        // A return is an approver's decision in an open seat, like an approval (§5.3).
+        if (!TopicApprovalPanel.HasOpenSeat(Evaluate(reservation), seats))
+        {
+            return (null, TopicErrors.ApprovalSeatSatisfied);
+        }
+
+        var now = DateTime.UtcNow;
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+
+        AddDecision(reservation, user, ReservationDecisionKind.Returned, request.Comment.Trim(), now);
+        reservation.Status = ReservationStatus.Returned;
+        reservation.Topic!.UpdatedAt = now;
+
+        var result = await CommitAsync(transaction, reservation.Id, user);
+        if (result.error is null)
+        {
+            SecurityLog.TopicRequestAction(_logger, user.UserId, "Returned", reservationId);
+        }
+
+        return result;
+    }
+
+    public async Task<(ReservationResponse? reservation, string? error)> RejectAsync(UserContext user, Guid reservationId, DecisionRequest request)
+    {
+        var reservation = await LoadForActionAsync(reservationId);
+        var (_, error) = CheckApprover(user, reservation);
+        if (error is not null)
+        {
+            return (null, error);
+        }
+
+        if (!IsOpen(reservation!.Status))
+        {
+            return (null, TopicErrors.ReservationInvalidState);
+        }
+
+        var now = DateTime.UtcNow;
+        var comment = IdentityNormalizer.Optional(request.Comment);
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+
+        AddDecision(reservation, user, ReservationDecisionKind.Rejected, comment, now);
+        reservation.Status = ReservationStatus.Rejected;
+        reservation.DecisionComment = comment;
+        reservation.DecidedAt = now;
+        CloseWithoutApproval(reservation, now);
+
+        var result = await CommitAsync(transaction, reservation.Id, user);
+        if (result.error is null)
+        {
+            SecurityLog.TopicRequestAction(_logger, user.UserId, "Rejected", reservationId);
+        }
+
+        return result;
+    }
+
+    /// §5.3: an approver edits the wording while the request waits. The edit is their approval,
+    /// and every other seat must approve the new wording. It never completes the request: nobody
+    /// holds all three seats, so at least one is left open.
+    public async Task<(ReservationResponse? reservation, string? error)> EditWordingAsync(UserContext user, Guid reservationId, WordingRequest request)
+    {
+        var reservation = await LoadForActionAsync(reservationId);
+        var (_, error) = CheckApprover(user, reservation);
+        if (error is not null)
+        {
+            return (null, error);
+        }
+
+        if (reservation!.Status != ReservationStatus.Pending)
+        {
+            return (null, TopicErrors.ReservationInvalidState);
+        }
+
+        if (reservation.StudentProfile.ArchivedAt is not null)
+        {
+            return (null, OnboardingErrors.StudentArchived);
+        }
+
+        var now = DateTime.UtcNow;
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+
+        reservation.Topic!.Title = request.Title.Trim();
+        reservation.Topic.Description = IdentityNormalizer.Optional(request.Description);
+        reservation.Topic.UpdatedAt = now;
+        reservation.ContentChangedAt = now;
+        AddDecision(reservation, user, ReservationDecisionKind.Edited, null, now);
+
+        var result = await CommitAsync(transaction, reservation.Id, user);
+        if (result.error is null)
+        {
+            SecurityLog.TopicRequestAction(_logger, user.UserId, "Edited", reservationId);
+        }
+
+        return result;
+    }
+
+    public async Task<(ReservationResponse? reservation, string? error)> ReleaseAsync(UserContext user, Guid reservationId, DecisionRequest request)
+    {
+        var reservation = await LoadForActionAsync(reservationId);
+        var (_, error) = CheckApprover(user, reservation);
+        if (error is not null)
+        {
+            return (null, error);
+        }
+
+        if (reservation!.Status != ReservationStatus.Approved)
+        {
+            return (null, TopicErrors.ReservationInvalidState);
+        }
+
+        // O1: a topic cannot be taken away once the student has submitted a step.
+        if (await HasSubmissionsAsync(reservation.StudentProfileId))
         {
             return (null, TopicErrors.ReservationHasSubmissions);
         }
 
         var now = DateTime.UtcNow;
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+
         reservation.Status = ReservationStatus.Released;
         reservation.DecisionComment = IdentityNormalizer.Optional(request.Comment);
         reservation.DecidedAt = now;
@@ -269,22 +407,22 @@ public class ReservationService : IReservationService
         reservation.StudentProfile.UpdatedAt = now;
         ReturnOrRemoveTopic(reservation.Topic!, now);
 
-        return await SaveDecisionAsync(reservation.Id, user);
+        return await CommitAsync(transaction, reservation.Id, user);
     }
 
     /// <summary>
-    /// The administrator's way of setting a student's topic outright, from the student form.
-    /// It replaces rather than refuses: a request awaiting a decision is cancelled and a topic
-    /// the student already holds is released, all in the same save, because a topic set by an
-    /// administrator is a decision, not a request. A null <paramref name="topicId"/> clears the
-    /// student's topic and supervisor.
+    /// The administrator's assignment from the student form (§5.3). Whatever the student had asked
+    /// for is withdrawn, and a new request is made carrying the administrator's approval and the
+    /// topic creator's. A topic the student already holds stays theirs until the new request
+    /// completes, which may be at once when the creator's seats cover the rest. A null
+    /// <paramref name="topicId"/> clears the student's topic and supervisor at once, as before.
     /// </summary>
     public async Task<(ReservationResponse? reservation, string? error)> SetStudentTopicAsync(Guid studentId, Guid? topicId, Guid administratorId)
     {
         var student = await _dbContext.StudentProfiles
             .Include(p => p.User)
             .Include(p => p.Group)
-            .FirstOrDefaultAsync(p => p.Id == studentId && p.User.Role == "Student");
+            .FirstOrDefaultAsync(p => p.Id == studentId && p.User.Role == AccountRoles.Student);
 
         if (student is null)
         {
@@ -296,24 +434,22 @@ public class ReservationService : IReservationService
             return (null, OnboardingErrors.StudentArchived);
         }
 
-        // O1: only a removal to "no topic" is guarded - replacing the topic with another one
-        // stays allowed even once the student has submitted work.
+        // O1: only a removal to "no topic" is guarded; replacing the topic stays allowed.
         if (topicId is null && student.TopicId is not null && await HasSubmissionsAsync(student.Id))
         {
             return (null, TopicErrors.ReservationHasSubmissions);
         }
-
-        var now = DateTime.UtcNow;
 
         Topic? topic = null;
         if (topicId is not null)
         {
             topic = await _dbContext.Topics
                 .Include(t => t.Supervisor)
+                .Include(t => t.Direction)
                 .FirstOrDefaultAsync(t => t.Id == topicId.Value);
 
-            // topicId is a request-body field, not a route id: an unknown value is 400, never
-            // the 404 the same endpoint already uses for an unknown student id in the URL.
+            // topicId is a request-body field: an unknown value is 400, never the 404 the same
+            // endpoint uses for an unknown student id in the URL.
             if (topic is null)
             {
                 return (null, TopicErrors.TopicInvalid);
@@ -324,7 +460,7 @@ public class ReservationService : IReservationService
                 return (null, TopicErrors.TopicAlreadyYours);
             }
 
-            if (topic.DepartmentId != student.Group.DepartmentId)
+            if (topic.Direction.DepartmentId != student.Group.DepartmentId)
             {
                 return (null, TopicErrors.TopicNotInYourDepartment);
             }
@@ -335,29 +471,18 @@ public class ReservationService : IReservationService
             }
         }
 
-        // Same two-phase rule as ApproveAsync, for the same reason: the row being released and
-        // the row being created are both this student's under
-        // IX_TopicReservations_ApprovedPerStudent, so what they displace must be saved before
-        // the replacement is written. The transaction keeps the whole assignment atomic.
-        //
-        // ReleaseCurrentTopicAsync also clears the student's TopicId/SupervisorId as part of this
-        // same save, so a released StudentProposal topic can be deleted here without leaving the
-        // profile's FK pointing at a row that no longer exists.
+        var now = DateTime.UtcNow;
         await using var transaction = await _dbContext.Database.BeginTransactionAsync();
 
-        await CancelPendingRequestAsync(student.Id, now);
-        await ReleaseCurrentTopicAsync(student.Id, now, null);
-        var phase1Conflict = await SaveRequestAsync(student.Id, TopicErrors.TopicNotAvailable);
-        if (phase1Conflict is not null)
-        {
-            return (null, phase1Conflict);
-        }
+        await CancelOpenRequestAsync(student.Id, now);
 
         if (topic is null)
         {
+            await ReleaseCurrentTopicAsync(student.Id, now, null);
             student.TopicId = null;
             student.SupervisorId = null;
             student.UpdatedAt = now;
+
             var clearConflict = await SaveRequestAsync(student.Id, TopicErrors.TopicNotAvailable);
             if (clearConflict is not null)
             {
@@ -369,23 +494,44 @@ public class ReservationService : IReservationService
             return (null, null);
         }
 
-        topic.Status = TopicStatus.Approved;
-        topic.UpdatedAt = now;
-        student.TopicId = topic.Id;
-        student.SupervisorId = topic.SupervisorId;
-        student.UpdatedAt = now;
+        // Two phases, as everywhere a student's reservation is replaced: the withdrawn request is
+        // saved before the new open one is inserted under IX_TopicReservations_OpenPerStudent,
+        // because EF picks its own statement order within one save.
+        var phase1Conflict = await SaveRequestAsync(student.Id, TopicErrors.TopicNotAvailable);
+        if (phase1Conflict is not null)
+        {
+            return (null, phase1Conflict);
+        }
 
-        var reservation = new TopicReservation
+        topic.Status = TopicStatus.Reserved;
+        topic.UpdatedAt = now;
+        var reservation = NewRequest(topic, student, now);
+        _dbContext.TopicReservations.Add(reservation);
+
+        var administration = new ReservationDecision
         {
             Id = Guid.NewGuid(),
-            TopicId = topic.Id,
-            TopicTitle = topic.Title,
-            StudentProfileId = student.Id,
-            Status = ReservationStatus.Approved,
-            CreatedAt = now,
+            ReservationId = reservation.Id,
+            DeciderId = administratorId,
+            DeciderWasAdministrator = true,
+            Kind = ReservationDecisionKind.Approved,
             DecidedAt = now
         };
-        _dbContext.TopicReservations.Add(reservation);
+        _dbContext.ReservationDecisions.Add(administration);
+
+        // The administrator's row already fills the Administration seat, so a creator whose only
+        // seat is that one - any administrator, this one included - adds no second row.
+        var creator = await AddCreatorApprovalAsync(reservation, topic, now, administrationFilled: true);
+
+        var added = creator is null ? new[] { administration } : new[] { administration, creator };
+        if (Evaluate(reservation, added).IsComplete)
+        {
+            var completeError = await CompleteAsync(reservation, now);
+            if (completeError is not null)
+            {
+                return (null, completeError);
+            }
+        }
 
         var conflict = await SaveRequestAsync(student.Id, TopicErrors.TopicNotAvailable);
         if (conflict is not null)
@@ -395,32 +541,86 @@ public class ReservationService : IReservationService
 
         await transaction.CommitAsync();
         SecurityLog.TopicAssigned(_logger, student.Id, administratorId, topic.Id);
-        return (await LoadResponseAsync(reservation.Id, new UserContext(administratorId, "Admin")), null);
+
+        _dbContext.ChangeTracker.Clear();
+        return (await LoadResponseAsync(reservation.Id, new UserContext(administratorId, AccountRoles.Admin)), null);
     }
 
-    /// <summary>
-    /// Withdraws a request awaiting a decision because an administrator has decided instead.
-    /// A topic the student had proposed disappears with it; a catalogue topic goes back to
-    /// <c>Available</c>. The caller saves.
-    /// </summary>
-    private async Task CancelPendingRequestAsync(Guid studentProfileId, DateTime now)
+    public async Task CompleteSatisfiedRequestsAsync(IReadOnlyCollection<Guid> topicIds)
     {
-        var pending = await _dbContext.TopicReservations
-            .Include(r => r.Topic)
-            .FirstOrDefaultAsync(r => r.StudentProfileId == studentProfileId
-                && r.Status == ReservationStatus.Pending);
-        if (pending is null)
+        if (topicIds.Count == 0)
         {
             return;
         }
 
-        pending.Status = ReservationStatus.Cancelled;
-        pending.DecidedAt = now;
+        var ids = await _dbContext.TopicReservations.AsNoTracking()
+            .Where(r => r.TopicId != null && topicIds.Contains(r.TopicId.Value) && r.Status == ReservationStatus.Pending)
+            .Select(r => r.Id)
+            .ToListAsync();
 
-        if (pending.Topic is not null)
+        foreach (var id in ids)
         {
-            ReturnOrRemoveTopic(pending.Topic, now);
+            _dbContext.ChangeTracker.Clear();
+            var reservation = await LoadForActionAsync(id);
+            if (reservation?.Topic is null
+                || reservation.StudentProfile.ArchivedAt is not null
+                || !Evaluate(reservation).IsComplete)
+            {
+                continue;
+            }
+
+            var now = DateTime.UtcNow;
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            if (await CompleteAsync(reservation, now) is not null)
+            {
+                continue;
+            }
+
+            reservation.Topic.UpdatedAt = now;
+            try
+            {
+                await _dbContext.SaveChangesAsync();
+                await transaction.CommitAsync();
+                SecurityLog.TopicRequestAction(_logger, Guid.Empty, "Completed", id);
+            }
+            catch (DbUpdateException)
+            {
+                // Someone acted on the request at the same moment; their own save decides it.
+                _dbContext.ChangeTracker.Clear();
+            }
         }
+
+        _dbContext.ChangeTracker.Clear();
+    }
+
+    /// Cancels an open request and releases an approved topic for a student who is being
+    /// archived, so an archived profile never keeps a live reservation. Does not save - the caller
+    /// commits, in the same save as archiving the profile.
+    public async Task SettleReservationsForArchiveAsync(Guid studentProfileId, DateTime now)
+    {
+        await CancelOpenRequestAsync(studentProfileId, now);
+        await ReleaseCurrentTopicAsync(studentProfileId, now, null);
+    }
+
+    // ---------- reads ----------
+
+    public async Task<(ReservationResponse? reservation, string? error)> GetAsync(UserContext user, Guid reservationId)
+    {
+        var row = await Project(_dbContext.TopicReservations.AsNoTracking().Where(r => r.Id == reservationId))
+            .FirstOrDefaultAsync();
+
+        var visible = row is not null
+            && (user.IsAdmin
+                || (user.IsStudent && row.StudentUserId == user.UserId)
+                || (user.IsTeacher && row.SupervisorId == user.UserId)
+                || (user.IsDirectionManager && row.DirectionManagerId == user.UserId));
+
+        if (!visible)
+        {
+            return (null, TopicErrors.ReservationNotFound);
+        }
+
+        return (await ToResponseAsync(row!, user), null);
     }
 
     public async Task<(IReadOnlyList<ReservationResponse>? reservations, string? error)> GetMineAsync(UserContext user)
@@ -435,36 +635,216 @@ public class ReservationService : IReservationService
             return (null, TopicErrors.StudentProfileRequired);
         }
 
-        // A student who already holds a topic may cancel a change request after the deadline —
-        // the deadline governs choosing a topic, not revising the choice.
-        var selectionOpen = await _settings.IsSelectionOpenAsync()
-            || await HasApprovedReservationAsync(studentId.Value);
-        var rows = await QueryRows(r => r.StudentProfileId == studentId)
+        // A student who already holds a topic may cancel an open request after the deadline - the
+        // deadline governs choosing a topic, not revising the choice.
+        var selectionOpen = await _settings.IsSelectionOpenAsync() || await HasApprovedReservationAsync(studentId.Value);
+        var rows = await Project(_dbContext.TopicReservations.AsNoTracking().Where(r => r.StudentProfileId == studentId))
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync();
 
-        return (rows.Select(row => ToResponse(row, selectionOpen && row.Status == ReservationStatus.Pending)).ToList(), null);
+        return (rows.Select(row => ToResponse(row, user, selectionOpen && IsOpen(row.Status))).ToList(), null);
     }
 
-    public async Task<IReadOnlyList<ReservationResponse>> GetForDecisionAsync(UserContext user, ReservationStatus status)
+    /// §5.4, phase 12 §5. "Pending" asks for every open request - those waiting for approvers and
+    /// those returned to the student. Acting as teacher, a teacher sees requests for the topics they
+    /// supervise; acting as direction manager, every request in their directions. An administrator
+    /// sees them all, including the history of proposals whose topic was deleted by design.
+    public async Task<IReadOnlyList<ReservationResponse>> GetForDecisionAsync(UserContext user, ReservationStatus status, bool waitingForMe)
     {
-        // A teacher must be scoped by the topic's supervisor, which requires the topic to still
-        // exist. An administrator needs no such scoping, so a declined or cancelled proposal
-        // (its topic deleted by design — see ReturnOrRemoveTopic) is not filtered out of an
-        // admin's history the way it would be from a teacher's.
-        var rows = await QueryRows(r => r.Status == status
-                && (user.IsAdmin || (r.Topic != null && r.Topic.SupervisorId == user.UserId)))
-            .OrderBy(r => r.CreatedAt)
-            .ToListAsync();
+        var me = user.UserId;
+        IQueryable<TopicReservation> query = _dbContext.TopicReservations.AsNoTracking();
 
-        return rows.Select(row => ToResponse(row, canCancel: false)).ToList();
+        query = status is ReservationStatus.Pending or ReservationStatus.Returned
+            ? query.Where(r => r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Returned)
+            : query.Where(r => r.Status == status);
+
+        if (user.IsTeacher)
+        {
+            query = query.Where(r => r.Topic != null && r.Topic.SupervisorId == me);
+        }
+        else if (user.IsDirectionManager)
+        {
+            query = query.Where(r => r.Topic != null && r.Topic.Direction.ManagerId == me);
+        }
+        else if (!user.IsAdmin)
+        {
+            query = query.Where(_ => false);
+        }
+
+        var rows = await Project(query).OrderBy(r => r.CreatedAt).ToListAsync();
+        var responses = rows.Select(row => ToResponse(row, user, canCancel: false));
+        return (waitingForMe ? responses.Where(r => r.CanDecide) : responses).ToList();
     }
 
-    /// O1: whether the student has at least one Submission on any of their steps, whatever its
-    /// status - the fact that guards removing their topic.
-    private Task<bool> HasSubmissionsAsync(Guid studentProfileId)
+    // ---------- helpers ----------
+
+    private static bool IsOpen(ReservationStatus status) =>
+        status is ReservationStatus.Pending or ReservationStatus.Returned;
+
+    private static TopicReservation NewRequest(Topic topic, StudentProfile student, DateTime now) => new()
     {
-        return _dbContext.Submissions.AnyAsync(s => s.StudentTask.StudentProfileId == studentProfileId);
+        Id = Guid.NewGuid(),
+        TopicId = topic.Id,
+        Topic = topic,
+        TopicTitle = topic.Title,
+        TopicDescription = topic.Description,
+        StudentProfileId = student.Id,
+        StudentProfile = student,
+        Status = ReservationStatus.Pending,
+        CreatedAt = now,
+        ContentChangedAt = now
+    };
+
+    private ReservationDecision AddDecision(TopicReservation reservation, UserContext user, ReservationDecisionKind kind, string? comment, DateTime now)
+    {
+        var decision = new ReservationDecision
+        {
+            Id = Guid.NewGuid(),
+            ReservationId = reservation.Id,
+            DeciderId = user.UserId,
+            DeciderWasAdministrator = user.IsAdmin,
+            Kind = kind,
+            Comment = comment,
+            DecidedAt = now
+        };
+
+        // Added through its DbSet, never only through the tracked parent's collection: a child with
+        // a preset key reached through a navigation is taken for an existing row (PROJECT_MEMORY).
+        _dbContext.ReservationDecisions.Add(decision);
+        return decision;
+    }
+
+    /// §5.2: the topic's creator has already approved it in every seat they hold - a teacher who
+    /// supervises what they created, a direction manager in their own direction, an administrator.
+    /// Only an active creator counts. Returns the row, or null when the creator holds no seat, or
+    /// holds only the Administration seat and <paramref name="administrationFilled"/> says an
+    /// administrator's approval is already written.
+    private async Task<ReservationDecision?> AddCreatorApprovalAsync(TopicReservation reservation, Topic topic, DateTime now, bool administrationFilled = false)
+    {
+        if (topic.CreatedById is not { } creatorId)
+        {
+            return null;
+        }
+
+        var creator = await _dbContext.Users.AsNoTracking()
+            .Where(u => u.Id == creatorId && u.IsActive)
+            .Select(u => new { u.Role })
+            .FirstOrDefaultAsync();
+        if (creator is null)
+        {
+            return null;
+        }
+
+        var isAdministrator = creator.Role == AccountRoles.Admin;
+        var holdsTeachingSeat = creatorId == topic.SupervisorId || creatorId == topic.Direction.ManagerId;
+        var holdsSeat = (isAdministrator && !administrationFilled) || holdsTeachingSeat;
+        if (!holdsSeat)
+        {
+            return null;
+        }
+
+        var decision = new ReservationDecision
+        {
+            Id = Guid.NewGuid(),
+            ReservationId = reservation.Id,
+            DeciderId = creatorId,
+            DeciderWasAdministrator = isAdministrator,
+            Kind = ReservationDecisionKind.Approved,
+            DecidedAt = now
+        };
+        _dbContext.ReservationDecisions.Add(decision);
+        return decision;
+    }
+
+    /// The seats of a loaded request, counting decisions just added in this unit of work. EF may
+    /// or may not have fixed them up into reservation.Decisions yet, hence the de-duplication.
+    private static TopicApprovalPanel.State Evaluate(TopicReservation reservation, params ReservationDecision[] added)
+    {
+        var decisions = reservation.Decisions
+            .Concat(added)
+            .DistinctBy(d => d.Id)
+            .Select(d => new TopicApprovalPanel.DecisionFact(d.DeciderId, d.DeciderWasAdministrator, d.Kind, d.DecidedAt))
+            .ToList();
+
+        return TopicApprovalPanel.Evaluate(reservation.Topic!.SupervisorId, reservation.Topic.Direction.ManagerId, reservation.ContentChangedAt, decisions);
+    }
+
+    /// §5.2: every seat is satisfied - the request becomes the student's topic. A topic the student
+    /// already holds is released first, in its own save inside the caller's transaction: both rows
+    /// belong to the same student under IX_TopicReservations_ApprovedPerStudent, and one save
+    /// would transiently violate it whenever EF emits the new row's UPDATE first.
+    ///
+    /// Phase 11 follow-up O1: when the request replaces a held topic, the student has unfinished
+    /// steps whose supervisor and direction-manager seats move to the new topic's now. They are
+    /// touched, and a Submitted step the new seats leave fully satisfied is approved in the caller's
+    /// save - exactly as when an administrator moves a held topic to another supervisor (§4.2).
+    /// Without this, a step whose only open seat disappears (the new supervisor also manages the new
+    /// direction, and an administrator already stood in for the supervisor) would wait for nobody. A
+    /// student with no topic has never submitted, so a first topic needs no refresh.
+    private async Task<string?> CompleteAsync(TopicReservation reservation, DateTime now)
+    {
+        var replacing = reservation.StudentProfile.TopicId is not null;
+
+        await ReleaseCurrentTopicAsync(reservation.StudentProfileId, now, null);
+
+        // The student always has this very request open here, so a unique violation in phase 1 is
+        // a lost race, never "you already have a request": both conflicts are reservation.changed.
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (Exception exception) when (exception is DbUpdateConcurrencyException
+            || (exception is DbUpdateException update && update.IsUniqueConstraintViolation()))
+        {
+            _dbContext.ChangeTracker.Clear();
+            return TopicErrors.ReservationChanged;
+        }
+
+        reservation.Status = ReservationStatus.Approved;
+        reservation.DecidedAt = now;
+        reservation.Topic!.Status = TopicStatus.Approved;
+        reservation.Topic.UpdatedAt = now;
+        reservation.StudentProfile.TopicId = reservation.Topic.Id;
+        reservation.StudentProfile.SupervisorId = reservation.Topic.SupervisorId;
+        reservation.StudentProfile.UpdatedAt = now;
+
+        if (replacing)
+        {
+            // Read from the topic and its direction, which every caller loads: the profile's new
+            // values are not saved yet, and the panel facts are read from the database.
+            var supervisorId = reservation.Topic.SupervisorId;
+            var managerId = reservation.Topic.Direction.ManagerId;
+            await _workflow.RefreshStudentPanelsAsync([reservation.StudentProfileId], now,
+                facts => facts with { SupervisorId = supervisorId, DirectionManagerId = managerId });
+        }
+
+        return null;
+    }
+
+    private static (IReadOnlyList<TopicApprovalPanel.Seat> seats, string? error) CheckApprover(UserContext user, TopicReservation? reservation)
+    {
+        if (reservation is null)
+        {
+            return ([], TopicErrors.ReservationNotFound);
+        }
+
+        if (reservation.Topic is null)
+        {
+            return ([], TopicErrors.ReservationInvalidState);
+        }
+
+        var seats = TopicApprovalPanel.SeatsOf(user, reservation.Topic.SupervisorId, reservation.Topic.Direction.ManagerId);
+        return seats.Count == 0 ? (seats, TopicErrors.ApprovalNotApprover) : (seats, null);
+    }
+
+    private async Task<TopicReservation?> LoadForActionAsync(Guid reservationId)
+    {
+        return await _dbContext.TopicReservations
+            .Include(r => r.Topic).ThenInclude(t => t!.Supervisor)
+            .Include(r => r.Topic).ThenInclude(t => t!.Direction)
+            .Include(r => r.StudentProfile)
+            .Include(r => r.Decisions)
+            .FirstOrDefaultAsync(r => r.Id == reservationId);
     }
 
     private async Task<StudentProfile?> LoadStudentForActionAsync(Guid userId)
@@ -472,22 +852,11 @@ public class ReservationService : IReservationService
         return await _dbContext.StudentProfiles
             .Include(p => p.Group)
             .Include(p => p.User)
-            .FirstOrDefaultAsync(p => p.UserId == userId && p.User.Role == "Student" && p.User.IsActive);
+            .FirstOrDefaultAsync(p => p.UserId == userId && p.User.Role == AccountRoles.Student && p.User.IsActive);
     }
 
-    /// <summary>
-    /// A student may ask for a topic whenever nothing of theirs is awaiting a decision. Task 7 bug
-    /// 9 (owner ruling, replacing the "change request" design this comment used to describe):
-    /// once a student holds an approved topic (StudentProfile.TopicId set - the single source of
-    /// truth, so this always agrees with an Approved reservation), reserve/propose are refused
-    /// outright with reservation.topicHeld instead of being filed as a competing Pending request
-    /// next to the Approved one. Only an administrator still replaces a held topic directly
-    /// (SetStudentTopicAsync via `PUT /api/students/{id}/topic`, which
-    /// `[Authorize(Roles = "Admin")]` on `StudentsController` keeps Admin-only - not a supervisor,
-    /// review M7); an already-pending change request may still be decided or cancelled - this only
-    /// blocks filing a new one. Below that, unchanged: nothing of theirs may already be pending,
-    /// and the selection deadline still binds a first request the normal way.
-    /// </summary>
+    /// A student with no topic may ask for one while nothing of theirs is open. A student who holds
+    /// a topic cannot file another request; only an administrator replaces it (task 7 bug 9).
     private async Task<string?> CheckStudentMayRequestAsync(StudentProfile student)
     {
         if (student.TopicId is not null)
@@ -495,7 +864,7 @@ public class ReservationService : IReservationService
             return TopicErrors.ReservationTopicHeld;
         }
 
-        if (await HasPendingReservationAsync(student.Id))
+        if (await HasOpenRequestAsync(student.Id))
         {
             return TopicErrors.ReservationAlreadyActive;
         }
@@ -508,34 +877,43 @@ public class ReservationService : IReservationService
         return null;
     }
 
-    private Task<bool> HasPendingReservationAsync(Guid studentProfileId)
-    {
-        return _dbContext.TopicReservations.AnyAsync(r => r.StudentProfileId == studentProfileId
-            && r.Status == ReservationStatus.Pending);
-    }
+    private Task<bool> HasOpenRequestAsync(Guid studentProfileId) =>
+        _dbContext.TopicReservations.AnyAsync(r => r.StudentProfileId == studentProfileId
+            && (r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Returned));
 
-    private Task<bool> HasApprovedReservationAsync(Guid studentProfileId)
-    {
-        return _dbContext.TopicReservations.AnyAsync(r => r.StudentProfileId == studentProfileId
+    private Task<bool> HasApprovedReservationAsync(Guid studentProfileId) =>
+        _dbContext.TopicReservations.AnyAsync(r => r.StudentProfileId == studentProfileId
             && r.Status == ReservationStatus.Approved);
+
+    /// O1: whether the student has at least one Submission on any of their steps.
+    private Task<bool> HasSubmissionsAsync(Guid studentProfileId) =>
+        _dbContext.Submissions.AnyAsync(s => s.StudentTask.StudentProfileId == studentProfileId);
+
+    /// Withdraws a student's open request - an administrator decided instead, or the student is
+    /// being archived. The caller saves.
+    private async Task CancelOpenRequestAsync(Guid studentProfileId, DateTime now)
+    {
+        var open = await _dbContext.TopicReservations
+            .Include(r => r.Topic)
+            .FirstOrDefaultAsync(r => r.StudentProfileId == studentProfileId
+                && (r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Returned));
+        if (open is null)
+        {
+            return;
+        }
+
+        open.Status = ReservationStatus.Cancelled;
+        open.DecidedAt = now;
+        if (open.Topic is not null)
+        {
+            CloseWithoutApproval(open, now);
+        }
     }
 
-    /// <summary>
-    /// Settles the approved topic a student is leaving behind: the reservation becomes
-    /// <c>Released</c>, a catalogue topic returns to <c>Available</c> for someone else, and a
-    /// topic the student had proposed is deleted, since a proposal never enters the catalogue.
-    /// Called when a change request is approved, when an administrator assigns a topic over an
-    /// existing one, and when a student holding a topic is archived. The caller saves.
-    /// </summary>
-    /// <remarks>
-    /// Clears the student's <c>TopicId</c>/<c>SupervisorId</c> in the same pass as any topic
-    /// deletion below (<see cref="ReturnOrRemoveTopic"/>): <c>StudentProfile.Topic</c> is mapped
-    /// <c>DeleteBehavior.Restrict</c>, so a bare "delete the topic" statement with the profile
-    /// still pointing at it fails the foreign key at the database. Nulling the FK on the tracked
-    /// <see cref="StudentProfile"/> here — the same instance the caller has loaded, thanks to
-    /// EF's identity resolution — makes the phase-1 save a complete settle. The caller re-sets
-    /// both fields afterwards for the replacement topic, or leaves them cleared.
-    /// </remarks>
+    /// Settles the approved topic a student is leaving behind: the reservation becomes Released, a
+    /// catalogue topic returns to Available (keeping its wording) and a proposal is deleted. Clears
+    /// the student's TopicId/SupervisorId in the same pass, because StudentProfile.Topic is
+    /// Restrict and the deleted proposal must not still be referenced. The caller saves.
     private async Task ReleaseCurrentTopicAsync(Guid studentProfileId, DateTime now, string? comment)
     {
         var current = await _dbContext.TopicReservations
@@ -561,49 +939,25 @@ public class ReservationService : IReservationService
         }
     }
 
-    /// <summary>
-    /// Cancels a pending request and releases an approved topic for a student who is being
-    /// archived, so an archived profile is never left with a live reservation nobody can see —
-    /// a topic's supervisor still lists it under <c>GET /api/reservations/pending</c> otherwise,
-    /// and could approve it into a topic permanently held by an inactive account. Does not call
-    /// <c>SaveChangesAsync</c> — the caller commits, in the same save as archiving the profile.
-    /// Unlike the assignment paths, nothing new is created to replace what is settled here, so a
-    /// single save is enough.
-    /// </summary>
-    public async Task SettleReservationsForArchiveAsync(Guid studentProfileId, DateTime now)
+    /// §5.3: a request that ends without approval (rejected or cancelled). A proposal is deleted; a
+    /// catalogue topic goes back to the catalogue with the wording it had when the request was
+    /// made, so nobody's edits during an unfinished request change the catalogue.
+    private void CloseWithoutApproval(TopicReservation reservation, DateTime now)
     {
-        await CancelPendingRequestAsync(studentProfileId, now);
-        await ReleaseCurrentTopicAsync(studentProfileId, now, null);
-    }
-
-    private async Task<TopicReservation?> LoadForDecisionAsync(Guid reservationId)
-    {
-        return await _dbContext.TopicReservations
-            .Include(r => r.Topic).ThenInclude(t => t!.Supervisor)
-            .Include(r => r.StudentProfile)
-            .FirstOrDefaultAsync(r => r.Id == reservationId);
-    }
-
-    private static string? CheckDecider(UserContext user, TopicReservation? reservation, ReservationStatus requiredStatus)
-    {
-        if (reservation is null)
+        var topic = reservation.Topic!;
+        if (topic.Origin == TopicOrigin.StudentProposal)
         {
-            return TopicErrors.ReservationNotFound;
+            _dbContext.Topics.Remove(topic);
+            return;
         }
 
-        if (reservation.Topic is null)
-        {
-            return TopicErrors.ReservationInvalidState;
-        }
-
-        if (!user.IsAdmin && reservation.Topic.SupervisorId != user.UserId)
-        {
-            return TopicErrors.ReservationNotSupervisor;
-        }
-
-        return reservation.Status != requiredStatus ? TopicErrors.ReservationInvalidState : null;
+        topic.Title = reservation.TopicTitle;
+        topic.Description = reservation.TopicDescription;
+        topic.Status = TopicStatus.Available;
+        topic.UpdatedAt = now;
     }
 
+    /// A released topic: a proposal disappears, a catalogue topic keeps its current wording.
     private void ReturnOrRemoveTopic(Topic topic, DateTime now)
     {
         if (topic.Origin == TopicOrigin.StudentProposal)
@@ -632,21 +986,15 @@ public class ReservationService : IReservationService
         {
             _dbContext.ChangeTracker.Clear();
 
-            // Which per-student index was hit decides the message, and only the *pending* one
-            // can be: reserve and propose insert a Pending row, and the one path that inserts an
-            // Approved row releases the previous one in the same save. Review M2 (task 7 fix
-            // round 1): this used to describe "the common change-request race" - a student
-            // reserving/proposing while already holding an approved topic is refused up front now
-            // (bug 9), so that specific race is gone. What remains is the ordinary race between
-            // two concurrent reserve/propose calls for the same not-yet-topic-holding student,
-            // both passing CheckStudentMayRequestAsync before either inserts.
-            return await HasPendingReservationAsync(studentProfileId)
+            // Two concurrent requests from the same student both pass CheckStudentMayRequestAsync
+            // before either inserts; the open-per-student index turns the second into this.
+            return await HasOpenRequestAsync(studentProfileId)
                 ? TopicErrors.ReservationAlreadyActive
                 : topicConflictError;
         }
     }
 
-    private async Task<(ReservationResponse? reservation, string? error)> SaveDecisionAsync(Guid reservationId, UserContext user)
+    private async Task<(ReservationResponse? reservation, string? error)> CommitAsync(IDbContextTransaction transaction, Guid reservationId, UserContext user)
     {
         try
         {
@@ -656,101 +1004,159 @@ public class ReservationService : IReservationService
             || (exception is DbUpdateException update && update.IsUniqueConstraintViolation()))
         {
             _dbContext.ChangeTracker.Clear();
-            return (null, TopicErrors.ReservationInvalidState);
+            return (null, TopicErrors.ReservationChanged);
         }
 
+        await transaction.CommitAsync();
+        _dbContext.ChangeTracker.Clear();
         return (await LoadResponseAsync(reservationId, user), null);
     }
 
     private async Task<ReservationResponse?> LoadResponseAsync(Guid reservationId, UserContext user)
     {
-        var row = await QueryRows(r => r.Id == reservationId).FirstOrDefaultAsync();
-        if (row is null)
-        {
-            return null;
-        }
+        var row = await Project(_dbContext.TopicReservations.AsNoTracking().Where(r => r.Id == reservationId))
+            .FirstOrDefaultAsync();
+        return row is null ? null : await ToResponseAsync(row, user);
+    }
 
-        // Review M2 (task 7 fix round 1): this used to widen canCancel with
-        // HasApprovedReservationAsync the same way GetMineAsync/CancelAsync do for an
-        // already-approved student's change request - but every caller here reaches this with a
-        // student UserContext only right after that same student's own successful reserve/propose
-        // (ReserveAsync/ProposeAsync's return), and CheckStudentMayRequestAsync already guarantees
-        // StudentProfile.TopicId was null at that moment - no Approved reservation can exist for
-        // them yet, so the widening was always false here. A non-student caller (SetStudentTopicAsync,
-        // SaveDecisionAsync's admin/teacher decisions) already short-circuits on user.IsStudent.
+    private async Task<ReservationResponse> ToResponseAsync(ReservationRow row, UserContext user)
+    {
         var canCancel = user.IsStudent
-            && row.Status == ReservationStatus.Pending
-            && await _settings.IsSelectionOpenAsync();
-        return ToResponse(row, canCancel);
+            && row.StudentUserId == user.UserId
+            && IsOpen(row.Status)
+            && (await _settings.IsSelectionOpenAsync() || await HasApprovedReservationAsync(row.StudentProfileId));
+        return ToResponse(row, user, canCancel);
     }
 
-    private IQueryable<ReservationRow> QueryRows(System.Linq.Expressions.Expression<Func<TopicReservation, bool>> predicate)
-    {
-        return _dbContext.TopicReservations.AsNoTracking()
-            .Where(predicate)
-            .Select(r => new ReservationRow
-            {
-                Id = r.Id,
-                TopicId = r.TopicId,
-                TopicTitle = r.TopicTitle,
-                TopicDescription = r.Topic != null ? r.Topic.Description : null,
-                Origin = r.Topic != null ? (TopicOrigin?)r.Topic.Origin : null,
-                SupervisorId = r.Topic != null ? (Guid?)r.Topic.SupervisorId : null,
-                SupervisorLastName = r.Topic != null ? r.Topic.Supervisor.LastName : null,
-                SupervisorFirstName = r.Topic != null ? r.Topic.Supervisor.FirstName : null,
-                SupervisorPatronymic = r.Topic != null ? r.Topic.Supervisor.Patronymic : null,
-                StudentProfileId = r.StudentProfileId,
-                StudentLastName = r.StudentProfile.User.LastName,
-                StudentFirstName = r.StudentProfile.User.FirstName,
-                StudentPatronymic = r.StudentProfile.User.Patronymic,
-                StudentEmail = r.StudentProfile.User.Email,
-                GroupCode = r.StudentProfile.Group.Code,
-                Status = r.Status,
-                DecisionComment = r.DecisionComment,
-                CreatedAt = r.CreatedAt,
-                DecidedAt = r.DecidedAt,
-                // The student's current topic, so a Pending row from a student who already
-                // holds a different one can be told apart as a change request in ToResponse.
-                StudentCurrentTopicId = r.StudentProfile.TopicId,
-                StudentCurrentTopicTitle = r.StudentProfile.Topic != null ? r.StudentProfile.Topic.Title : null,
-                // O1: whether releasing this reservation would be refused - computed here rather
-                // than with a second round trip, the same Any() subquery HasSubmissionsAsync runs.
-                HasSubmissions = r.StudentProfile.StudentTasks.Any(t => t.Submissions.Any())
-            });
-    }
+    private static IQueryable<ReservationRow> Project(IQueryable<TopicReservation> source) =>
+        source.Select(r => new ReservationRow
+        {
+            Id = r.Id,
+            TopicId = r.TopicId,
+            SnapshotTitle = r.TopicTitle,
+            SnapshotDescription = r.TopicDescription,
+            LiveTitle = r.Topic != null ? r.Topic.Title : null,
+            LiveDescription = r.Topic != null ? r.Topic.Description : null,
+            Origin = r.Topic != null ? (TopicOrigin?)r.Topic.Origin : null,
+            SupervisorId = r.Topic != null ? (Guid?)r.Topic.SupervisorId : null,
+            SupervisorLastName = r.Topic != null ? r.Topic.Supervisor.LastName : null,
+            SupervisorFirstName = r.Topic != null ? r.Topic.Supervisor.FirstName : null,
+            SupervisorPatronymic = r.Topic != null ? r.Topic.Supervisor.Patronymic : null,
+            DirectionId = r.Topic != null ? (Guid?)r.Topic.DirectionId : null,
+            DirectionName = r.Topic != null ? r.Topic.Direction.Name : null,
+            DirectionManagerId = r.Topic != null ? (Guid?)r.Topic.Direction.ManagerId : null,
+            DirectionManagerLastName = r.Topic != null ? r.Topic.Direction.Manager.LastName : null,
+            DirectionManagerFirstName = r.Topic != null ? r.Topic.Direction.Manager.FirstName : null,
+            DirectionManagerPatronymic = r.Topic != null ? r.Topic.Direction.Manager.Patronymic : null,
+            StudentProfileId = r.StudentProfileId,
+            StudentUserId = r.StudentProfile.UserId,
+            StudentLastName = r.StudentProfile.User.LastName,
+            StudentFirstName = r.StudentProfile.User.FirstName,
+            StudentPatronymic = r.StudentProfile.User.Patronymic,
+            StudentEmail = r.StudentProfile.User.Email,
+            GroupCode = r.StudentProfile.Group.Code,
+            Status = r.Status,
+            DecisionComment = r.DecisionComment,
+            CreatedAt = r.CreatedAt,
+            DecidedAt = r.DecidedAt,
+            ContentChangedAt = r.ContentChangedAt,
+            StudentCurrentTopicId = r.StudentProfile.TopicId,
+            StudentCurrentTopicTitle = r.StudentProfile.Topic != null ? r.StudentProfile.Topic.Title : null,
+            HasSubmissions = r.StudentProfile.StudentTasks.Any(t => t.Submissions.Any()),
+            Decisions = r.Decisions
+                .OrderBy(d => d.DecidedAt)
+                .Select(d => new DecisionRow
+                {
+                    DeciderId = d.DeciderId,
+                    DeciderWasAdministrator = d.DeciderWasAdministrator,
+                    Kind = d.Kind,
+                    Comment = d.Comment,
+                    DecidedAt = d.DecidedAt,
+                    LastName = d.Decider.LastName,
+                    FirstName = d.Decider.FirstName,
+                    Patronymic = d.Decider.Patronymic
+                })
+                .ToList()
+        });
 
-    private static ReservationResponse ToResponse(ReservationRow row, bool canCancel)
+    private static ReservationResponse ToResponse(ReservationRow row, UserContext user, bool canCancel)
     {
-        static string JoinName(params string?[] parts) =>
-            string.Join(' ', parts.Where(part => !string.IsNullOrWhiteSpace(part)));
+        var isOpen = IsOpen(row.Status);
+        var isLive = isOpen || row.Status == ReservationStatus.Approved;
+        var isChangeRequest = isOpen && row.StudentCurrentTopicId is not null && row.StudentCurrentTopicId != row.TopicId;
 
-        var isChangeRequest = row.Status == ReservationStatus.Pending
-            && row.StudentCurrentTopicId is not null
-            && row.StudentCurrentTopicId != row.TopicId;
+        var supervisorName = row.SupervisorId is null ? null : PersonName.Full(row.SupervisorLastName ?? "", row.SupervisorFirstName ?? "", row.SupervisorPatronymic);
+        var managerName = row.DirectionManagerId is null ? null : PersonName.Full(row.DirectionManagerLastName ?? "", row.DirectionManagerFirstName ?? "", row.DirectionManagerPatronymic);
+
+        IReadOnlyList<TopicApprovalPanel.Seat> callerSeats = row.SupervisorId is { } supervisorId && row.DirectionManagerId is { } managerId
+            ? TopicApprovalPanel.SeatsOf(user, supervisorId, managerId)
+            : [];
+
+        TopicApprovalPanel.State? state = isOpen && row.SupervisorId is { } openSupervisorId && row.DirectionManagerId is { } openManagerId
+            ? TopicApprovalPanel.Evaluate(
+                openSupervisorId,
+                openManagerId,
+                row.ContentChangedAt,
+                row.Decisions.Select(d => new TopicApprovalPanel.DecisionFact(d.DeciderId, d.DeciderWasAdministrator, d.Kind, d.DecidedAt)).ToList())
+            : null;
+
+        string? NameOf(Guid? deciderId) => row.Decisions.FirstOrDefault(d => d.DeciderId == deciderId) is { } decision
+            ? PersonName.Full(decision.LastName, decision.FirstName, decision.Patronymic)
+            : null;
 
         return new ReservationResponse
         {
             Id = row.Id,
             TopicId = row.TopicId,
-            TopicTitle = row.TopicTitle,
-            TopicDescription = row.TopicDescription,
+            TopicTitle = isLive && row.LiveTitle is not null ? row.LiveTitle : row.SnapshotTitle,
+            TopicDescription = isLive && row.TopicId is not null ? row.LiveDescription : row.SnapshotDescription,
             Origin = row.Origin?.ToString(),
             SupervisorId = row.SupervisorId,
-            SupervisorName = row.SupervisorId is null ? null : JoinName(row.SupervisorLastName, row.SupervisorFirstName, row.SupervisorPatronymic),
+            SupervisorName = supervisorName,
+            DirectionId = row.DirectionId,
+            DirectionName = row.DirectionName,
+            DirectionManagerName = managerName,
             StudentProfileId = row.StudentProfileId,
-            StudentName = JoinName(row.StudentLastName, row.StudentFirstName, row.StudentPatronymic),
+            StudentName = PersonName.Full(row.StudentLastName, row.StudentFirstName, row.StudentPatronymic),
             StudentEmail = row.StudentEmail,
             GroupCode = row.GroupCode,
             Status = row.Status.ToString(),
             DecisionComment = row.DecisionComment,
             CreatedAt = row.CreatedAt,
             DecidedAt = row.DecidedAt,
+            ContentChangedAt = row.ContentChangedAt,
             CanCancel = canCancel,
             HasSubmissions = row.HasSubmissions,
-            // Only a pending request from a student who already holds a different topic is a
-            // change request; everything else leaves these null.
             CurrentTopicId = isChangeRequest ? row.StudentCurrentTopicId : null,
-            CurrentTopicTitle = isChangeRequest ? row.StudentCurrentTopicTitle : null
+            CurrentTopicTitle = isChangeRequest ? row.StudentCurrentTopicTitle : null,
+            Seats = state?.Seats.Select(seat => new ApprovalSeatResponse
+            {
+                Seat = seat.Seat.ToString(),
+                HolderName = seat.Seat switch
+                {
+                    TopicApprovalPanel.Seat.Direction => managerName,
+                    TopicApprovalPanel.Seat.Supervision => supervisorName,
+                    _ => null
+                },
+                IsSatisfied = seat.IsSatisfied,
+                ApprovedByName = seat.IsSatisfied ? NameOf(seat.ApprovedById) : null,
+                ApprovedAt = seat.ApprovedAt
+            }).ToList() ?? [],
+            Timeline = row.Decisions.Select(d => new ReservationDecisionResponse
+            {
+                Kind = d.Kind.ToString(),
+                DeciderName = PersonName.Full(d.LastName, d.FirstName, d.Patronymic),
+                Comment = d.Comment,
+                DecidedAt = d.DecidedAt
+            }).ToList(),
+            ReturnComment = row.Status == ReservationStatus.Returned
+                ? row.Decisions.LastOrDefault(d => d.Kind == ReservationDecisionKind.Returned)?.Comment
+                : null,
+            CanDecide = row.Status == ReservationStatus.Pending && state is not null && TopicApprovalPanel.HasOpenSeat(state, callerSeats),
+            CanEditWording = row.Status == ReservationStatus.Pending && callerSeats.Count > 0,
+            CanReject = isOpen && callerSeats.Count > 0,
+            CanRelease = row.Status == ReservationStatus.Approved && callerSeats.Count > 0,
+            CanResubmit = user.IsStudent && row.StudentUserId == user.UserId && row.Status == ReservationStatus.Returned
         };
     }
 
@@ -758,14 +1164,23 @@ public class ReservationService : IReservationService
     {
         public Guid Id { get; init; }
         public Guid? TopicId { get; init; }
-        public string TopicTitle { get; init; } = string.Empty;
-        public string? TopicDescription { get; init; }
+        public string SnapshotTitle { get; init; } = string.Empty;
+        public string? SnapshotDescription { get; init; }
+        public string? LiveTitle { get; init; }
+        public string? LiveDescription { get; init; }
         public TopicOrigin? Origin { get; init; }
         public Guid? SupervisorId { get; init; }
         public string? SupervisorLastName { get; init; }
         public string? SupervisorFirstName { get; init; }
         public string? SupervisorPatronymic { get; init; }
+        public Guid? DirectionId { get; init; }
+        public string? DirectionName { get; init; }
+        public Guid? DirectionManagerId { get; init; }
+        public string? DirectionManagerLastName { get; init; }
+        public string? DirectionManagerFirstName { get; init; }
+        public string? DirectionManagerPatronymic { get; init; }
         public Guid StudentProfileId { get; init; }
+        public Guid StudentUserId { get; init; }
         public string StudentLastName { get; init; } = string.Empty;
         public string StudentFirstName { get; init; } = string.Empty;
         public string? StudentPatronymic { get; init; }
@@ -775,16 +1190,22 @@ public class ReservationService : IReservationService
         public string? DecisionComment { get; init; }
         public DateTime CreatedAt { get; init; }
         public DateTime? DecidedAt { get; init; }
-
-        /// <summary>
-        /// The topic the student holds right now, projected from
-        /// <c>StudentProfile.Topic</c>. <see cref="ToResponse"/> copies it into
-        /// <c>CurrentTopicId</c>/<c>CurrentTopicTitle</c> only when this row is
-        /// <c>Pending</c> and the held topic is a different one — that is, when the row is a
-        /// change request — and leaves both null otherwise.
-        /// </summary>
+        public DateTime ContentChangedAt { get; init; }
         public Guid? StudentCurrentTopicId { get; init; }
         public string? StudentCurrentTopicTitle { get; init; }
         public bool HasSubmissions { get; init; }
+        public List<DecisionRow> Decisions { get; init; } = [];
+    }
+
+    private sealed class DecisionRow
+    {
+        public Guid DeciderId { get; init; }
+        public bool DeciderWasAdministrator { get; init; }
+        public ReservationDecisionKind Kind { get; init; }
+        public string? Comment { get; init; }
+        public DateTime DecidedAt { get; init; }
+        public string LastName { get; init; } = string.Empty;
+        public string FirstName { get; init; } = string.Empty;
+        public string? Patronymic { get; init; }
     }
 }

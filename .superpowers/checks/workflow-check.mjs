@@ -1,4 +1,4 @@
-import { createCleanup, giveTopic, removeGroup } from './checkCleanup.mjs'
+import { createCleanup, giveTopic, makeStaff, removeGroup } from './checkCleanup.mjs'
 
 const API = 'http://localhost:5000'
 const stamp = Date.now().toString().slice(-6)
@@ -101,16 +101,21 @@ async function runChecks() {
 const admin = await login('admin@diploma.local', 'Admin123!')
 const teacher = await login('teacher@diploma.local', 'Teacher123!')
 
-// Arrange: group with two steps, a student, the seed teacher as reviewer, a second teacher unrelated
+// Arrange: group with two steps, a student. The seed teacher supervises the student (through
+// giveTopic below), and a second teacher of the department has nothing to do with them.
 const department = (await call('GET', '/api/departments', { token: admin })).body[0]
 const group = (await call('POST', '/api/groups', { token: admin, json: { departmentId: department.id, code: `WF${stamp}`, academicYear: '2026/2027', description: '' } })).body
 cleanup.add(`group ${group.code}`, () => removeGroup(call, admin, group))
-const teachers = (await call('GET', '/api/teachers', { token: admin })).body
+const teachers = (await call('GET', '/api/staff', { token: admin })).body
 const teacherId = teachers.find((t) => t.email === 'teacher@diploma.local').id
-await call('POST', `/api/groups/${group.id}/reviewers`, { token: admin, json: { reviewerId: teacherId } })
 const otherTeacherEmail = `other.${stamp}@diploma.local`
-const otherTeacherId = (await call('POST', '/api/teachers', { token: admin, json: { firstName: 'Other', lastName: 'Teacher', email: otherTeacherEmail, password: 'Teacher456!' } })).body.id
-cleanup.add(`teacher ${otherTeacherEmail} -> deactivate`, () => call('PATCH', `/api/teachers/${otherTeacherId}/deactivate`, { token: admin }))
+// Phase 12: a teacher of the same department with no student and no seat here.
+const otherTeacherId = await makeStaff(call, cleanup, admin, {
+  email: otherTeacherEmail,
+  firstName: 'Other',
+  lastName: 'Teacher',
+  roles: [{ role: 'Teacher', scopeKind: 'Department', scopeId: department.id }]
+})
 const otherTeacher = await login(otherTeacherEmail, 'Teacher456!')
 
 // Step templates are per faculty (Order is unique per faculty); a template from a different

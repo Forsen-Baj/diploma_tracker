@@ -1,6 +1,7 @@
 using DiplomaTracker.Api.DTOs.GroupTasks;
 using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
+using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,14 +9,16 @@ namespace DiplomaTracker.Api.Controllers;
 
 [ApiController]
 [Route("api/group-tasks")]
-[Authorize(Roles = "Admin,Teacher")]
+[Authorize(Roles = AuthRoles.AdminOrAnyStaffRole)]
 public class GroupTasksController : ApiControllerBase
 {
     private readonly IGroupTaskService _groupTaskService;
+    private readonly IStudentWorkflowService _workflow;
 
-    public GroupTasksController(IGroupTaskService groupTaskService)
+    public GroupTasksController(IGroupTaskService groupTaskService, IStudentWorkflowService workflow)
     {
         _groupTaskService = groupTaskService;
+        _workflow = workflow;
     }
 
     [HttpGet]
@@ -54,6 +57,7 @@ public class GroupTasksController : ApiControllerBase
         return tasks is null ? ErrorResult(error) : Ok(tasks);
     }
 
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateGroupTaskRequest request)
     {
@@ -68,6 +72,7 @@ public class GroupTasksController : ApiControllerBase
             : CreatedAtAction(nameof(GetById), new { id = task.Id }, task);
     }
 
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpPost("/api/groups/{groupId:guid}/assign-all-task-templates")]
     public async Task<IActionResult> AssignAll(Guid groupId, [FromBody] AssignAllTaskTemplatesRequest request)
     {
@@ -80,6 +85,7 @@ public class GroupTasksController : ApiControllerBase
         return response is null ? ErrorResult(error) : Ok(response);
     }
 
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateGroupTaskRequest request)
     {
@@ -92,7 +98,7 @@ public class GroupTasksController : ApiControllerBase
         return task is null ? ErrorResult(error) : Ok(task);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
@@ -103,5 +109,18 @@ public class GroupTasksController : ApiControllerBase
 
         var (success, error) = await _groupTaskService.DeleteGroupTaskAsync(id, administratorId);
         return success ? NoContent() : ErrorResult(error);
+    }
+
+    [Authorize(Roles = AuthRoles.Admin)]
+    [HttpPut("{id:guid}/standards-controller")]
+    public async Task<IActionResult> SetStandardsController(Guid id, [FromBody] SetStandardsControllerRequest request)
+    {
+        if (!TryGetCurrentUser(out var user))
+        {
+            return ErrorResult(CommonErrors.Forbidden);
+        }
+
+        var (result, error) = await _workflow.SetStandardsControllerAsync(user, id, request.UserId);
+        return result is null ? ErrorResult(error) : Ok(result);
     }
 }

@@ -3,15 +3,10 @@ import { useTranslation } from 'react-i18next'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useErrorMessage } from '../api/useErrorMessage'
 import { AuthLayout } from '../components/layout/AuthLayout'
+import { homeRouteByRole } from '../components/layout/navigation'
 import { Button } from '../components/ui/Button'
 import { TextField } from '../components/ui/TextField'
 import { useAuth } from '../auth/useAuth'
-
-function routeByRole(role: 'Admin' | 'Teacher' | 'Student'): string {
-  if (role === 'Admin') return '/admin/dashboard'
-  if (role === 'Teacher') return '/teacher/dashboard'
-  return '/student/dashboard'
-}
 
 export function LoginPage() {
   const { t } = useTranslation()
@@ -25,7 +20,7 @@ export function LoginPage() {
   const [error, setError] = useState('')
 
   if (!isInitializing && user) {
-    return <Navigate to={routeByRole(user.role)} replace />
+    return <Navigate to={homeRouteByRole[user.role]} replace />
   }
 
   const handleSubmit = async (event: FormEvent) => {
@@ -35,7 +30,7 @@ export function LoginPage() {
     try {
       const authenticatedUser = await login(email, password)
       const from = (location.state as { from?: string } | null)?.from
-      const fallbackRoute = routeByRole(authenticatedUser.role)
+      const fallbackRoute = homeRouteByRole[authenticatedUser.role]
       navigate(from && from !== '/login' ? from : fallbackRoute, { replace: true })
     } catch (err) {
       setError(errorMessage(err))

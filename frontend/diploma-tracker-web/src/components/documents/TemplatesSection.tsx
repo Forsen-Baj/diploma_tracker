@@ -21,7 +21,8 @@ export function TemplatesSection() {
   const errorMessage = useErrorMessage()
   const toast = useToast()
 
-  const canCreate = user?.role === 'Admin' || user?.role === 'Teacher'
+  // Templates are every staff member's, whatever role they act in (design 2026-09-27, phase 12).
+  const canCreate = user?.role === 'Admin' || user?.accountRole === 'Staff'
 
   const [templates, setTemplates] = useState<DocumentTemplate[]>([])
   const [isLoading, setIsLoading] = useState(true)
