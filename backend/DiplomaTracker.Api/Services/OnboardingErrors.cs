@@ -11,7 +11,6 @@ public static class OnboardingErrors
     public const string UserNotFound = "auth.userNotFound";
 
     public const string StudentNotFound = "student.notFound";
-    public const string TeacherNotFound = "teacher.notFound";
     public const string GroupNotFound = "student.groupNotFound";
     public const string SupervisorNotFound = "student.supervisorNotFound";
     public const string SupervisorMustBeActiveTeacher = "student.supervisorInvalid";
@@ -49,10 +48,9 @@ public static class OnboardingErrors
         new(CurrentPasswordIncorrect, StatusCodes.Status400BadRequest, "Current password is incorrect."),
         new(UserNotFound, StatusCodes.Status401Unauthorized, "User not found."),
         new(StudentNotFound, StatusCodes.Status404NotFound, "Student not found."),
-        new(TeacherNotFound, StatusCodes.Status404NotFound, "Teacher not found."),
         new(GroupNotFound, StatusCodes.Status400BadRequest, "The selected group does not exist."),
         new(SupervisorNotFound, StatusCodes.Status400BadRequest, "The selected supervisor does not exist."),
-        new(SupervisorMustBeActiveTeacher, StatusCodes.Status400BadRequest, "Supervisor must be an active teacher."),
+        new(SupervisorMustBeActiveTeacher, StatusCodes.Status400BadRequest, "The supervisor must be an active teacher whose role covers the student's group."),
         new(SupervisorLockedByTopic, StatusCodes.Status409Conflict, "This student's supervisor is set by their topic; change the topic instead."),
         new(EmailTaken, StatusCodes.Status409Conflict, "Email already exists."),
         new(StudentNumberTaken, StatusCodes.Status409Conflict, "Student number already exists."),

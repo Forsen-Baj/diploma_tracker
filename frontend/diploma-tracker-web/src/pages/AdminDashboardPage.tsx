@@ -74,7 +74,7 @@ export function AdminDashboardPage() {
           onClick: () => navigate('/admin/students')
         },
         { key: 'unclaimedAccounts', label: t('dashboard.unclaimedAccounts'), value: dashboard.structure.unclaimedAccounts },
-        { key: 'teachers', label: t('dashboard.teachers'), value: dashboard.structure.teachers, onClick: () => navigate('/admin/teachers') },
+        { key: 'teachers', label: t('dashboard.teachers'), value: dashboard.structure.teachers, onClick: () => navigate('/admin/staff') },
         {
           key: 'topicsAvailable',
           label: t('dashboard.topicsAvailable'),

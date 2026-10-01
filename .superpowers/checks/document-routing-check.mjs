@@ -112,10 +112,11 @@ async function runChecks() {
     const created = (await call('POST', '/api/students', { token: admin, json: { firstName: key, lastName: `Doc${key}${stamp}`, email, studentNumber: `D${key}${stamp}`, password: 'Password1!', groupId: group.id } })).body
     return { id: created.id, token: await login(email, 'Password1!') }
   }
+  // These accounts keep no role: documents are every staff member's.
   async function makeTeacher(key) {
     const email = `doc.${key.toLowerCase()}.${stamp}@diploma.local`
-    const id = (await call('POST', '/api/teachers', { token: admin, json: { firstName: key, lastName: `Doc${key}${stamp}`, email, password: 'Teacher456!' } })).body.id
-    cleanup.add(`teacher ${email} -> deactivate`, () => call('PATCH', `/api/teachers/${id}/deactivate`, { token: admin }))
+    const id = (await call('POST', '/api/staff', { token: admin, json: { firstName: key, lastName: `Doc${key}${stamp}`, email, password: 'Teacher456!' } })).body.id
+    cleanup.add(`teacher ${email} -> deactivate`, () => call('PATCH', `/api/staff/${id}/deactivate`, { token: admin }))
     return { id, token: await login(email, 'Teacher456!') }
   }
   const userIdOf = async (token, search) => (await call('GET', `/api/documents/recipients?search=${encodeURIComponent(search)}`, { token })).body[0]?.id

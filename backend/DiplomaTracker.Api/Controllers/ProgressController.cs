@@ -1,5 +1,6 @@
 using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
+using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,7 +17,7 @@ public class ProgressController : ApiControllerBase
         _workflow = workflow;
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminOrAnyStaffRole)]
     [HttpGet("groups/{groupId:guid}/progress")]
     public async Task<IActionResult> Group(Guid groupId)
     {
@@ -29,7 +30,7 @@ public class ProgressController : ApiControllerBase
         return progress is null ? ErrorResult(error) : Ok(progress);
     }
 
-    [Authorize(Roles = "Student")]
+    [Authorize(Roles = AccountRoles.Student)]
     [HttpGet("students/me/progress")]
     public async Task<IActionResult> Mine()
     {
@@ -42,7 +43,7 @@ public class ProgressController : ApiControllerBase
         return progress is null ? ErrorResult(error) : Ok(progress);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminOrAnyStaffRole)]
     [HttpGet("students/{studentProfileId:guid}/progress")]
     public async Task<IActionResult> Student(Guid studentProfileId)
     {

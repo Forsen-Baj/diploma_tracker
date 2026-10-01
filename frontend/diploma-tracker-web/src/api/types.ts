@@ -1,11 +1,38 @@
+export type StaffRole = 'Teacher' | 'DirectionManager' | 'StandardsController'
+
+/** The role a session acts in (design 2026-09-27, phase 12, §5). `Staff` is a staff member acting in no role. */
+export type ActingRole = 'Admin' | StaffRole | 'Staff' | 'Student'
+
+export type RoleScopeKind = 'Faculty' | 'Department' | 'Group'
+
+export type RoleAssignment = {
+  id: string
+  role: StaffRole
+  scopeKind: RoleScopeKind
+  scopeId: string
+  /** The faculty's or department's name, or the group's code. */
+  scopeName: string
+  /** Short names from the faculty down, e.g. "ФІОТ / ІПЗ / ІП-21". */
+  scopePath: string
+  facultyId: string
+  departmentId: string | null
+  groupId: string | null
+  createdAt: string
+}
+
+export type RoleAssignmentBlocker = {
+  kind: 'supervisedStudent' | 'supervisedTopic' | 'panelSeat' | 'managedDirection' | 'controlledStep'
+  label: string
+}
+
 export type CurrentUser = {
   id: string
   firstName: string
   lastName: string
   email: string
-  role: 'Admin' | 'Teacher' | 'Student'
-  isDirectionManager: boolean
-  isStandardsController: boolean
+  role: ActingRole
+  accountRole: 'Admin' | 'Staff' | 'Student'
+  assignments: RoleAssignment[]
 }
 
 export type LoginRequest = {
@@ -23,36 +50,46 @@ export type HealthResponse = {
   application: string
 }
 
-export type Teacher = {
+export type StaffMember = {
   id: string
   firstName: string
   lastName: string
   patronymic: string | null
   email: string
   isActive: boolean
-  isDirectionManager: boolean
-  isStandardsController: boolean
+  assignments: RoleAssignment[]
   createdAt: string
   updatedAt: string
 }
 
-export type CreateTeacherRequest = {
+export type CreateStaffRequest = {
   firstName: string
   lastName: string
   patronymic?: string
   email: string
   password: string
-  isDirectionManager: boolean
-  isStandardsController: boolean
 }
 
-export type UpdateTeacherRequest = {
+export type UpdateStaffRequest = {
   firstName: string
   lastName: string
   patronymic?: string
   email: string
-  isDirectionManager: boolean
-  isStandardsController: boolean
+}
+
+export type AddRoleAssignmentRequest = {
+  role: StaffRole
+  scopeKind: RoleScopeKind
+  scopeId: string
+}
+
+/** `studentTaskId` asks for the extra-reviewer picker of that step; otherwise `role` narrows to staff
+ *  holding it, for `groupId` or `departmentId` when given. */
+export type StaffOptionsQuery = {
+  role?: StaffRole
+  groupId?: string
+  departmentId?: string
+  studentTaskId?: string
 }
 
 export type Student = {
@@ -134,20 +171,6 @@ export type GroupDeletionPreview = {
   archivedStudentCount: number
   fileCount: number
   documentCount: number
-}
-
-export type GroupReviewer = {
-  id: string
-  groupId: string
-  reviewerId: string
-  firstName: string
-  lastName: string
-  email: string
-  createdAt: string
-}
-
-export type AddGroupReviewerRequest = {
-  reviewerId: string
 }
 
 export type GroupStudent = {
@@ -438,6 +461,7 @@ export type DirectionQuery = {
   departmentId?: string
   managerId?: string
   mine?: boolean
+  covered?: boolean
 }
 
 export type ApprovalSeatName = 'Administration' | 'Direction' | 'Supervision'
@@ -547,7 +571,7 @@ export type SubmissionReview = {
 export type StaffOption = {
   id: string
   name: string
-  role: 'Admin' | 'Teacher'
+  role: 'Admin' | 'Staff'
   email: string
 }
 
@@ -607,8 +631,6 @@ export type StandardsControllerChange = {
   affectedSteps: number
   approvedSteps: number
 }
-
-export type StaffCapability = 'directionManager' | 'standardsController'
 
 export type ReviewQueueItem = {
   submissionId: string
@@ -894,7 +916,6 @@ export type ArchivedReview = {
 }
 
 export type ArchivedGroupDetails = ArchivedGroupSummary & {
-  reviewerNames: string[]
   files: ArchivedFile[]
   reviews: ArchivedReview[]
 }
@@ -986,6 +1007,6 @@ export type DocumentDetails = {
 export type DocumentRecipient = {
   id: string
   name: string
-  role: 'Admin' | 'Teacher' | 'Student'
+  role: 'Admin' | 'Staff' | 'Student'
   groupCode: string | null
 }

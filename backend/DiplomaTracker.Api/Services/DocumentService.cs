@@ -932,10 +932,10 @@ public class DocumentService : IDocumentService
     {
         var query = _dbContext.Users.AsNoTracking()
             .Where(u => u.IsActive && u.Id != user.UserId && u.PasswordHash != null)
-            .Where(u => u.Role != "Student" || (u.StudentProfile != null && u.StudentProfile.ArchivedAt == null));
+            .Where(u => u.Role != AccountRoles.Student || (u.StudentProfile != null && u.StudentProfile.ArchivedAt == null));
 
         return user.IsStudent
-            ? query.Where(u => u.Role == "Teacher" || u.Role == "Admin")
+            ? query.Where(u => u.Role == AccountRoles.Staff || u.Role == AccountRoles.Admin)
             : query;
     }
 

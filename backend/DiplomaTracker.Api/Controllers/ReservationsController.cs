@@ -2,6 +2,7 @@ using DiplomaTracker.Api.DTOs.Topics;
 using DiplomaTracker.Api.Entities;
 using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
+using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,12 +19,12 @@ public class ReservationsController : ApiControllerBase
         _reservationService = reservationService;
     }
 
-    [Authorize(Roles = "Student")]
+    [Authorize(Roles = AccountRoles.Student)]
     [HttpPost("/api/topics/{topicId:guid}/reserve")]
     public Task<IActionResult> Reserve(Guid topicId) =>
         Run(user => _reservationService.ReserveAsync(user, topicId));
 
-    [Authorize(Roles = "Student")]
+    [Authorize(Roles = AccountRoles.Student)]
     [HttpPost("/api/topics/proposals")]
     public Task<IActionResult> Propose([FromBody] ProposeTopicRequest request) =>
         Run(user => _reservationService.ProposeAsync(user, request));
@@ -32,42 +33,42 @@ public class ReservationsController : ApiControllerBase
     public Task<IActionResult> Get(Guid id) =>
         Run(user => _reservationService.GetAsync(user, id));
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminTeacherOrManager)]
     [HttpPost("{id:guid}/approve")]
     public Task<IActionResult> Approve(Guid id) =>
         Run(user => _reservationService.ApproveAsync(user, id));
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminTeacherOrManager)]
     [HttpPost("{id:guid}/return")]
     public Task<IActionResult> Return(Guid id, [FromBody] ReturnReservationRequest request) =>
         Run(user => _reservationService.ReturnAsync(user, id, request));
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminTeacherOrManager)]
     [HttpPost("{id:guid}/reject")]
     public Task<IActionResult> Reject(Guid id, [FromBody] DecisionRequest? request) =>
         Run(user => _reservationService.RejectAsync(user, id, request ?? new DecisionRequest()));
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminTeacherOrManager)]
     [HttpPut("{id:guid}/wording")]
     public Task<IActionResult> EditWording(Guid id, [FromBody] WordingRequest request) =>
         Run(user => _reservationService.EditWordingAsync(user, id, request));
 
-    [Authorize(Roles = "Student")]
+    [Authorize(Roles = AccountRoles.Student)]
     [HttpPost("{id:guid}/resubmit")]
     public Task<IActionResult> Resubmit(Guid id, [FromBody] WordingRequest request) =>
         Run(user => _reservationService.ResubmitAsync(user, id, request));
 
-    [Authorize(Roles = "Student")]
+    [Authorize(Roles = AccountRoles.Student)]
     [HttpPost("{id:guid}/cancel")]
     public Task<IActionResult> Cancel(Guid id) =>
         Run(user => _reservationService.CancelAsync(user, id));
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminTeacherOrManager)]
     [HttpPost("{id:guid}/release")]
     public Task<IActionResult> Release(Guid id, [FromBody] DecisionRequest? request) =>
         Run(user => _reservationService.ReleaseAsync(user, id, request ?? new DecisionRequest()));
 
-    [Authorize(Roles = "Student")]
+    [Authorize(Roles = AccountRoles.Student)]
     [HttpGet("mine")]
     public async Task<IActionResult> Mine()
     {
@@ -80,7 +81,7 @@ public class ReservationsController : ApiControllerBase
         return reservations is null ? ErrorResult(error) : Ok(reservations);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminTeacherOrManager)]
     [HttpGet("pending")]
     public async Task<IActionResult> ForDecision(
         [FromQuery] ReservationStatus status = ReservationStatus.Pending,

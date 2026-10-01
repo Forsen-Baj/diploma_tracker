@@ -1,6 +1,7 @@
 using DiplomaTracker.Api.DTOs.Topics;
 using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
+using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -23,7 +24,7 @@ public class SettingsController : ApiControllerBase
         return Ok(new TopicSelectionSettingsDto { Deadline = await _topicSettingsService.GetDeadlineAsync() });
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpPut("topic-selection")]
     public async Task<IActionResult> UpdateTopicSelection([FromBody] TopicSelectionSettingsDto request)
     {

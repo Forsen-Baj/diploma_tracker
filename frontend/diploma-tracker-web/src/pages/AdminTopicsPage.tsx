@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next'
 import { getDepartments } from '../api/departmentsApi'
 import { getDirections } from '../api/directionsApi'
 import { getReservationsForDecision, releaseReservation } from '../api/reservationsApi'
-import { getTeachers } from '../api/teachersApi'
-import { deleteTopic, getTopics } from '../api/topicsApi'
+import { getStaff } from '../api/staffApi'
+import { deleteTopic, getTopics, getTopicSupervisors } from '../api/topicsApi'
 import { useErrorMessage } from '../api/useErrorMessage'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -25,7 +25,7 @@ import { TopicFormModal } from '../components/topics/TopicFormModal'
 import { TopicRequestsTable } from '../components/topics/TopicRequestsTable'
 import { TopicStatusBadge } from '../components/topics/TopicStatusBadge'
 import { useWaitingApprovals } from '../components/topics/useWaitingApprovals'
-import type { Department, Direction, Reservation, Teacher, Topic, TopicStatus } from '../api/types'
+import type { Department, Direction, Reservation, StaffMember, Topic, TopicStatus } from '../api/types'
 
 type StatusFilter = 'all' | TopicStatus
 
@@ -39,7 +39,7 @@ export function AdminTopicsPage() {
   const [topics, setTopics] = useState<Topic[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
   const [directions, setDirections] = useState<Direction[]>([])
-  const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [teachers, setTeachers] = useState<StaffMember[]>([])
   const [requests, setRequests] = useState<Reservation[]>([])
   // Design 2026-09-27 §5.4: the administrator filters requests by the Administration seat -
   // an administrator holds no other seat, so "waiting for me" is exactly that seat being open.
@@ -69,7 +69,7 @@ export function AdminTopicsPage() {
 
   const loadFilters = async () => {
     try {
-      const [departmentsData, teachersData, directionsData] = await Promise.all([getDepartments(), getTeachers(), getDirections()])
+      const [departmentsData, teachersData, directionsData] = await Promise.all([getDepartments(), getStaff({ role: 'Teacher' }), getDirections()])
       setDepartments(departmentsData)
       setTeachers(teachersData)
       setDirections(directionsData)
@@ -344,7 +344,8 @@ export function AdminTopicsPage() {
         initial={editingTopic}
         showSupervisor
         directions={directions}
-        supervisors={teachers.filter((teacher) => teacher.isActive).map((teacher) => ({ id: teacher.id, name: `${teacher.lastName} ${teacher.firstName}` }))}
+        supervisors={[]}
+        loadSupervisors={getTopicSupervisors}
         onClose={closeTopicModal}
         onSaved={handleTopicSaved}
       />

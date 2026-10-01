@@ -19,7 +19,7 @@ public static class DirectionErrors
         new(NameTaken, StatusCodes.Status409Conflict, "A direction with this name already exists in the department."),
         new(HasTopics, StatusCodes.Status409Conflict, "The direction still has topics."),
         new(NotManager, StatusCodes.Status403Forbidden, "You do not manage this direction."),
-        new(ManagerInvalid, StatusCodes.Status400BadRequest, "The manager must be an active teacher who is a direction manager."),
+        new(ManagerInvalid, StatusCodes.Status400BadRequest, "Choose an active direction manager whose role covers the department."),
         new(DepartmentInvalid, StatusCodes.Status400BadRequest, "The selected department does not exist.")
     ];
 }

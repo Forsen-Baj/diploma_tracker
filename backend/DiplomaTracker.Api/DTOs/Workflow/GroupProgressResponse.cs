@@ -33,17 +33,16 @@ public class GroupProgressStudent
     public string Name { get; set; } = string.Empty;
     public IReadOnlyList<GroupProgressCell> Cells { get; set; } = [];
 
-    /// Follow-up 2026-09-24: whether the caller can open this student's step pages
-    /// (`GET /api/student-tasks/{id}`) for steps of this group - an administrator, a reviewer of
-    /// the group, or the student's current supervisor. An extra reviewer seat on a single step
-    /// does not make the row openable.
+    /// Follow-up 2026-09-24, phase 12 §4.2: whether the caller can open this student's step pages
+    /// (`GET /api/student-tasks/{id}`) for steps of this group - an administrator, the student's
+    /// supervisor acting as teacher, or the manager of their topic's direction acting as direction
+    /// manager. An extra reviewer seat on a single step does not make the row openable.
     public bool CanOpen { get; set; }
 
-    /// Task 7 bug 3: "mine" for the split - the caller supervises this student, or sits on the
-    /// panel (any seat, any step) as an extra reviewer. Narrower than `CanOpen`: a group reviewer
-    /// with no seat of their own can open every row (watch access) but owns none of them. True for
-    /// every student when the caller is an administrator, so the frontend's split collapses to one
-    /// list for admins exactly like it already does when every row is `CanOpen`.
+    /// Task 7 bug 3, phase 12 §4.1: "mine" for the split - the students the caller works with in
+    /// the role they act in (`ReviewOverviewStudents`). True for every student when the caller is
+    /// an administrator, so the frontend's split collapses to one list for admins exactly like it
+    /// already does when every row is `CanOpen`.
     public bool IsMine { get; set; }
 }
 

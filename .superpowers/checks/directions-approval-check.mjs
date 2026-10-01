@@ -1,6 +1,6 @@
 // Design 2026-09-27: directions, topic approval and standards control. Runs against the live
 // local API on :5000 and leaves nothing behind (checkCleanup.mjs).
-import { createCleanup, removeGroup } from './checkCleanup.mjs'
+import { actAs, createCleanup, grantRoles, makeStaff, removeGroup } from './checkCleanup.mjs'
 
 const API = 'http://localhost:5000'
 const stamp = Date.now().toString().slice(-6)
@@ -96,18 +96,26 @@ async function runChecks() {
   const seedGroup = (await call('GET', '/api/groups', { token: admin })).body.find((g) => g.code === 'SEED-A')
   const departmentId = seedGroup.departmentId
   const seedDirection = (await call('GET', `/api/directions?departmentId=${departmentId}`, { token: admin })).body.find((d) => d.name === 'Software Engineering')
+  const teacherAsManager = await actAs(call, teacher, 'DirectionManager')
 
-  // Staff this script creates. Their deactivation is registered first among the late undos, so it
-  // runs after every direction they manage and every group step they control is gone.
-  async function makeTeacher(key, capabilities = {}) {
+  // Staff this script creates, with roles for the seeded department. Their deactivation and their
+  // roles are late undos, so they run after every direction they manage and every group step they
+  // control is gone. The manager also teaches: a topic is moved to them in S01, and P07 names them.
+  async function makeTeacher(key, roles = ['Teacher']) {
     const email = `dir.${key.toLowerCase()}.${stamp}@diploma.local`
-    const id = (await call('POST', '/api/teachers', { token: admin, json: { firstName: key, lastName: `Dir${key}${stamp}`, email, password: 'Teacher456!', ...capabilities } })).body.id
-    cleanup.addLast(`teacher ${email} -> deactivate`, () => call('PATCH', `/api/teachers/${id}/deactivate`, { token: admin }))
+    const id = await makeStaff(call, cleanup, admin, {
+      email,
+      firstName: key,
+      lastName: `Dir${key}${stamp}`,
+      roles: roles.map((role) => ({ role, scopeKind: 'Department', scopeId: departmentId }))
+    })
     return { id, email, token: await login(email, 'Teacher456!') }
   }
-  const manager = await makeTeacher('Manager', { isDirectionManager: true })
+  const manager = await makeTeacher('Manager', ['Teacher', 'DirectionManager'])
+  // Every manager check below acts as direction manager (design phase 12 §5).
+  manager.token = await actAs(call, manager.token, 'DirectionManager')
   const supervisor = await makeTeacher('Supervisor')
-  const controller = await makeTeacher('Controller', { isStandardsController: true })
+  const controller = await makeTeacher('Controller', ['StandardsController'])
 
   const group = (await call('POST', '/api/groups', { token: admin, json: { departmentId, code: `DA${stamp}`, academicYear: '2026/2027', description: '' } })).body
   cleanup.add(`group ${group.code}`, () => removeGroup(call, admin, group))
@@ -136,16 +144,19 @@ async function runChecks() {
   check('D03 the name is unique within the department', (await call('POST', '/api/directions', { token: manager.token, json: { departmentId, name: `Direction A ${stamp}` } })).body.code, 'direction.nameTaken')
   check('D04 an unknown department is refused', (await call('POST', '/api/directions', { token: manager.token, json: { departmentId: '00000000-0000-0000-0000-000000000001', name: `X ${stamp}` } })).body.code, 'direction.departmentInvalid')
   check('D05 an administrator must name a direction manager', (await call('POST', '/api/directions', { token: admin, json: { departmentId, name: `Y ${stamp}`, managerId: supervisor.id } })).body.code, 'direction.managerInvalid')
-  check('D06 another manager cannot edit it', (await call('PUT', `/api/directions/${directionA.id}`, { token: teacher, json: { departmentId, name: 'Taken over' } })).body.code, 'direction.notManager')
+  check('D06 another manager cannot edit it', (await call('PUT', `/api/directions/${directionA.id}`, { token: teacherAsManager, json: { departmentId, name: 'Taken over' } })).body.code, 'direction.notManager')
   check('D07 a student lists their department\'s directions', (await call('GET', '/api/directions', { token: s1.token })).body.some((d) => d.id === directionA.id), true)
-  const managerPicker = (await call('GET', `/api/staff/options?capability=directionManager&search=${stamp}`, { token: admin })).body
+  const managerPicker = (await call('GET', `/api/staff/options?role=directionManager&search=${stamp}`, { token: admin })).body
   check('D08 the manager picker lists only direction managers', managerPicker.map((o) => o.id).join(','), manager.id)
-  const managerAccount = (await call('GET', `/api/teachers/${manager.id}`, { token: admin })).body
-  check('D09 the capability cannot be cleared while in use', (await call('PUT', `/api/teachers/${manager.id}`, { token: admin, json: { firstName: managerAccount.firstName, lastName: managerAccount.lastName, email: managerAccount.email, isDirectionManager: false } })).body.code, 'staff.managesDirections')
-  check('D10 nor can the manager be deactivated', (await call('PATCH', `/api/teachers/${manager.id}/deactivate`, { token: admin })).body.code, 'staff.managesDirections')
+  const managerRole = (await call('GET', `/api/staff/${manager.id}`, { token: admin })).body.assignments.find((a) => a.role === 'DirectionManager')
+  const managerRemoval = (await call('DELETE', `/api/staff/${manager.id}/roles/${managerRole.id}`, { token: admin })).body
+  check('D09 the manager\'s role cannot be removed while in use', `${managerRemoval.code} ${managerRemoval.errors?.[0]?.kind}`, 'roleAssignment.inUse managedDirection')
+  check('D10 nor can the manager be deactivated', (await call('PATCH', `/api/staff/${manager.id}/deactivate`, { token: admin })).body.code, 'staff.managesDirections')
 
   const spareDepartment = (await call('POST', '/api/departments', { token: admin, json: { facultyId: group.facultyId, name: `Spare ${stamp}`, shortName: `SP${stamp}` } })).body
   cleanup.addLast(`department ${spareDepartment.shortName}`, () => call('DELETE', `/api/departments/${spareDepartment.id}`, { token: admin }))
+  // Phase 12 §4: the manager named for the spare direction covers its department.
+  await grantRoles(call, cleanup, admin, manager.id, [{ role: 'DirectionManager', scopeKind: 'Department', scopeId: spareDepartment.id }])
   const spareDirection = (await call('POST', '/api/directions', { token: admin, json: { departmentId: spareDepartment.id, name: `Spare ${stamp}`, managerId: manager.id } })).body
   cleanup.addLast(`direction ${spareDirection.name}`, () => call('DELETE', `/api/directions/${spareDirection.id}`, { token: admin }))
   check('D11 a department with directions cannot be deleted', (await call('DELETE', `/api/departments/${spareDepartment.id}`, { token: admin })).body.code, 'department.hasDirections')
@@ -162,7 +173,7 @@ async function runChecks() {
   check('T01 a manager publishes a topic for another teacher', `${byManager.status} ${byManager.body.supervisorId === supervisor.id}`, '201 true')
   check('T02 a teacher cannot name another supervisor', (await makeTopic(supervisor.token, `Not mine ${stamp}`, { directionId: directionA.id, supervisorId: manager.id })).body.code, 'direction.notManager')
   const bySupervisor = (await makeTopic(supervisor.token, `Supervisor own ${stamp}`, { directionId: directionA.id, description: 'Original description' })).body
-  check('T03 a teacher publishes under any direction', bySupervisor.directionId, directionA.id)
+  check('T03 a teacher publishes under a direction of a department their role covers', bySupervisor.directionId, directionA.id)
   check('T04 a teacher cannot move a topic to another direction', (await call('PUT', `/api/topics/${bySupervisor.id}`, { token: supervisor.token, json: { title: bySupervisor.title, directionId: seedDirection.id } })).body.code, 'access.forbidden')
   check('T05 the manager sees the topics of their direction', (await call('GET', '/api/topics', { token: manager.token })).body.some((t) => t.id === bySupervisor.id), true)
   check('T06 a direction with topics cannot be deleted', (await call('DELETE', `/api/directions/${directionA.id}`, { token: manager.token })).body.code, 'direction.hasTopics')
@@ -247,15 +258,17 @@ async function runChecks() {
   check('P03 a teacher cannot assign one', (await call('PUT', `/api/group-tasks/${groupStep.id}/standards-controller`, { token: teacher, json: { userId: controller.id } })).status, 403)
   const assignedControl = (await call('PUT', `/api/group-tasks/${groupStep.id}/standards-controller`, { token: admin, json: { userId: controller.id } })).body
   check('P04 the controller reaches every student of the step', assignedControl.affectedSteps, 5)
-  const controllerAccount = (await call('GET', `/api/teachers/${controller.id}`, { token: admin })).body
-  check('P05 the capability cannot be cleared while in use', (await call('PUT', `/api/teachers/${controller.id}`, { token: admin, json: { firstName: controllerAccount.firstName, lastName: controllerAccount.lastName, email: controllerAccount.email, isStandardsController: false } })).body.code, 'staff.controlsSteps')
+  const controllerRole = (await call('GET', `/api/staff/${controller.id}`, { token: admin })).body.assignments[0]
+  const controllerRemoval = (await call('DELETE', `/api/staff/${controller.id}/roles/${controllerRole.id}`, { token: admin })).body
+  check('P05 the controller\'s role cannot be removed while in use', `${controllerRemoval.code} ${controllerRemoval.errors?.[0]?.kind}`, 'roleAssignment.inUse controlledStep')
   check('P06 the standards control seat joins the panel', seatsOf((await call('GET', `/api/student-tasks/${s1Step.id}`, { token: supervisor.token })).body), 'Supervisor,DirectionManager,StandardsControl')
   check('P07 the manager cannot be added as an extra reviewer', (await call('POST', `/api/student-tasks/${s1Step.id}/reviewers`, { token: admin, json: { reviewerId: manager.id } })).body.code, 'panel.reviewerExists')
 
   check('P08 the student submits', (await call('POST', `/api/student-tasks/${s1Step.id}/submissions`, { token: s1.token, form: form() })).status, 200)
   const controllerView = (await call('GET', `/api/student-tasks/${s1Step.id}`, { token: controller.token })).body
   check('P09 the controller opens the step and decides in their own seat', `${controllerView.canDecide} ${controllerView.mySeat}`, 'true StandardsControl')
-  check('P10 the controller sees nothing else of the group', (await call('GET', `/api/groups/${group.id}/progress`, { token: controller.token })).status, 404)
+  const controllerProgress = await call('GET', `/api/groups/${group.id}/progress`, { token: controller.token })
+  check('P10 the controller sees the group but opens no student in full', `${controllerProgress.status} ${controllerProgress.body.students?.some((s) => s.canOpen)}`, '200 false')
   check('P11 the step waits in the controller\'s queue', (await call('GET', '/api/review/queue', { token: controller.token })).body.items.some((i) => i.studentTaskId === s1Step.id), true)
   check('P12 and in the manager\'s', (await call('GET', '/api/review/queue', { token: manager.token })).body.items.some((i) => i.studentTaskId === s1Step.id), true)
   const pendingId = controllerView.pendingSubmissionId

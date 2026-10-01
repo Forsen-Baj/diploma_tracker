@@ -1,3 +1,5 @@
+using DiplomaTracker.Api.DTOs.Staff;
+
 namespace DiplomaTracker.Api.Models;
 
 public class CurrentUserResponse
@@ -6,7 +8,14 @@ public class CurrentUserResponse
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
+
+    /// The role this session acts in: Admin, Student, Teacher, DirectionManager,
+    /// StandardsController, or Staff for a staff member acting in none (design 2026-09-27, phase 12, §5).
     public string Role { get; set; } = string.Empty;
-    public bool IsDirectionManager { get; set; }
-    public bool IsStandardsController { get; set; }
+
+    /// Admin, Staff or Student.
+    public string AccountRole { get; set; } = string.Empty;
+
+    /// A staff member's roles and where they hold them; empty for everyone else.
+    public IReadOnlyList<RoleAssignmentResponse> Assignments { get; set; } = [];
 }

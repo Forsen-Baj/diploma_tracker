@@ -1,6 +1,6 @@
 // Design 2026-09-24 §3 and §5: review panels. Runs against the live local API on :5000 and leaves
 // nothing behind (checkCleanup.mjs).
-import { createCleanup, giveTopic, removeGroup } from './checkCleanup.mjs'
+import { createCleanup, giveTopic, makeStaff, removeGroup } from './checkCleanup.mjs'
 
 const API = 'http://localhost:5000'
 const stamp = Date.now().toString().slice(-6)
@@ -92,25 +92,28 @@ function form() {
 async function runChecks() {
   const admin = await login('admin@diploma.local', 'Admin123!')
   const teacher = await login('teacher@diploma.local', 'Teacher123!')
-  const teacherId = (await call('GET', '/api/teachers', { token: admin })).body.find((t) => t.email === 'teacher@diploma.local').id
+  const teacherId = (await call('GET', '/api/staff', { token: admin })).body.find((t) => t.email === 'teacher@diploma.local').id
 
   // Arrange: a group with two steps, one student whose topic (and so supervisor) is the seed
-  // teacher's, a teacher who reviews the group, two extra reviewers and an outsider.
+  // teacher's, two extra reviewers and an outsider.
   const department = (await call('GET', '/api/departments', { token: admin })).body[0]
   const group = (await call('POST', '/api/groups', { token: admin, json: { departmentId: department.id, code: `RP${stamp}`, academicYear: '2026/2027', description: '' } })).body
   cleanup.add(`group ${group.code}`, () => removeGroup(call, admin, group))
 
+  // Teachers of the department. Phase 12 §4.1: there are no group reviewers any more.
   async function makeTeacher(key) {
     const email = `panel.${key.toLowerCase()}.${stamp}@diploma.local`
-    const id = (await call('POST', '/api/teachers', { token: admin, json: { firstName: key, lastName: `Panel${key}${stamp}`, email, password: 'Teacher456!' } })).body.id
-    cleanup.add(`teacher ${email} -> deactivate`, () => call('PATCH', `/api/teachers/${id}/deactivate`, { token: admin }))
+    const id = await makeStaff(call, cleanup, admin, {
+      email,
+      firstName: key,
+      lastName: `Panel${key}${stamp}`,
+      roles: [{ role: 'Teacher', scopeKind: 'Department', scopeId: department.id }]
+    })
     return { id, token: await login(email, 'Teacher456!') }
   }
-  const watcher = await makeTeacher('Watcher')
   const extraA = await makeTeacher('Alpha')
   const extraB = await makeTeacher('Beta')
   const outsider = await makeTeacher('Outsider')
-  await call('POST', `/api/groups/${group.id}/reviewers`, { token: admin, json: { reviewerId: watcher.id } })
 
   const templates = (await call('GET', '/api/task-templates', { token: admin })).body
     .filter((t) => t.isActive && t.facultyId === department.facultyId)
@@ -132,13 +135,13 @@ async function runChecks() {
   check('01a that seat is the supervisor', `${fresh.panel[0].seat}:${fresh.panel[0].reviewerId}`, `Supervisor:${teacherId}`)
   check('01b my work counts one seat', steps[0].panelSize, 1)
 
-  const options = (await call('GET', `/api/staff/options?search=PanelAlpha${stamp}`, { token: watcher.token })).body
+  const options = (await call('GET', `/api/staff/options?search=PanelAlpha${stamp}`, { token: teacher })).body
   check('02 the staff search finds a teacher', options.some((o) => o.id === extraA.id), true)
   check('03 a student cannot search staff', (await call('GET', '/api/staff/options', { token: studentToken })).status, 403)
 
   check('04 an unrelated teacher cannot change the panel', (await call('POST', `/api/student-tasks/${step1}/reviewers`, { token: outsider.token, json: { reviewerId: extraA.id } })).body.code, 'studentTask.notFound')
-  const addedA = await call('POST', `/api/student-tasks/${step1}/reviewers`, { token: watcher.token, json: { reviewerId: extraA.id } })
-  check('05 a group reviewer adds an extra reviewer', addedA.body.panel?.length, 2)
+  const addedA = await call('POST', `/api/student-tasks/${step1}/reviewers`, { token: admin, json: { reviewerId: extraA.id } })
+  check('05 an administrator adds an extra reviewer', addedA.body.panel?.length, 2)
   const addedB = await call('POST', `/api/student-tasks/${step1}/reviewers`, { token: teacher, json: { reviewerId: extraB.id } })
   check('06 the supervisor adds another', addedB.body.panel?.length, 3)
   check('07 the supervisor cannot be an extra reviewer', (await call('POST', `/api/student-tasks/${step1}/reviewers`, { token: admin, json: { reviewerId: teacherId } })).body.code, 'panel.reviewerIsSupervisor')
@@ -146,7 +149,7 @@ async function runChecks() {
   check('09 an unknown person is refused', (await call('POST', `/api/student-tasks/${step1}/reviewers`, { token: admin, json: { reviewerId: crypto.randomUUID() } })).body.code, 'panel.reviewerInvalid')
 
   check('10 an extra reviewer opens the step', (await call('GET', `/api/student-tasks/${step1}`, { token: extraA.token })).status, 200)
-  check('10a but not the group', (await call('GET', `/api/groups/${group.id}`, { token: extraA.token })).body.code, 'group.notFound')
+  check('10a and now sees the group of the student they review', (await call('GET', `/api/groups/${group.id}`, { token: extraA.token })).status, 200)
   check('10b nor the student\'s other step', (await call('GET', `/api/student-tasks/${step2}`, { token: extraA.token })).body.code, 'studentTask.notFound')
   check('11 an extra reviewer cannot change the panel', (await call('POST', `/api/student-tasks/${step1}/reviewers`, { token: extraA.token, json: { reviewerId: outsider.id } })).body.code, 'panel.notAllowed')
 
@@ -157,8 +160,8 @@ async function runChecks() {
     (await call('GET', `/api/review/queue?groupId=${group.id}&pageSize=100`, { token })).body.items.some((i) => i.studentTaskId === stepId)
 
   check('12 an extra reviewer\'s queue has it', await inQueue(extraA.token), true)
-  check('12a a group reviewer only watches', await inQueue(watcher.token), false)
-  check('13 a group reviewer cannot decide', (await call('POST', `/api/submissions/${v1Id}/approve`, { token: watcher.token, json: { mark: 90 } })).body.code, 'review.notOnPanel')
+  check('12a an unrelated teacher\'s queue does not', await inQueue(outsider.token), false)
+  check('13 an unrelated teacher cannot decide', (await call('POST', `/api/submissions/${v1Id}/approve`, { token: outsider.token, json: { mark: 90 } })).body.code, 'submission.notFound')
   const afterA = (await call('POST', `/api/submissions/${v1Id}/approve`, { token: extraA.token, json: { mark: 90 } })).body
   check('14 one approval keeps the step under review', `${afterA.status} ${afterA.panelApproved}/${afterA.panelSize}`, 'Submitted 1/3')
   check('15 a satisfied seat cannot decide again', (await call('POST', `/api/submissions/${v1Id}/approve`, { token: extraA.token, json: { mark: 95 } })).body.code, 'review.seatSatisfied')
@@ -196,7 +199,7 @@ async function runChecks() {
   check('25 an administrator fills the supervisor seat', `${standIn.status} ${standIn.panelApproved}/${standIn.panelSize}`, 'Submitted 1/2')
   check('25a the supervisor has nothing left to decide', (await call('POST', `/api/submissions/${s2Id}/approve`, { token: teacher, json: { mark: 99 } })).body.code, 'review.seatSatisfied')
   check('26 removing someone who is not on the panel', (await call('DELETE', `/api/student-tasks/${step2}/reviewers/${outsider.id}`, { token: teacher })).body.code, 'panel.reviewerNotFound')
-  const removed = (await call('DELETE', `/api/student-tasks/${step2}/reviewers/${extraA.id}`, { token: watcher.token })).body
+  const removed = (await call('DELETE', `/api/student-tasks/${step2}/reviewers/${extraA.id}`, { token: admin })).body
   check('27 a removal that leaves every seat approved approves the step', `${removed.status} ${removed.mark}`, 'Approved 70')
 }
 

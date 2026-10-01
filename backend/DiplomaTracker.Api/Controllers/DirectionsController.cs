@@ -1,6 +1,7 @@
 using DiplomaTracker.Api.DTOs.Directions;
 using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
+using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -41,7 +42,7 @@ public class DirectionsController : ApiControllerBase
         return direction is null ? ErrorResult(error) : Ok(direction);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminOrDirectionManager)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateDirectionRequest request)
     {
@@ -54,7 +55,7 @@ public class DirectionsController : ApiControllerBase
         return direction is null ? ErrorResult(error) : CreatedAtAction(nameof(GetById), new { id = direction.Id }, direction);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminOrDirectionManager)]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateDirectionRequest request)
     {
@@ -67,7 +68,7 @@ public class DirectionsController : ApiControllerBase
         return direction is null ? ErrorResult(error) : Ok(direction);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminOrDirectionManager)]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {

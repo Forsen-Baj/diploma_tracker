@@ -14,7 +14,6 @@ export function AppShell() {
   const waitingDocuments = useDocumentCounts(Boolean(user))
   const items = user
     ? navigationByRole[user.role]
-        .filter((item) => item.requires !== 'directionManager' || user.isDirectionManager)
         .map((item) => ({
           to: item.to,
           label: t(item.labelKey),

@@ -26,6 +26,8 @@ async function call(method, path, { token, json, form } = {}) {
   return body
 }
 const login = async (email, password) => (await call('POST', '/api/auth/login', { json: { email, password } })).token
+// Design 2026-09-27 (phase 12) §5: a token acting in another role the account holds.
+const actAs = async (token, role) => (await call('POST', '/api/auth/acting-role', { token, json: { role } })).token
 
 // A deadline `days` from now, at 23:59 Kyiv time (20:59 UTC in summer, 21:59 in winter; the
 // summer value is close enough for a demo).
@@ -100,12 +102,16 @@ const SCHEDULE = {
   graduated: [14, 35, 63, 127, 167, 197, 222, 237]
 }
 
+// Design 2026-09-27 (phase 12): roles per place. Петренко teaches and manages directions in ІПЗ;
+// Коваленко teaches across ФІОТ; Шевчук teaches across ФІОТ and manages the direction of ІСТ;
+// Гриценко is the standards controller of ІП-21 only. Each role is [role, scope kind, place key].
 const TEACHERS = {
-  petrenko: { firstName: 'Олена', lastName: 'Петренко', patronymic: 'Василівна', email: 'o.petrenko@diploma.local', isDirectionManager: true },
-  kovalenko: { firstName: 'Андрій', lastName: 'Коваленко', patronymic: 'Миколайович', email: 'a.kovalenko@diploma.local' },
-  shevchuk: { firstName: 'Ірина', lastName: 'Шевчук', patronymic: 'Олегівна', email: 'i.shevchuk@diploma.local', isDirectionManager: true },
-  hrytsenko: { firstName: 'Наталія', lastName: 'Гриценко', patronymic: 'Павлівна', email: 'n.hrytsenko@diploma.local', isStandardsController: true }
+  petrenko: { firstName: 'Олена', lastName: 'Петренко', patronymic: 'Василівна', email: 'o.petrenko@diploma.local', roles: [['Teacher', 'Department', 'ipz'], ['DirectionManager', 'Department', 'ipz']] },
+  kovalenko: { firstName: 'Андрій', lastName: 'Коваленко', patronymic: 'Миколайович', email: 'a.kovalenko@diploma.local', roles: [['Teacher', 'Faculty', 'fiot']] },
+  shevchuk: { firstName: 'Ірина', lastName: 'Шевчук', patronymic: 'Олегівна', email: 'i.shevchuk@diploma.local', roles: [['Teacher', 'Faculty', 'fiot'], ['DirectionManager', 'Department', 'ist']] },
+  hrytsenko: { firstName: 'Наталія', lastName: 'Гриценко', patronymic: 'Павлівна', email: 'n.hrytsenko@diploma.local', roles: [['StandardsController', 'Group', 'ip21']] }
 }
+const ROLE_LABELS = { Teacher: 'Викладач', DirectionManager: 'Керівник напряму', StandardsController: 'Нормоконтролер' }
 
 // Design 2026-09-27: every topic belongs to a direction. Петренко manages the three directions of
 // ІПЗ, Шевчук the one of ІСТ.
@@ -134,7 +140,7 @@ const TOPICS = [
 // approved, so a student without one has no `steps`.
 // steps: one entry per step worked on, in order - 'approved:<mark>', 'returned', 'submitted'
 const STUDENTS = [
-  // ІП-21: on schedule, reviewed by Петренко
+  // ІП-21: on schedule, Петренко's department
   // Бондаренко: step 2 waits for Коваленко and the standards controller after Петренко's approval ("1 of 3").
   { group: 'ip21', lastName: 'Бондаренко', firstName: 'Максим', patronymic: 'Сергійович', email: 'm.bondarenko', number: 'ІП21-001', topic: 'monitoring', steps: ['approved:95', 'submitted'], extras: { 1: ['kovalenko'] } },
   { group: 'ip21', lastName: 'Ткаченко', firstName: 'Анна', patronymic: 'Ігорівна', email: 'a.tkachenko', number: 'ІП21-002', topic: 'proposal', proposal: 'Інтерактивний тренажер для вивчення алгоритмів сортування', steps: ['approved:88'] },
@@ -144,13 +150,13 @@ const STUDENTS = [
   { group: 'ip21', lastName: 'Олійник', firstName: 'Владислав', patronymic: 'Петрович', email: 'v.oliinyk', number: 'ІП21-005', topic: 'pending:finance', steps: [] },
   // Лисенко: step 2 approved by a panel of four (average of three marks), step 3 waits for two of three.
   { group: 'ip21', lastName: 'Лисенко', firstName: 'Катерина', patronymic: 'Володимирівна', email: 'k.lysenko', number: 'ІП21-006', topic: 'apitesting', steps: ['approved:100', 'approved:92', 'submitted'], extras: { 1: ['shevchuk'], 2: ['shevchuk'] } },
-  // ІП-22: behind - the first deadline has passed, reviewed by Коваленко
+  // ІП-22: behind - the first deadline has passed, Коваленко's faculty
   { group: 'ip22', lastName: 'Савченко', firstName: 'Артем', patronymic: 'Юрійович', email: 'a.savchenko', number: 'ІП22-001', topic: 'sentiment', steps: ['approved:75'] },
   // Руденко: the direction manager returned her topic request for a sharper wording.
   { group: 'ip22', lastName: 'Руденко', firstName: 'Юлія', patronymic: 'Миколаївна', email: 'y.rudenko', number: 'ІП22-002', topic: 'returned:recommender', steps: [] },
   { group: 'ip22', lastName: 'Мороз', firstName: 'Олександр', patronymic: 'Вікторович', email: 'o.moroz', number: 'ІП22-003', topic: 'volunteer', steps: ['submitted'] },
   { group: 'ip22', lastName: 'Павленко', firstName: 'Дарина', patronymic: 'Сергіївна', email: 'd.pavlenko', number: 'ІП22-004', topic: null, steps: [] },
-  // ІС-21: reviewed by Шевчук
+  // ІС-21: Шевчук's department
   { group: 'is21', lastName: 'Гончаренко', firstName: 'Богдан', patronymic: 'Ігорович', email: 'b.honcharenko', number: 'ІС21-001', topic: 'anomaly', steps: ['approved:90'] },
   { group: 'is21', lastName: 'Литвиненко', firstName: 'Вікторія', patronymic: 'Олегівна', email: 'v.lytvynenko', number: 'ІС21-002', topic: 'chatbot', steps: ['submitted'] },
   { group: 'is21', lastName: 'Захарченко', firstName: 'Ілля', patronymic: 'Романович', email: 'i.zakharchenko', number: 'ІС21-003', topic: null, steps: [] },
@@ -204,21 +210,25 @@ async function main() {
     await call('POST', `/api/groups/${group.id}/assign-all-task-templates`, { token: admin, json: { items: steps.map((step, i) => ({ taskTemplateId: step.id, deadline: deadline(schedules[key][i]) })) } })
   }
 
-  console.log('Teachers...')
+  console.log('Staff and their roles...')
+  const places = { Faculty: { fiot: faculty }, Department: departments, Group: groups }
   const teachers = {}
   for (const [key, t] of Object.entries(TEACHERS)) {
-    const created = await call('POST', '/api/teachers', { token: admin, json: { ...t, password: DEMO_PASSWORD } })
-    teachers[key] = { ...t, id: created.id, token: await login(t.email, DEMO_PASSWORD) }
-  }
-  const reviewers = { ip21: 'petrenko', ip22: 'kovalenko', is21: 'shevchuk', ip11: 'petrenko' }
-  for (const [key, teacher] of Object.entries(reviewers)) {
-    await call('POST', `/api/groups/${groups[key].id}/reviewers`, { token: admin, json: { reviewerId: teachers[teacher].id } })
+    const { roles, ...account } = t
+    const created = await call('POST', '/api/staff', { token: admin, json: { ...account, password: DEMO_PASSWORD } })
+    for (const [role, scopeKind, place] of roles) {
+      await call('POST', `/api/staff/${created.id}/roles`, { token: admin, json: { role, scopeKind, scopeId: places[scopeKind][place].id } })
+    }
+    const token = await login(t.email, DEMO_PASSWORD)
+    const managesDirections = roles.some(([role]) => role === 'DirectionManager')
+    // A direction manager's directions, approvals and step seats are theirs acting as one (§5).
+    teachers[key] = { ...t, id: created.id, token, managerToken: managesDirections ? await actAs(token, 'DirectionManager') : null }
   }
 
   console.log('Directions and standards control...')
   const directions = {}
   for (const d of DIRECTIONS) {
-    directions[d.key] = await call('POST', '/api/directions', { token: teachers[d.manager].token, json: { departmentId: departments[d.dept].id, name: d.name, description: d.description } })
+    directions[d.key] = await call('POST', '/api/directions', { token: teachers[d.manager].managerToken, json: { departmentId: departments[d.dept].id, name: d.name, description: d.description } })
   }
   // Гриценко checks the formatting of ІП-21's first two steps for every student of the group.
   const ip21Steps = (await call('GET', `/api/groups/${groups.ip21.id}/tasks`, { token: admin })).sort((a, b) => a.taskOrder - b.taskOrder)
@@ -259,14 +269,14 @@ async function main() {
     if (kind === 'approved') {
       await call('POST', `/api/reservations/${reservation.id}/approve`, { token: admin })
       if (managerKey !== topic.supervisor) {
-        await call('POST', `/api/reservations/${reservation.id}/approve`, { token: teachers[managerKey].token })
+        await call('POST', `/api/reservations/${reservation.id}/approve`, { token: teachers[managerKey].managerToken })
       }
       s.topicTitle = topic.title
     } else if (kind === 'rejected') {
       // Deliberately without a comment: the student's topic page shows the rejection anyway.
       await call('POST', `/api/reservations/${reservation.id}/reject`, { token: supervisor.token, json: {} })
     } else if (kind === 'returned') {
-      await call('POST', `/api/reservations/${reservation.id}/return`, { token: teachers[managerKey].token, json: { comment: 'Уточніть формулювання: тема має відображати предметну область і результат роботи.' } })
+      await call('POST', `/api/reservations/${reservation.id}/return`, { token: teachers[managerKey].managerToken, json: { comment: 'Уточніть формулювання: тема має відображати предметну область і результат роботи.' } })
       s.topicTitle = topic.title
     } else {
       // 'pending': the creator's seats are in; the others still wait.
@@ -308,7 +318,7 @@ async function main() {
       // controller of the group's step sit on the panel too.
       const manager = s.managerKey !== s.supervisorKey ? teachers[s.managerKey] : null
       const approveOthers = async (i, mark) => {
-        if (manager) await decide(manager, 'approve', { mark: Math.min(100, mark + 2), comment: 'Погоджено керівником напряму.' })
+        if (manager) await decide({ token: manager.managerToken }, 'approve', { mark: Math.min(100, mark + 2), comment: 'Погоджено керівником напряму.' })
         if (controls(s, i)) await decide(teachers.hrytsenko, 'approve', { comment: 'Оформлення відповідає вимогам нормоконтролю.' })
       }
       const extras = (s.extras?.[i] ?? []).map((key) => teachers[key])
@@ -394,7 +404,7 @@ async function main() {
   console.log('\nDone. Demo accounts (password for all: ' + DEMO_PASSWORD + '):')
   console.log('  Administrator: admin@diploma.local (the seeded account, its own password)')
   for (const t of Object.values(teachers)) {
-    const label = t.isDirectionManager ? 'Керівник напряму' : t.isStandardsController ? 'Нормоконтролер' : 'Викладач'
+    const label = [...new Set(t.roles.map(([role]) => ROLE_LABELS[role]))].join(', ')
     console.log(`  ${label}   ${t.lastName} ${t.firstName} ${t.patronymic}: ${t.email}`)
   }
   for (const s of students.filter((x) => x.group !== 'ip11')) console.log(`  Студент ${groups[s.group].code}  ${s.lastName} ${s.firstName}: ${s.email}`)

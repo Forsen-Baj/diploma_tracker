@@ -29,11 +29,11 @@ public class TemplatesController : ApiControllerBase
             : ErrorResult(CommonErrors.Forbidden);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminOrStaff)]
     [HttpGet("markers")]
     public IActionResult Markers() => Ok(_templates.GetMarkers());
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminOrStaff)]
     [HttpGet("students")]
     public async Task<IActionResult> Students()
     {
@@ -54,7 +54,7 @@ public class TemplatesController : ApiControllerBase
         return template is null ? ErrorResult(error) : Ok(template);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminOrStaff)]
     [HttpPost]
     [RequestSizeLimit(MaxTemplateRequestBytes)]
     [RequestFormLimits(MultipartBodyLengthLimit = MaxTemplateRequestBytes, MemoryBufferThreshold = 64 * 1024)]
@@ -71,7 +71,7 @@ public class TemplatesController : ApiControllerBase
             : CreatedAtAction(nameof(Get), new { id = template.Id }, template);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminOrStaff)]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateTemplateRequest request)
     {
@@ -84,7 +84,7 @@ public class TemplatesController : ApiControllerBase
         return template is null ? ErrorResult(error) : Ok(template);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminOrStaff)]
     [HttpPut("{id:guid}/file")]
     [RequestSizeLimit(MaxTemplateRequestBytes)]
     [RequestFormLimits(MultipartBodyLengthLimit = MaxTemplateRequestBytes, MemoryBufferThreshold = 64 * 1024)]
@@ -99,7 +99,7 @@ public class TemplatesController : ApiControllerBase
         return template is null ? ErrorResult(error, unknown) : Ok(template);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminOrStaff)]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
@@ -112,7 +112,7 @@ public class TemplatesController : ApiControllerBase
         return success ? NoContent() : ErrorResult(error);
     }
 
-    [Authorize(Roles = "Admin,Teacher")]
+    [Authorize(Roles = AuthRoles.AdminOrStaff)]
     [HttpGet("{id:guid}/source")]
     public async Task<IActionResult> Source(Guid id, CancellationToken cancellationToken)
     {

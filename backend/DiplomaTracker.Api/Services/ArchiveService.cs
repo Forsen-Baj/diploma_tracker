@@ -23,9 +23,12 @@ public class ArchiveService : IArchiveService
     }
 
     public Task<int> ArchiveGroupAsync(Guid groupId, CancellationToken cancellationToken) =>
-        ArchiveAsync(groupId, studentProfileIds: null, markGroupDeleted: true, cancellationToken);
+        ArchiveAsync(groupId, studentProfileIds: null, markGroupDeleted: true, supervisorsAtArchiving: null, cancellationToken);
 
-    public async Task<int> ArchiveStudentsAsync(IReadOnlyList<Guid> studentProfileIds, CancellationToken cancellationToken)
+    public async Task<int> ArchiveStudentsAsync(
+        IReadOnlyList<Guid> studentProfileIds,
+        IReadOnlyDictionary<Guid, Guid?> supervisorsAtArchiving,
+        CancellationToken cancellationToken)
     {
         if (studentProfileIds.Count == 0)
         {
@@ -46,6 +49,7 @@ public class ArchiveService : IArchiveService
                 group.Key,
                 group.Select(x => x.Id).ToList(),
                 markGroupDeleted: false,
+                supervisorsAtArchiving,
                 cancellationToken);
         }
 
@@ -69,10 +73,16 @@ public class ArchiveService : IArchiveService
             .Where(GroupDeletionFileFilter(groupId))
             .CountAsync(cancellationToken);
 
+    /// Archiving a student settles their reservations first, which clears their supervisor; the
+    /// caller's snapshot of it, taken before that, wins over the row's current value.
+    private static Guid? SupervisorOf(Guid studentProfileId, Guid? current, IReadOnlyDictionary<Guid, Guid?>? snapshot) =>
+        snapshot is not null && snapshot.TryGetValue(studentProfileId, out var atArchiving) ? atArchiving : current;
+
     private async Task<int> ArchiveAsync(
         Guid groupId,
         IReadOnlyList<Guid>? studentProfileIds,
         bool markGroupDeleted,
+        IReadOnlyDictionary<Guid, Guid?>? supervisorsAtArchiving,
         CancellationToken cancellationToken)
     {
         var group = await _dbContext.Groups.AsNoTracking()
@@ -120,6 +130,9 @@ public class ArchiveService : IArchiveService
                 StudentFirstName = f.Submission.StudentTask.StudentProfile.User.FirstName,
                 StudentPatronymic = f.Submission.StudentTask.StudentProfile.User.Patronymic,
                 f.Submission.StudentTask.StudentProfile.StudentNumber,
+                f.Submission.StudentTask.StudentProfileId,
+                // Phase 12 §4.1: the supervisor at the moment of archiving reads these rows later.
+                SupervisorId = f.Submission.StudentTask.StudentProfile.SupervisorId,
                 StepTitle = f.Submission.StudentTask.GroupTask.DiplomaTaskTemplate.Title,
                 StepOrder = f.Submission.StudentTask.GroupTask.DiplomaTaskTemplate.Order,
                 f.Submission.StudentTask.GroupTask.Deadline,
@@ -154,6 +167,8 @@ public class ArchiveService : IArchiveService
                 StudentFirstName = r.Submission.StudentTask.StudentProfile.User.FirstName,
                 StudentPatronymic = r.Submission.StudentTask.StudentProfile.User.Patronymic,
                 r.Submission.StudentTask.StudentProfile.StudentNumber,
+                r.Submission.StudentTask.StudentProfileId,
+                SupervisorId = r.Submission.StudentTask.StudentProfile.SupervisorId,
                 StepTitle = r.Submission.StudentTask.GroupTask.DiplomaTaskTemplate.Title,
                 StepOrder = r.Submission.StudentTask.GroupTask.DiplomaTaskTemplate.Order,
                 r.Submission.Version,
@@ -169,14 +184,13 @@ public class ArchiveService : IArchiveService
             .ToListAsync(cancellationToken);
 
         var archive = await _dbContext.ArchivedGroups
-            .Include(a => a.Reviewers)
             .FirstOrDefaultAsync(a => a.SourceGroupId == groupId, cancellationToken);
 
         // Phase 8 §4.2/M1: one ArchivedGroup exists per group that has anything archived. An
         // empty group, or a student who never submitted, must not create a bare row that then
         // shows on the Archive page with nothing in it. An archive already there is a different
-        // matter - it is updated below whatever this call finds, because its metadata (group
-        // deleted, reviewers) can change independently of whether new files turned up.
+        // matter - it is updated below whatever this call finds, because its metadata (the group
+        // deleted) can change independently of whether new files turned up.
         if (archive is null && rows.Count == 0)
         {
             return 0;
@@ -207,28 +221,6 @@ public class ArchiveService : IArchiveService
             archive.GroupDeletedAt = now;
         }
 
-        // The live reviewer rows go with the group, so who may read this archive is copied in
-        // now (§4.5). Reviewers added since a previous archiving event are picked up here too.
-        var reviewers = await _dbContext.GroupReviewers.AsNoTracking()
-            .Where(r => r.GroupId == groupId)
-            .Select(r => new { r.ReviewerId, r.Reviewer.LastName, r.Reviewer.FirstName, r.Reviewer.Patronymic })
-            .ToListAsync(cancellationToken);
-
-        var knownReviewerIds = archive.Reviewers.Select(r => r.ReviewerId).ToHashSet();
-        foreach (var reviewer in reviewers.Where(r => !knownReviewerIds.Contains(r.ReviewerId)))
-        {
-            // Added through the set, like the files below: a child with a preset Guid reached only
-            // through a tracked archive's collection would be taken for an existing row and updated.
-            _dbContext.ArchivedGroupReviewers.Add(new ArchivedGroupReviewer
-            {
-                Id = Guid.NewGuid(),
-                ArchivedGroupId = archive.Id,
-                ReviewerId = reviewer.ReviewerId,
-                ReviewerName = string.Join(' ', new[] { reviewer.LastName, reviewer.FirstName, reviewer.Patronymic }
-                    .Where(part => !string.IsNullOrWhiteSpace(part)))
-            });
-        }
-
         var existingKeys = await _dbContext.ArchivedFiles.AsNoTracking()
             .Where(f => f.ArchivedGroupId == archive.Id)
             .Select(f => f.StorageKey)
@@ -250,6 +242,7 @@ public class ArchiveService : IArchiveService
                 StudentName = string.Join(' ', new[] { row.StudentLastName, row.StudentFirstName, row.StudentPatronymic }
                     .Where(part => !string.IsNullOrWhiteSpace(part))),
                 StudentNumber = row.StudentNumber,
+                SupervisorId = SupervisorOf(row.StudentProfileId, row.SupervisorId, supervisorsAtArchiving),
                 StepTitle = row.StepTitle,
                 StepOrder = row.StepOrder,
                 Deadline = row.Deadline,
@@ -291,6 +284,7 @@ public class ArchiveService : IArchiveService
                 SourceReviewId = review.Id,
                 StudentName = JoinName(review.StudentLastName, review.StudentFirstName, review.StudentPatronymic),
                 StudentNumber = review.StudentNumber,
+                SupervisorId = SupervisorOf(review.StudentProfileId, review.SupervisorId, supervisorsAtArchiving),
                 StepTitle = review.StepTitle,
                 StepOrder = review.StepOrder,
                 Version = review.Version,
@@ -308,9 +302,10 @@ public class ArchiveService : IArchiveService
         return added;
     }
 
-    /// Phase 8 §4.5. An administrator sees every archive; a teacher sees the ones whose stored
-    /// reviewer ids include theirs. Everyone else sees nothing - and an archive they may not see
-    /// answers exactly like one that does not exist.
+    /// Phase 8 §4.5, phase 12 §4.1: an administrator sees every archive; a caller acting as teacher
+    /// the ones holding work of a student they supervised when it was archived, and only those rows
+    /// (see RowsFor). Everyone else sees nothing - and an archive they may not see answers exactly
+    /// like one that does not exist.
     private IQueryable<ArchivedGroup> Visible(UserContext user)
     {
         if (user.IsAdmin)
@@ -320,7 +315,8 @@ public class ArchiveService : IArchiveService
 
         if (user.IsTeacher)
         {
-            return _dbContext.ArchivedGroups.Where(a => a.Reviewers.Any(r => r.ReviewerId == user.UserId));
+            var me = user.UserId;
+            return _dbContext.ArchivedGroups.Where(a => a.Files.Any(f => f.SupervisorId == me) || a.Reviews.Any(r => r.SupervisorId == me));
         }
 
         return _dbContext.ArchivedGroups.Where(_ => false);
@@ -329,6 +325,8 @@ public class ArchiveService : IArchiveService
     public async Task<IReadOnlyList<ArchivedGroupSummaryResponse>> GetGroupsAsync(UserContext user, string? academicYear, string? search)
     {
         var query = Visible(user).AsNoTracking();
+        var isAdmin = user.IsAdmin;
+        var me = user.UserId;
 
         if (!string.IsNullOrWhiteSpace(academicYear))
         {
@@ -341,7 +339,7 @@ public class ArchiveService : IArchiveService
             // The same escaping the topic search uses: unescaped, "50%" would match as a pattern.
             var term = search.Trim().Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]");
             query = query.Where(a => EF.Functions.Like(a.GroupCode, $"%{term}%")
-                || a.Files.Any(f => EF.Functions.Like(f.StudentName, $"%{term}%")));
+                || a.Files.Any(f => (isAdmin || f.SupervisorId == me) && EF.Functions.Like(f.StudentName, $"%{term}%")));
         }
 
         return await query
@@ -355,9 +353,9 @@ public class ArchiveService : IArchiveService
                 DepartmentName = a.DepartmentName,
                 FacultyName = a.FacultyName,
                 GroupDeletedAt = a.GroupDeletedAt,
-                StudentCount = a.Files.Select(f => f.StudentNumber).Distinct().Count(),
-                FileCount = a.Files.Count,
-                TotalSizeBytes = a.Files.Sum(f => (long?)f.SizeBytes) ?? 0,
+                StudentCount = a.Files.Where(f => isAdmin || f.SupervisorId == me).Select(f => f.StudentNumber).Distinct().Count(),
+                FileCount = a.Files.Count(f => isAdmin || f.SupervisorId == me),
+                TotalSizeBytes = a.Files.Where(f => isAdmin || f.SupervisorId == me).Sum(f => (long?)f.SizeBytes) ?? 0,
                 CreatedAt = a.CreatedAt,
                 UpdatedAt = a.UpdatedAt
             })
@@ -366,6 +364,8 @@ public class ArchiveService : IArchiveService
 
     public async Task<(ArchivedGroupDetailsResponse? details, string? error)> GetGroupAsync(UserContext user, Guid id)
     {
+        var isAdmin = user.IsAdmin;
+        var me = user.UserId;
         var details = await Visible(user).AsNoTracking()
             .Where(a => a.Id == id)
             .Select(a => new ArchivedGroupDetailsResponse
@@ -376,13 +376,12 @@ public class ArchiveService : IArchiveService
                 DepartmentName = a.DepartmentName,
                 FacultyName = a.FacultyName,
                 GroupDeletedAt = a.GroupDeletedAt,
-                StudentCount = a.Files.Select(f => f.StudentNumber).Distinct().Count(),
-                FileCount = a.Files.Count,
-                TotalSizeBytes = a.Files.Sum(f => (long?)f.SizeBytes) ?? 0,
+                StudentCount = a.Files.Where(f => isAdmin || f.SupervisorId == me).Select(f => f.StudentNumber).Distinct().Count(),
+                FileCount = a.Files.Count(f => isAdmin || f.SupervisorId == me),
+                TotalSizeBytes = a.Files.Where(f => isAdmin || f.SupervisorId == me).Sum(f => (long?)f.SizeBytes) ?? 0,
                 CreatedAt = a.CreatedAt,
                 UpdatedAt = a.UpdatedAt,
-                ReviewerNames = a.Reviewers.OrderBy(r => r.ReviewerName).Select(r => r.ReviewerName).ToList(),
-                Files = a.Files
+                Files = a.Files.Where(f => isAdmin || f.SupervisorId == me)
                     .OrderBy(f => f.StudentName)
                     .ThenBy(f => f.StepOrder)
                     .ThenBy(f => f.Version)
@@ -406,7 +405,7 @@ public class ArchiveService : IArchiveService
                         SizeBytes = f.SizeBytes
                     })
                     .ToList(),
-                Reviews = a.Reviews
+                Reviews = a.Reviews.Where(r => isAdmin || r.SupervisorId == me)
                     .OrderBy(r => r.StudentName)
                     .ThenBy(r => r.StepOrder)
                     .ThenBy(r => r.Version)
@@ -435,9 +434,11 @@ public class ArchiveService : IArchiveService
 
     public async Task<(StoredFileDownload? file, string? error)> OpenFileAsync(UserContext user, Guid fileId, CancellationToken cancellationToken)
     {
+        var isAdmin = user.IsAdmin;
+        var isTeacher = user.IsTeacher;
+        var me = user.UserId;
         var file = await _dbContext.ArchivedFiles.AsNoTracking()
-            .Where(f => f.Id == fileId)
-            .Where(f => Visible(user).Any(a => a.Id == f.ArchivedGroupId))
+            .Where(f => f.Id == fileId && (isAdmin || (isTeacher && f.SupervisorId == me)))
             .Select(f => new { f.StorageKey, f.OriginalName })
             .FirstOrDefaultAsync(cancellationToken);
 

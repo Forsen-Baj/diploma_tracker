@@ -113,7 +113,9 @@ public static class ReviewPanel
         return new PanelState(seats);
     }
 
-    /// The seat the caller's decision fills, or null when they have none. Their own seat wins; an
+    /// The seat the caller's decision fills, or null when they have none. Their own seat wins, but
+    /// only while they act in the role that seat belongs to (design 2026-09-27, phase 12, §5): one
+    /// person still holds one seat on a step, and that seat decides the role they decide in. An
     /// administrator with no seat of their own stands in for the supervisor by default
     /// (`allowAdminStandIn: true`) - that power drives `canDecide` and the decision form. "Your
     /// decision" (`isMyDecision`) passes `allowAdminStandIn: false`, so it counts only a seat the
@@ -123,11 +125,22 @@ public static class ReviewPanel
         var own = panel.Seats.FirstOrDefault(s => s.ReviewerId == user.UserId);
         if (own is not null)
         {
-            return own.Seat;
+            return ActsFor(user, own.Seat) ? own.Seat : null;
         }
 
         return allowAdminStandIn && user.IsAdmin ? ReviewSeat.Supervisor : null;
     }
+
+    /// Whether the caller's acting role is the one a seat is decided in: the supervisor and extra
+    /// seats are a teacher's (an administrator may sit as an extra reviewer too), the direction
+    /// manager's and the standards control seats their own roles'.
+    public static bool ActsFor(UserContext user, ReviewSeat seat) => seat switch
+    {
+        ReviewSeat.Supervisor or ReviewSeat.Extra => user.IsTeacher || user.IsAdmin,
+        ReviewSeat.DirectionManager => user.IsDirectionManager,
+        ReviewSeat.StandardsControl => user.IsStandardsController,
+        _ => false
+    };
 
     public static bool IsSeatSatisfied(PanelState panel, ReviewSeat seat, Guid userId) =>
         seat == ReviewSeat.Supervisor

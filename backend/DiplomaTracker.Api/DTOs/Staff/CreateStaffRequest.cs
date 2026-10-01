@@ -1,9 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 using DiplomaTracker.Api.Validation;
 
-namespace DiplomaTracker.Api.DTOs.Teachers;
+namespace DiplomaTracker.Api.DTOs.Staff;
 
-public class UpdateTeacherRequest
+public class CreateStaffRequest
 {
     [Required, MaxLength(100)]
     public string FirstName { get; set; } = string.Empty;
@@ -17,7 +17,6 @@ public class UpdateTeacherRequest
     [Required, ValidEmail, MaxLength(256)]
     public string Email { get; set; } = string.Empty;
 
-    /// Design 2026-09-27 §3.
-    public bool IsDirectionManager { get; set; }
-    public bool IsStandardsController { get; set; }
+    [Required]
+    public string Password { get; set; } = string.Empty;
 }

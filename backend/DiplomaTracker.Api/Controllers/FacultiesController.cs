@@ -43,7 +43,7 @@ public class FacultiesController : ApiControllerBase
             : Ok(departments);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateFacultyRequest request)
     {
@@ -58,7 +58,7 @@ public class FacultiesController : ApiControllerBase
             : CreatedAtAction(nameof(GetById), new { id = faculty.Id }, faculty);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateFacultyRequest request)
     {
@@ -71,7 +71,7 @@ public class FacultiesController : ApiControllerBase
         return faculty is null ? ErrorResult(error) : Ok(faculty);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = AuthRoles.Admin)]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {

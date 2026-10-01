@@ -1,5 +1,6 @@
 using DiplomaTracker.Api.Errors;
 using DiplomaTracker.Api.Interfaces;
+using DiplomaTracker.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -7,7 +8,7 @@ namespace DiplomaTracker.Api.Controllers;
 
 [ApiController]
 [Route("api/groups/{groupId:guid}/students/import")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = AuthRoles.Admin)]
 public class StudentImportController : ApiControllerBase
 {
     private readonly IStudentImportService _importService;

@@ -44,7 +44,7 @@ const seedGroup = groups.find((g) => g.code === 'SEED-A')
 const ownGroup = (await call('POST', '/api/groups', { token: admin, json: { departmentId: seedGroup.departmentId, code: `ON${stamp}`, academicYear: '2026/2027', description: '' } })).data
 cleanup.add(`group ${ownGroup.code}`, () => removeGroup(call, admin, ownGroup))
 const groupId = ownGroup.id
-const teachers = (await call('GET', '/api/teachers', { token: admin })).data
+const teachers = (await call('GET', '/api/staff', { token: admin })).data
 const teacherId = teachers.find((t) => t.email === 'teacher@diploma.local').id
 
 // The registration switch is shared state: read the value this run found it in and restore
@@ -108,12 +108,12 @@ check('28 reset access', (await call('POST', `/api/students/${importedA.id}/rese
 check('29 reset account cannot sign in', (await login(emailA, 'Password2!')).status, 401)
 check('30 reset account claims again', (await call('POST', '/api/auth/claim', { json: { email: emailA, studentNumber: numberA, password: 'Password3!' } })).status, 200)
 
-// Teachers and manual students
-check('31 teacher password too short', (await call('PUT', `/api/teachers/${teacherId}/password`, { token: admin, json: { password: 'short' } })).status, 400)
-cleanup.add('seed teacher password', () => call('PUT', `/api/teachers/${teacherId}/password`, { token: admin, json: { password: 'Teacher123!' } }))
-check('32 teacher password set', (await call('PUT', `/api/teachers/${teacherId}/password`, { token: admin, json: { password: 'Teacher456!' } })).status, 204)
-check('33 teacher signs in with new password', (await login('teacher@diploma.local', 'Teacher456!')).status, 200)
-await call('PUT', `/api/teachers/${teacherId}/password`, { token: admin, json: { password: 'Teacher123!' } })
+// Staff and manual students
+check('31 staff password too short', (await call('PUT', `/api/staff/${teacherId}/password`, { token: admin, json: { password: 'short' } })).status, 400)
+cleanup.add('seed teacher password', () => call('PUT', `/api/staff/${teacherId}/password`, { token: admin, json: { password: 'Teacher123!' } }))
+check('32 staff password set', (await call('PUT', `/api/staff/${teacherId}/password`, { token: admin, json: { password: 'Teacher456!' } })).status, 204)
+check('33 staff member signs in with new password', (await login('teacher@diploma.local', 'Teacher456!')).status, 200)
+await call('PUT', `/api/staff/${teacherId}/password`, { token: admin, json: { password: 'Teacher123!' } })
 check('34 manual student duplicate number', (await call('POST', '/api/students', { token: admin, json: { firstName: 'M', lastName: 'N', email: `manual.${stamp}@x.local`, studentNumber: numberB, groupId } })).status, 409)
 const manual = await call('POST', '/api/students', { token: admin, json: { firstName: 'M', lastName: 'N', email: `manual.${stamp}@x.local`, studentNumber: `M${stamp}`, groupId } })
 check('35 manual student without password', manual.status, 201)

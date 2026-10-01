@@ -70,6 +70,9 @@ export function TemplateEditorModal({ open, template, onClose, onSaved, onPartia
   const errorMessage = useErrorMessage()
 
   const isAdmin = user?.role === 'Admin'
+  // Phase 12 §5: a staff member acting in no role sees no groups, and GET /api/groups refuses that
+  // session, so their list is empty rather than a load error.
+  const seesNoGroups = user?.role === 'Staff'
   const isEdit = Boolean(template)
 
   const [form, setForm] = useState<FormState>(emptyForm)
@@ -115,7 +118,10 @@ export function TemplateEditorModal({ open, template, onClose, onSaved, onPartia
 
     let isCurrent = true
     const load = async () => {
-      const [groupsResult, teachersResult] = await Promise.allSettled([getGroups(), getTopicSupervisors()])
+      const [groupsResult, teachersResult] = await Promise.allSettled([
+        seesNoGroups ? Promise.resolve([] as Group[]) : getGroups(),
+        getTopicSupervisors()
+      ])
       if (!isCurrent) return
       // Either list is a convenience for building the audience; a failure must not block the
       // rest of the form from being usable, but it must be visible (M10).
@@ -129,7 +135,7 @@ export function TemplateEditorModal({ open, template, onClose, onSaved, onPartia
     return () => {
       isCurrent = false
     }
-  }, [open, template])
+  }, [open, template, seesNoGroups])
 
   const close = () => {
     if (isSaving) return

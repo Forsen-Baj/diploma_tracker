@@ -65,8 +65,13 @@ public class TopicService : ITopicService
         }
         else if (user.IsTeacher)
         {
-            // §5.4: a direction manager also sees every topic in their directions, at any status.
-            topics = topics.Where(t => t.SupervisorId == user.UserId || t.Direction.ManagerId == user.UserId);
+            // Phase 12 §4.2: acting as teacher, the topics they supervise.
+            topics = topics.Where(t => t.SupervisorId == user.UserId);
+        }
+        else if (user.IsDirectionManager)
+        {
+            // §5.4: acting as direction manager, every topic in their directions, at any status.
+            topics = topics.Where(t => t.Direction.ManagerId == user.UserId);
         }
         else if (!user.IsAdmin)
         {
@@ -131,7 +136,7 @@ public class TopicService : ITopicService
             return (null, TopicErrors.TopicNotFound);
         }
 
-        if (user.IsTeacher && row.SupervisorId != user.UserId && row.DirectionManagerId != user.UserId)
+        if (!user.IsAdmin && !user.IsStudent && !Manages(user, row.SupervisorId, row.DirectionManagerId))
         {
             SecurityLog.AccessRefused(_logger, user.UserId, user.Role, "Topic", id);
             return (null, TopicErrors.TopicNotFound);
@@ -175,9 +180,11 @@ public class TopicService : ITopicService
             return (null, supervisorError);
         }
 
-        if (supervisorId is null || !await IsActiveTeacherAsync(supervisorId.Value))
+        // Phase 12 §4: a catalogue topic's supervisor covers its department. A teacher publishing
+        // outside their own role's reach is told so; anyone else named is not a valid choice.
+        if (supervisorId is null || !await _dbContext.CoversDepartmentAsync(supervisorId.Value, StaffRole.Teacher, direction.DepartmentId))
         {
-            return (null, TopicErrors.TopicSupervisorInvalid);
+            return (null, user.IsTeacher && supervisorId == user.UserId ? RoleErrors.NotCovered : TopicErrors.TopicSupervisorInvalid);
         }
 
         var now = DateTime.UtcNow;
@@ -235,7 +242,15 @@ public class TopicService : ITopicService
             return (null, supervisorError);
         }
 
-        if (supervisorId is null || !await IsActiveTeacherAsync(supervisorId.Value))
+        if (supervisorId is null)
+        {
+            return (null, TopicErrors.TopicSupervisorInvalid);
+        }
+
+        // Phase 12 §4: coverage is checked for what is taken on - a new supervisor, or the topic moving
+        // to another department. Work already held is not re-checked.
+        if ((supervisorId != editable.SupervisorId || direction.DepartmentId != editable.Direction.DepartmentId)
+            && !await _dbContext.CoversDepartmentAsync(supervisorId.Value, StaffRole.Teacher, direction.DepartmentId))
         {
             return (null, TopicErrors.TopicSupervisorInvalid);
         }
@@ -355,20 +370,47 @@ public class TopicService : ITopicService
         return (true, null);
     }
 
-    public async Task<IReadOnlyList<SupervisorOption>> GetSupervisorsAsync()
+    /// Phase 12 §4: the teachers a picker offers. A student's proposal names one who covers the
+    /// student's group; a topic form one who covers the direction's department; with neither, every
+    /// active staff member holding the teacher role (a template's named audience).
+    public async Task<IReadOnlyList<SupervisorOption>> GetSupervisorsAsync(UserContext user, Guid? departmentId)
     {
-        var teachers = await _dbContext.Users.AsNoTracking()
-            .Where(u => u.Role == "Teacher" && u.IsActive)
+        IQueryable<Guid> teachers;
+        if (user.IsStudent)
+        {
+            var groupId = await _dbContext.StudentProfiles.AsNoTracking()
+                .Where(p => p.UserId == user.UserId)
+                .Select(p => (Guid?)p.GroupId)
+                .FirstOrDefaultAsync();
+            if (groupId is null)
+            {
+                return [];
+            }
+
+            teachers = _dbContext.CoveringGroup(StaffRole.Teacher, groupId.Value).Select(a => a.UserId);
+        }
+        else if (departmentId is { } department)
+        {
+            teachers = _dbContext.CoveringDepartment(StaffRole.Teacher, department).Select(a => a.UserId);
+        }
+        else
+        {
+            teachers = _dbContext.RoleAssignments.Where(a => a.Role == StaffRole.Teacher).Select(a => a.UserId);
+        }
+
+        var rows = await _dbContext.Users.AsNoTracking()
+            .Where(u => u.IsActive && u.Role == AccountRoles.Staff && teachers.Contains(u.Id))
             .OrderBy(u => u.LastName)
             .ThenBy(u => u.FirstName)
             .ToListAsync();
 
-        return teachers.Select(t => new SupervisorOption(t.Id, PersonName.Full(t))).ToList();
+        return rows.Select(t => new SupervisorOption(t.Id, PersonName.Full(t))).ToList();
     }
 
-    /// §4.3: a teacher supervises what they create; a direction manager names any teacher under
-    /// their own direction; an administrator names anyone. `current` is the topic's supervisor on
-    /// an edit and null on a create.
+    /// §4.3, phase 12 §5: acting as teacher, a teacher supervises what they create; acting as
+    /// direction manager, a manager names any teacher under their own direction (themselves when they
+    /// name nobody); an administrator names anyone. `current` is the topic's supervisor on an edit and
+    /// null on a create.
     private static (Guid? id, string? error) ChooseSupervisor(UserContext user, Guid directionManagerId, Guid? requested, Guid? current)
     {
         if (user.IsAdmin)
@@ -376,19 +418,18 @@ public class TopicService : ITopicService
             return (requested ?? current, null);
         }
 
-        var unchanged = current ?? user.UserId;
-        if (requested is null || requested == unchanged)
+        if (user.IsDirectionManager)
         {
-            return (unchanged, null);
+            return directionManagerId == user.UserId
+                ? (requested ?? current ?? user.UserId, null)
+                : (null, DirectionErrors.NotManager);
         }
 
-        return directionManagerId == user.UserId
-            ? (requested, null)
+        var unchanged = current ?? user.UserId;
+        return requested is null || requested == unchanged
+            ? (unchanged, null)
             : (null, DirectionErrors.NotManager);
     }
-
-    private Task<bool> IsActiveTeacherAsync(Guid userId) =>
-        _dbContext.Users.AnyAsync(u => u.Id == userId && u.Role == "Teacher" && u.IsActive);
 
     /// Editing: an administrator may amend any topic at any status. The supervisor or the
     /// direction's manager may amend an available catalogue topic only; once a student asks for
@@ -438,15 +479,22 @@ public class TopicService : ITopicService
             return null;
         }
 
-        if (!user.IsTeacher)
+        if (!user.IsTeacher && !user.IsDirectionManager)
         {
             return CommonErrors.Forbidden;
         }
 
-        return topic.SupervisorId == user.UserId || topic.Direction.ManagerId == user.UserId
+        return Manages(user, topic.SupervisorId, topic.Direction.ManagerId)
             ? null
             : TopicErrors.TopicNotOwner;
     }
+
+    /// Phase 12 §5: a topic is a teacher's to manage when they supervise it, a direction manager's when
+    /// it lies in their direction - each in their own acting role; an administrator manages every topic.
+    private static bool Manages(UserContext user, Guid supervisorId, Guid directionManagerId) =>
+        user.IsAdmin
+        || (user.IsTeacher && supervisorId == user.UserId)
+        || (user.IsDirectionManager && directionManagerId == user.UserId);
 
     private async Task<StudentScope?> LoadStudentAsync(Guid userId)
     {
@@ -464,8 +512,7 @@ public class TopicService : ITopicService
         // through an administrator's assignment, and the holder is the topic's real state.
         var party = row.Holder ?? row.Request;
 
-        var manages = user.IsAdmin
-            || (user.IsTeacher && (row.SupervisorId == user.UserId || row.DirectionManagerId == user.UserId));
+        var manages = Manages(user, row.SupervisorId, row.DirectionManagerId);
         var availableCatalogue = row.Origin == TopicOrigin.Catalogue && row.Status == TopicStatus.Available;
 
         return new TopicResponse

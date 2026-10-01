@@ -48,8 +48,10 @@ public static class TopicApprovalPanel
         ]);
     }
 
-    /// The seats a caller holds on a request (§5.3). Administrators hold the administration seat
-    /// only; supervisors and direction managers are always teachers.
+    /// The seats a caller holds on a request in the role they act in (§5.3, phase 12 §5):
+    /// administrators the administration seat, the direction's manager acting as direction manager
+    /// the direction seat, the supervisor acting as teacher the supervision seat. Evaluate still
+    /// counts one person's approval in every seat they hold, whichever role they gave it in.
     public static IReadOnlyList<Seat> SeatsOf(UserContext user, Guid supervisorId, Guid directionManagerId)
     {
         var seats = new List<Seat>(3);
@@ -58,7 +60,7 @@ public static class TopicApprovalPanel
             seats.Add(Seat.Administration);
         }
 
-        if (user.IsTeacher && directionManagerId == user.UserId)
+        if (user.IsDirectionManager && directionManagerId == user.UserId)
         {
             seats.Add(Seat.Direction);
         }

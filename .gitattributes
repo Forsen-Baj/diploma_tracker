@@ -19,3 +19,11 @@
 *.ttf  binary
 *.otf  binary
 *.zip  binary
+
+# Deployment files are read on Linux (the Docker host), so they keep LF everywhere.
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+docker-compose.yml text eol=lf
+.env.example text eol=lf
+nginx.conf text eol=lf
+*.sh text eol=lf

@@ -24,7 +24,7 @@ public class AdminService : IAdminService
     public async Task<IReadOnlyList<AdminResponse>> GetAdminsAsync()
     {
         return await _dbContext.Users.AsNoTracking()
-            .Where(u => u.Role == "Admin")
+            .Where(u => u.Role == AccountRoles.Admin)
             .OrderBy(u => u.LastName)
             .ThenBy(u => u.FirstName)
             .Select(ProjectAdmin)
@@ -34,7 +34,7 @@ public class AdminService : IAdminService
     public async Task<AdminResponse?> GetAdminByIdAsync(Guid id)
     {
         return await _dbContext.Users.AsNoTracking()
-            .Where(u => u.Role == "Admin" && u.Id == id)
+            .Where(u => u.Role == AccountRoles.Admin && u.Id == id)
             .Select(ProjectAdmin)
             .FirstOrDefaultAsync();
     }
@@ -61,7 +61,7 @@ public class AdminService : IAdminService
             Patronymic = IdentityNormalizer.Optional(request.Patronymic),
             Email = email,
             PasswordHash = _passwordHasher.HashPassword(request.Password),
-            Role = "Admin",
+            Role = AccountRoles.Admin,
             IsActive = true,
             ClaimReopened = false,
             CreatedAt = now,
@@ -85,7 +85,7 @@ public class AdminService : IAdminService
 
     public async Task<(AdminResponse? admin, string? error)> UpdateAdminAsync(Guid id, UpdateAdminRequest request, Guid administratorId)
     {
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Role == "Admin" && u.Id == id);
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Role == AccountRoles.Admin && u.Id == id);
         if (user is null)
         {
             return (null, AdminErrors.NotFound);
@@ -118,7 +118,7 @@ public class AdminService : IAdminService
 
     public async Task<(bool success, string? error)> SetPasswordAsync(Guid id, string password, Guid administratorId)
     {
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Role == "Admin" && u.Id == id);
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Role == AccountRoles.Admin && u.Id == id);
         if (user is null)
         {
             return (false, AdminErrors.NotFound);
@@ -145,7 +145,7 @@ public class AdminService : IAdminService
             return (false, AdminErrors.CannotDeactivateSelf);
         }
 
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Role == "Admin" && u.Id == id);
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Role == AccountRoles.Admin && u.Id == id);
         if (user is null)
         {
             return (false, AdminErrors.NotFound);
@@ -154,8 +154,8 @@ public class AdminService : IAdminService
         var now = DateTime.UtcNow;
         var rows = await _dbContext.Users
             .Where(u => u.Id == id
-                && u.Role == "Admin"
-                && (!u.IsActive || _dbContext.Users.Count(o => o.Role == "Admin" && o.IsActive) > 1))
+                && u.Role == AccountRoles.Admin
+                && (!u.IsActive || _dbContext.Users.Count(o => o.Role == AccountRoles.Admin && o.IsActive) > 1))
             .ExecuteUpdateAsync(s => s
                 .SetProperty(u => u.IsActive, false)
                 .SetProperty(u => u.UpdatedAt, now));
@@ -172,7 +172,7 @@ public class AdminService : IAdminService
 
     public async Task<(bool success, string? error)> ActivateAdminAsync(Guid id, Guid administratorId)
     {
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Role == "Admin" && u.Id == id);
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Role == AccountRoles.Admin && u.Id == id);
         if (user is null)
         {
             return (false, AdminErrors.NotFound);

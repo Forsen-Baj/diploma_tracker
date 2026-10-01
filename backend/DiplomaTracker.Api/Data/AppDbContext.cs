@@ -13,9 +13,9 @@ public class AppDbContext : DbContext
     public DbSet<Faculty> Faculties => Set<Faculty>();
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<Direction> Directions => Set<Direction>();
+    public DbSet<RoleAssignment> RoleAssignments => Set<RoleAssignment>();
     public DbSet<StudentProfile> StudentProfiles => Set<StudentProfile>();
     public DbSet<Group> Groups => Set<Group>();
-    public DbSet<GroupReviewer> GroupReviewers => Set<GroupReviewer>();
     public DbSet<DiplomaTaskTemplate> DiplomaTaskTemplates => Set<DiplomaTaskTemplate>();
     public DbSet<GroupTask> GroupTasks => Set<GroupTask>();
     public DbSet<StudentTask> StudentTasks => Set<StudentTask>();
@@ -29,7 +29,6 @@ public class AppDbContext : DbContext
     public DbSet<SubmissionReview> SubmissionReviews => Set<SubmissionReview>();
     public DbSet<DocumentTemplate> DocumentTemplates => Set<DocumentTemplate>();
     public DbSet<ArchivedGroup> ArchivedGroups => Set<ArchivedGroup>();
-    public DbSet<ArchivedGroupReviewer> ArchivedGroupReviewers => Set<ArchivedGroupReviewer>();
     public DbSet<ArchivedFile> ArchivedFiles => Set<ArchivedFile>();
     public DbSet<ArchivedReview> ArchivedReviews => Set<ArchivedReview>();
     public DbSet<RoutedDocument> RoutedDocuments => Set<RoutedDocument>();
@@ -91,10 +90,27 @@ public class AppDbContext : DbContext
         user.Property(x => x.PasswordHash);
         user.Property(x => x.Role).HasMaxLength(50).IsRequired();
         user.Property(x => x.IsActive).IsRequired();
-        user.Property(x => x.IsDirectionManager).IsRequired();
-        user.Property(x => x.IsStandardsController).IsRequired();
         user.Property(x => x.CreatedAt).IsRequired();
         user.Property(x => x.UpdatedAt).IsRequired();
+
+        // Design 2026-09-27 (phase 12) §3. ScopeId names a faculty, a department or a group, so it is
+        // not a foreign key; the services that delete those places delete the assignments with them.
+        var roleAssignment = modelBuilder.Entity<RoleAssignment>();
+        roleAssignment.ToTable("RoleAssignments");
+        roleAssignment.HasKey(x => x.Id);
+        roleAssignment.Property(x => x.Role).HasConversion<string>().HasMaxLength(50).IsRequired();
+        roleAssignment.Property(x => x.ScopeKind).HasConversion<string>().HasMaxLength(50).IsRequired();
+        roleAssignment.Property(x => x.CreatedAt).IsRequired();
+        roleAssignment.HasIndex(x => new { x.UserId, x.Role, x.ScopeKind, x.ScopeId }).IsUnique();
+        roleAssignment.HasIndex(x => new { x.ScopeKind, x.ScopeId });
+        roleAssignment.HasOne(x => x.User)
+            .WithMany(x => x.RoleAssignments)
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+        roleAssignment.HasOne(x => x.CreatedBy)
+            .WithMany()
+            .HasForeignKey(x => x.CreatedById)
+            .OnDelete(DeleteBehavior.Restrict);
 
         var studentProfile = modelBuilder.Entity<StudentProfile>();
         studentProfile.ToTable("StudentProfiles");
@@ -139,20 +155,6 @@ public class AppDbContext : DbContext
         group.HasOne(x => x.Department)
             .WithMany(x => x.Groups)
             .HasForeignKey(x => x.DepartmentId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        var groupReviewer = modelBuilder.Entity<GroupReviewer>();
-        groupReviewer.ToTable("GroupReviewers");
-        groupReviewer.HasKey(x => x.Id);
-        groupReviewer.Property(x => x.CreatedAt).IsRequired();
-        groupReviewer.HasIndex(x => new { x.GroupId, x.ReviewerId }).IsUnique();
-        groupReviewer.HasOne(x => x.Group)
-            .WithMany(x => x.Reviewers)
-            .HasForeignKey(x => x.GroupId)
-            .OnDelete(DeleteBehavior.Cascade);
-        groupReviewer.HasOne(x => x.Reviewer)
-            .WithMany(x => x.GroupReviews)
-            .HasForeignKey(x => x.ReviewerId)
             .OnDelete(DeleteBehavior.Restrict);
 
         var taskTemplate = modelBuilder.Entity<DiplomaTaskTemplate>();
@@ -418,18 +420,6 @@ public class AppDbContext : DbContext
         archivedGroup.HasIndex(x => x.SourceGroupId).IsUnique();
         archivedGroup.HasIndex(x => new { x.AcademicYear, x.GroupCode });
 
-        var archivedReviewer = modelBuilder.Entity<ArchivedGroupReviewer>();
-        archivedReviewer.ToTable("ArchivedGroupReviewers");
-        archivedReviewer.HasKey(x => x.Id);
-        // Last + first + patronymic, each up to 100 characters, plus two separating spaces: 302.
-        archivedReviewer.Property(x => x.ReviewerName).HasMaxLength(302).IsRequired();
-        archivedReviewer.HasIndex(x => new { x.ArchivedGroupId, x.ReviewerId }).IsUnique();
-        archivedReviewer.HasIndex(x => x.ReviewerId);
-        archivedReviewer.HasOne(x => x.ArchivedGroup)
-            .WithMany(x => x.Reviewers)
-            .HasForeignKey(x => x.ArchivedGroupId)
-            .OnDelete(DeleteBehavior.Cascade);
-
         var archivedFile = modelBuilder.Entity<ArchivedFile>();
         archivedFile.ToTable("ArchivedFiles");
         archivedFile.HasKey(x => x.Id);
@@ -448,6 +438,7 @@ public class AppDbContext : DbContext
         // guarantee hold under a race.
         archivedFile.HasIndex(x => new { x.ArchivedGroupId, x.StorageKey }).IsUnique();
         archivedFile.HasIndex(x => new { x.ArchivedGroupId, x.StudentName, x.StepOrder, x.Version });
+        archivedFile.HasIndex(x => x.SupervisorId);
         archivedFile.HasOne(x => x.ArchivedGroup)
             .WithMany(x => x.Files)
             .HasForeignKey(x => x.ArchivedGroupId)
@@ -468,6 +459,7 @@ public class AppDbContext : DbContext
         // A second archiving event for the same group skips reviews it already copied; this index is
         // what makes that hold under a race.
         archivedReview.HasIndex(x => new { x.ArchivedGroupId, x.SourceReviewId }).IsUnique();
+        archivedReview.HasIndex(x => x.SupervisorId);
         archivedReview.HasOne(x => x.ArchivedGroup)
             .WithMany(x => x.Reviews)
             .HasForeignKey(x => x.ArchivedGroupId)

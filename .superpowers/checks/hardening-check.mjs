@@ -1,5 +1,5 @@
 import { inflateRawSync } from 'node:zlib'
-import { createCleanup, giveTopic, removeGroup } from './checkCleanup.mjs'
+import { createCleanup, giveTopic, makeStaff, removeGroup } from './checkCleanup.mjs'
 
 // Phase 8 §9 verification script (Task 17 step 3): the 35 checks enumerated in the task-17 brief,
 // covering sessions/passwords (§2), uploads (§3), identity (§5), archive (§4), queue/progress/
@@ -189,10 +189,10 @@ if (okAdmin.status === 201) {
   cleanup.add(`admin ${okAdmin.body.email} -> deactivate`, () => call('POST', `/api/admins/${okAdmin.body.id}/deactivate`, { token: admin }))
 }
 
-const okTeacher = await call('POST', '/api/teachers', { token: admin, json: { firstName: 'HT', lastName: 'Ok', email: `ht.ok.${stamp}@x.local`, password: 'Eight8ch' } })
-check('03 teacher 8-char password succeeds', okTeacher.status, 201)
+const okTeacher = await call('POST', '/api/staff', { token: admin, json: { firstName: 'HT', lastName: 'Ok', email: `ht.ok.${stamp}@x.local`, password: 'Eight8ch' } })
+check('03 staff 8-char password succeeds', okTeacher.status, 201)
 if (okTeacher.status === 201) {
-  cleanup.add(`teacher ${okTeacher.body.email} -> deactivate`, () => call('PATCH', `/api/teachers/${okTeacher.body.id}/deactivate`, { token: admin }))
+  cleanup.add(`teacher ${okTeacher.body.email} -> deactivate`, () => call('PATCH', `/api/staff/${okTeacher.body.id}/deactivate`, { token: admin }))
 }
 
 const sessionAEmail = `session.a.${stamp}@student.local`
@@ -306,7 +306,18 @@ const archivedMainFile = archiveDetails.files.find((f) => f.kind === 'Main')
 const download = await call('GET', `/api/archive/files/${archivedMainFile.id}`, { token: admin })
 check('21 downloaded archived file matches uploaded bytes', Buffer.from(download.bytes).equals(Buffer.from(uploadedBytes)), true)
 
-check('22 unrelated teacher sees no such archive', (await call('GET', `/api/archive/groups/${archiveEntry.id}`, { token: teacher })).body.code, 'archive.notFound')
+// Phase 12 §4.1: the archive is read by the supervisors recorded in it. The seeded teacher supervised
+// studentX (giveTopic), so they read it; a teacher of the same department who supervised nobody there does not.
+check('22a recorded supervisor reads the archive', (await call('GET', `/api/archive/groups/${archiveEntry.id}`, { token: teacher })).status, 200)
+const archiveOutsiderEmail = `archive.outsider.${stamp}@diploma.local`
+await makeStaff(call, cleanup, admin, {
+  email: archiveOutsiderEmail,
+  firstName: 'Archive',
+  lastName: 'Outsider',
+  roles: [{ role: 'Teacher', scopeKind: 'Department', scopeId: hardeningDepartment.id }]
+})
+const archiveOutsiderToken = await loginToken(archiveOutsiderEmail, 'Teacher456!')
+check('22 unrelated teacher sees no such archive', (await call('GET', `/api/archive/groups/${archiveEntry.id}`, { token: archiveOutsiderToken })).body.code, 'archive.notFound')
 
 const seedStudentToken = await loginToken('student@diploma.local', 'Student123!')
 check('23 student forbidden from archive listing', (await call('GET', '/api/archive/groups', { token: seedStudentToken })).status, 403)
@@ -375,6 +386,7 @@ await call('POST', '/api/students', { token: admin, json: { firstName: 'Move', l
 const moverSToken = await loginToken(moverSEmail, 'Password1!')
 
 // Design 2026-09-27: a topic belongs to a direction; this department gets its own, managed by the seeded teacher.
+// giveTopic (the uploads section) already gave the seeded teacher the direction-manager role for this department.
 const hardeningDirection = (await call('POST', '/api/directions', { token: admin, json: { departmentId: hardeningDepartment.id, name: `Hardening ${stamp}`, managerId: (await call('GET', '/api/auth/me', { token: teacher })).body.id } })).body
 cleanup.addLast(`direction ${hardeningDirection.name}`, () => call('DELETE', `/api/directions/${hardeningDirection.id}`, { token: admin }))
 const reservedTopic = (await call('POST', '/api/topics', { token: teacher, json: { title: `Hardening Topic ${stamp}`, directionId: hardeningDirection.id } })).body
@@ -391,10 +403,14 @@ const queueGroup = (await call('POST', '/api/groups', { token: admin, json: { de
 cleanup.add(`group ${queueGroup.code}`, () => removeGroup(call, admin, queueGroup))
 
 const queueTeacherEmail = `queue.teacher.${stamp}@diploma.local`
-const queueTeacherId = (await call('POST', '/api/teachers', { token: admin, json: { firstName: 'Queue', lastName: 'Teacher', email: queueTeacherEmail, password: 'Teacher456!' } })).body.id
-cleanup.add(`teacher ${queueTeacherEmail} -> deactivate`, () => call('PATCH', `/api/teachers/${queueTeacherId}/deactivate`, { token: admin }))
+// Phase 12 §4.1: a teacher of the department with no student in the queue group.
+const queueTeacherId = await makeStaff(call, cleanup, admin, {
+  email: queueTeacherEmail,
+  firstName: 'Queue',
+  lastName: 'Teacher',
+  roles: [{ role: 'Teacher', scopeKind: 'Department', scopeId: hardeningDepartment.id }]
+})
 const queueTeacherToken = await loginToken(queueTeacherEmail, 'Teacher456!')
-await call('POST', `/api/groups/${queueGroup.id}/reviewers`, { token: admin, json: { reviewerId: queueTeacherId } })
 
 async function makeQueueStudent(suffix) {
   const email = `queue.${suffix}.${stamp}@student.local`
@@ -447,7 +463,7 @@ const queuePage2 = (await call('GET', `/api/review/queue?groupId=${queueGroup.id
 const page1Ids = new Set(queuePage1.items.map((i) => i.submissionId))
 check('26 page 2 has different submission ids', queuePage2.items.every((i) => !page1Ids.has(i.submissionId)) && queuePage2.items.length > 0, true)
 
-const groupProgress = (await call('GET', `/api/groups/${queueGroup.id}/progress`, { token: queueTeacherToken })).body
+const groupProgress = (await call('GET', `/api/groups/${queueGroup.id}/progress`, { token: teacher })).body
 const q4Row = groupProgress.students.find((s) => s.studentProfileId === q4.id)
 const q4PastCell = q4Row.cells.find((c) => c.groupTaskId === pastGroupTask.id)
 const q4FutureCell = q4Row.cells.find((c) => c.groupTaskId === futureGroupTask.id)
@@ -457,19 +473,15 @@ check('27b step not yet due', q4FutureCell.isOverdue, false)
 const studentDashboard = (await call('GET', '/api/dashboard/student', { token: q5.token })).body
 check('29 student dashboard shows the most recent decision', studentDashboard.latestDecision?.submissionId, q5SubmissionId)
 
-// Phase 9: a group reviewer watches and the supervisor decides, so the waiting count belongs to the
-// supervisor - the seed teacher, whose topics these students hold.
+// The waiting count belongs to the supervisor - the seed teacher, whose topics these students hold.
 const teacherDashboard = (await call('GET', '/api/dashboard/teacher', { token: teacher })).body
 const teacherQueueTotal = (await call('GET', '/api/review/queue', { token: teacher })).body.total
 check('30 teacher dashboard waitingReviews matches queue total', teacherDashboard.waitingReviews, teacherQueueTotal)
 check('30a teacher dashboard latestForReview capped at five', teacherDashboard.latestForReview.length <= 5, true)
-// task-7 review I1 ruling / owner's 2026-09-24 decision: the dashboard's group table lists every
-// group IAccessScope.VisibleGroups returns for the teacher - a group they review, OR a group
-// where they supervise a student - the same set the Groups tab shows (replacing the old "reviewed
-// groups only" rule this comment used to describe). The seed teacher supervises the queue students
-// (their topics are hers) but does not review queueGroup; under the new rule that still puts
-// queueGroup in her table.
-check('30b reviewer sees the group in the dashboard table', (await call('GET', '/api/dashboard/teacher', { token: queueTeacherToken })).body.groups.some((g) => g.groupId === queueGroup.id), true)
+// Phase 12 §4.1: the dashboard's groups are the groups of the students a teacher works with. The
+// seed teacher supervises the queue students; a teacher of the department with no student there
+// does not see the group at all.
+check('30b a teacher with no student in the group does not see it', (await call('GET', '/api/dashboard/teacher', { token: queueTeacherToken })).body.groups.some((g) => g.groupId === queueGroup.id), false)
 check('30c a supervisor who does not review it sees it too', teacherDashboard.groups.some((g) => g.groupId === queueGroup.id), true)
 
 const adminDashboard = (await call('GET', '/api/dashboard/admin', { token: admin })).body
@@ -512,10 +524,7 @@ check('34 duplicate id refused', duplicate.body.code, 'taskTemplate.orderMismatc
 
 const templateV1 = docx(paragraph(`Version One ${stamp}`))
 const templateV2 = docx(paragraph(`Version Two ${stamp}`))
-// A teacher may share a template only with a group they can see, so the seed teacher reviews the
-// common group first. The reviewer row goes with the group when it is deleted.
-const seedTeacherId = (await call('GET', '/api/teachers', { token: admin })).body.find((t) => t.email === 'teacher@diploma.local').id
-await call('POST', `/api/groups/${commonGroup.id}/reviewers`, { token: admin, json: { reviewerId: seedTeacherId } })
+// A teacher may share a template only with a group they can see: the seed teacher supervises the uploader, who is in the common group.
 const templateCreated = await call('POST', '/api/templates', { token: teacher, form: templateForm({ name: `Hardening Template ${stamp}`, bytes: templateV1, groupIds: [commonGroup.id] }) })
 check('35 template created', templateCreated.status, 201)
 const hardeningTemplateId = templateCreated.body.id

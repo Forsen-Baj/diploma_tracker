@@ -31,7 +31,7 @@
     "faculties": "Faculties",
     "groups": "Groups",
     "students": "Students",
-    "teachers": "Teachers",
+    "staff": "Staff",
     "topics": "Topics",
     "myTopics": "My topics",
     "taskTemplates": "Steps",
@@ -45,12 +45,22 @@
     "documents": "Documents",
     "archive": "Archive",
     "directions": "Directions",
+    "actingAs": "Act as",
+    "roleSwitched": "You now act as: {{role}}.",
     "documentsWaiting_one": "{{count}} document waits for you",
     "documentsWaiting_other": "{{count}} documents wait for you"
   },
   "roles": {
     "Admin": "Administrator",
     "Teacher": "Teacher",
+    "DirectionManager": "Direction manager",
+    "StandardsController": "Standards controller",
+    "Staff": "No role",
+    "Student": "Student"
+  },
+  "accountRoles": {
+    "Admin": "Administrator",
+    "Staff": "Staff member",
     "Student": "Student"
   },
   "validation": {
@@ -97,13 +107,10 @@
       "notFound": "Student not found.",
       "groupNotFound": "The selected group does not exist.",
       "supervisorNotFound": "The selected supervisor does not exist.",
-      "supervisorInvalid": "Supervisor must be an active teacher.",
+      "supervisorInvalid": "The supervisor must be an active teacher whose role covers the student's group.",
       "numberTaken": "A student with this student ID number already exists.",
       "profileNotFound": "Student profile not found.",
       "archived": "This student is archived. Restore the account first."
-    },
-    "teacher": {
-      "notFound": "Teacher not found."
     },
     "faculty": {
       "notFound": "Faculty not found.",
@@ -126,7 +133,7 @@
       "nameTaken": "A direction with this name already exists in the department.",
       "hasTopics": "The direction still has topics.",
       "notManager": "You do not manage this direction.",
-      "managerInvalid": "Choose an active teacher who is a direction manager.",
+      "managerInvalid": "Choose an active direction manager whose role covers the department.",
       "departmentInvalid": "The selected department does not exist."
     },
     "approval": {
@@ -134,8 +141,9 @@
       "seatSatisfied": "Your approval of this request is already recorded."
     },
     "staff": {
-      "managesDirections": "This teacher manages a direction. Hand it to another manager first.",
-      "controlsSteps": "This teacher is the standards controller of a group step. Assign someone else first."
+      "notFound": "Staff member not found.",
+      "managesDirections": "This staff member manages a direction. Hand it to another manager first.",
+      "controlsSteps": "This staff member is the standards controller of a group step. Assign someone else first."
     },
     "group": {
       "notFound": "Group not found.",
@@ -143,11 +151,18 @@
       "hasStudents": "Cannot delete the group because it has students.",
       "departmentNotFound": "The selected department does not exist."
     },
-    "reviewer": {
-      "notFound": "The selected reviewer does not exist.",
-      "mustBeActiveTeacher": "Reviewer must be an active teacher.",
-      "alreadyAssigned": "This reviewer is already assigned to the group.",
-      "assignmentNotFound": "Reviewer assignment not found."
+    "roleAssignment": {
+      "scopeInvalid": "The selected faculty, department or group does not exist.",
+      "scopeNotAllowed": "A direction manager is assigned to a faculty or a department.",
+      "exists": "This person already holds this role there.",
+      "notFound": "Role assignment not found.",
+      "inUse": "The role is in use. Hand over what is listed first."
+    },
+    "actingRole": {
+      "notHeld": "You do not hold this role."
+    },
+    "scope": {
+      "notCovered": "This is outside the faculty, department or group your role covers."
     },
     "taskTemplate": {
       "notFound": "Step not found.",
@@ -171,7 +186,7 @@
       "noTemplates": "Select at least one step.",
       "duplicateTemplates": "The request lists a step more than once.",
       "hasProgress": "Cannot delete the step because students have already started it.",
-      "controllerInvalid": "Choose an active teacher who is a standards controller."
+      "controllerInvalid": "Choose an active standards controller whose role covers the group."
     },
     "studentTask": {
       "notFound": "Step not found.",
@@ -203,7 +218,7 @@
       "seatSatisfied": "Your approval of this step is already recorded."
     },
     "panel": {
-      "reviewerInvalid": "Choose an active teacher or administrator.",
+      "reviewerInvalid": "Choose an administrator or an active teacher whose role covers the student's group.",
       "reviewerIsSupervisor": "The student's supervisor already reviews this step.",
       "reviewerExists": "This person already reviews this step.",
       "reviewerNotFound": "This person is not an extra reviewer of this step.",
@@ -246,11 +261,11 @@
       "notEditable": "Only available catalogue topics can be changed or deleted.",
       "notOwner": "You can change only your own topics.",
       "alreadyYours": "This is already your topic.",
-      "supervisorInvalid": "The supervisor must be an active teacher.",
+      "supervisorInvalid": "The supervisor must be an active teacher whose role covers the topic's department.",
       "studentProfileRequired": "Only students with a profile can do this."
     },
     "proposal": {
-      "teacherInvalid": "The chosen teacher must be active."
+      "teacherInvalid": "Choose an active teacher whose role covers your group."
     },
     "reservation": {
       "notFound": "Reservation not found.",
@@ -316,7 +331,6 @@
     "archivedAt": "Archived",
     "groupDeleted": "Group deleted",
     "groupKept": "Group still exists",
-    "reviewers": "Reviewers",
     "usage": "{{files}} files, {{size}} in total",
     "backToArchive": "Back to the archive",
     "step": "Step",
@@ -422,7 +436,7 @@
     "groupsCount": "Groups",
     "activeStudents": "Active students",
     "unclaimedAccounts": "Unclaimed accounts",
-    "teachers": "Teachers",
+    "teachers": "Staff",
     "topicsAvailable": "Available topics",
     "topicsReserved": "Reserved topics",
     "topicsApproved": "Approved topics",
@@ -430,7 +444,9 @@
     "decisionApproved": "{{name}} approved · {{mark}}",
     "decisionReturned": "{{name}} returned",
     "noDecisionYet": "No work of yours has been decided yet.",
-    "openStep": "Open the step"
+    "openStep": "Open the step",
+    "managerTitle": "Direction manager dashboard",
+    "controllerTitle": "Standards controller dashboard"
   },
   "health": {
     "title": "Server health",
@@ -470,12 +486,6 @@
     "department": "Department",
     "description": "Description",
     "noGroups": "No groups yet.",
-    "reviewersTitle": "Group reviewers",
-    "group": "Group",
-    "reviewer": "Reviewer",
-    "assignReviewer": "Assign reviewer",
-    "removeReviewerConfirm": "Remove this reviewer from the group?",
-    "noReviewers": "No reviewers assigned.",
     "backToGroups": "Back to groups",
     "openDetails": "Open",
     "studentNumber": "Student number",
@@ -483,7 +493,6 @@
     "notClaimed": "Not claimed"
   },
   "groupDetails": {
-    "reviewers": "Reviewers",
     "tasks": "Group steps",
     "template": "Step",
     "startDate": "Start date",
@@ -541,6 +550,8 @@
     "resetConfirm": "Reset access for {{name}}? Their password is removed and only this student will be able to claim the account again, even while registration is closed.",
     "inactiveSupervisor": "{{name}} (inactive)",
     "supervisorFollowsTopic": "Follows the diploma topic. A new topic's supervisor takes over once its request is approved.",
+    "currentSupervisor": "{{name}} (current supervisor)",
+    "supervisorAfterGroup": "Choose a group first: the supervisor is one of the teachers whose role covers it.",
     "noStudents": "No students yet.",
     "noArchivedStudents": "No archived students.",
     "viewSwitch": "View",
@@ -558,10 +569,10 @@
     "selectAll": "Select all on this page",
     "selectRow": "Select {{name}}"
   },
-  "teachers": {
-    "title": "Teachers",
-    "addTeacher": "Add teacher",
-    "editTeacher": "Edit teacher",
+  "staff": {
+    "title": "Staff",
+    "add": "Add staff member",
+    "edit": "Edit staff member",
     "lastName": "Last name",
     "firstName": "First name",
     "patronymic": "Patronymic",
@@ -571,11 +582,43 @@
     "setPasswordFor": "New password for {{name}}",
     "passwordUpdated": "Password updated for {{name}}.",
     "deactivate": "Deactivate",
-    "deactivateConfirm": "Deactivate teacher {{name}}?",
-    "noTeachers": "No teachers yet.",
-    "responsibilities": "Responsibilities",
-    "isDirectionManager": "Direction manager",
-    "isStandardsController": "Standards controller"
+    "deactivateConfirm": "Deactivate the account of {{name}}?",
+    "noStaff": "No staff yet.",
+    "roles": "Roles",
+    "noRoles": "No roles",
+    "openRoles": "Roles and scope",
+    "backToList": "Back to staff",
+    "rolesTitle": "Roles",
+    "rolesHint": "A role applies to a faculty, a department or a group, and covers everything in it.",
+    "noRolesHint": "Until they hold a role, a staff member sees only Account and Documents.",
+    "addRole": "Add role",
+    "role": "Role",
+    "scopeKind": "Scope",
+    "scopeKinds": {
+      "Faculty": "Faculty",
+      "Department": "Department",
+      "Group": "Group"
+    },
+    "place": "Where",
+    "faculty": "Faculty",
+    "department": "Department",
+    "group": "Group",
+    "addedAt": "Added",
+    "removeRole": "Remove role",
+    "removeRoleConfirm": "Remove the role \"{{role}}\" ({{place}})?",
+    "roleAdded": "Role added.",
+    "roleRemoved": "Role removed.",
+    "inUseTitle": "The role is in use",
+    "inUseIntro": "Hand these over first:",
+    "blockers": {
+      "supervisedStudent": "supervising a student",
+      "supervisedTopic": "a topic",
+      "panelSeat": "reviewing a step",
+      "managedDirection": "a direction",
+      "controlledStep": "standards control of a step"
+    },
+    "managerScopeHint": "A direction manager is assigned to a faculty or a department.",
+    "status": "Status"
   },
   "taskTemplates": {
     "sections": { "templates": "Templates", "groupSteps": "Group steps" },
@@ -772,7 +815,8 @@
     "topicsTitle": "Topics in my directions",
     "noTopics": "No topics in your directions yet.",
     "managerHint": "Open topic requests and step reviews in this direction move to the new manager.",
-    "noManagers": "No teacher is a direction manager yet. Tick the responsibility on the Teachers page."
+    "noManagers": "Nobody is a direction manager for this department yet. Assign the role on the Staff page.",
+    "managerPickDepartment": "Choose the department first: the manager must cover it."
   },
   "topics": {
     "catalogueTitle": "Diploma topics",

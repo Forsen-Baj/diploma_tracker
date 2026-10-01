@@ -22,7 +22,6 @@ public class ArchivedGroup
 
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
-    public ICollection<ArchivedGroupReviewer> Reviewers { get; set; } = new List<ArchivedGroupReviewer>();
     public ICollection<ArchivedFile> Files { get; set; } = new List<ArchivedFile>();
     public ICollection<ArchivedReview> Reviews { get; set; } = new List<ArchivedReview>();
 }

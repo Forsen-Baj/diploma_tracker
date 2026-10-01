@@ -1,4 +1,4 @@
-import { createCleanup, removeGroup } from './checkCleanup.mjs'
+import { actAs, createCleanup, grantRoles, makeStaff, removeGroup } from './checkCleanup.mjs'
 
 const API = 'http://localhost:5000'
 const stamp = Date.now().toString().slice(-6)
@@ -52,7 +52,7 @@ const directionId = (await call('GET', `/api/directions?departmentId=${departmen
 // Every student this script creates lives in a group of its own, removed with them at the end.
 const ownGroup = (await call('POST', '/api/groups', { token: admin, json: { departmentId, code: `TP${stamp}`, academicYear: '2026/2027', description: '' } })).body
 cleanup.add(`group ${ownGroup.code}`, () => removeGroup(call, admin, ownGroup))
-const teachers = (await call('GET', '/api/teachers', { token: admin })).body
+const teachers = (await call('GET', '/api/staff', { token: admin })).body
 const teacherId = teachers.find((t) => t.email === 'teacher@diploma.local').id
 
 async function createStudent(suffix) {
@@ -67,9 +67,15 @@ const s3 = await createStudent('C')
 const s4 = await createStudent('D') // used only for the topicHeld-refusal sequence (checks 40-48)
 
 const teacher2Email = `teacher2.${stamp}@diploma.local`
-const teacher2Id = (await call('POST', '/api/teachers', { token: admin, json: { firstName: 'Second', lastName: 'Teacher', email: teacher2Email, password: 'Teacher456!' } })).body.id
+const teacher2Id = await makeStaff(call, cleanup, admin, {
+  email: teacher2Email,
+  firstName: 'Second',
+  lastName: 'Teacher',
+  roles: [{ role: 'Teacher', scopeKind: 'Department', scopeId: departmentId }]
+})
 const teacher2 = await login(teacher2Email, 'Teacher456!')
-cleanup.add(`teacher ${teacher2Email} -> deactivate`, () => call('PATCH', `/api/teachers/${teacher2Id}/deactivate`, { token: admin }))
+// Phase 12 §5: the seeded teacher decides as direction manager on topics they do not supervise.
+const teacherAsManager = await actAs(call, teacher, 'DirectionManager')
 
 const originalDeadline = (await call('GET', '/api/settings/topic-selection', { token: admin })).body.deadline
 cleanup.add('topic-selection deadline', () => call('PUT', '/api/settings/topic-selection', { token: admin, json: { deadline: originalDeadline } }))
@@ -94,6 +100,11 @@ const otherFaculty = (await call('POST', '/api/faculties', { token: admin, json:
 cleanup.add(`faculty ${otherFaculty.shortName}`, () => call('DELETE', `/api/faculties/${otherFaculty.id}`, { token: admin }))
 const otherDepartment = (await call('POST', '/api/departments', { token: admin, json: { facultyId: otherFaculty.id, name: `Other Department ${stamp}`, shortName: `OD${stamp}` } })).body
 cleanup.add(`department ${otherDepartment.shortName}`, () => call('DELETE', `/api/departments/${otherDepartment.id}`, { token: admin }))
+// Phase 12 §4: the seeded teacher manages and teaches in this department too.
+await grantRoles(call, cleanup, admin, teacherId, [
+  { role: 'Teacher', scopeKind: 'Department', scopeId: otherDepartment.id },
+  { role: 'DirectionManager', scopeKind: 'Department', scopeId: otherDepartment.id }
+])
 const otherDirection = (await call('POST', '/api/directions', { token: admin, json: { departmentId: otherDepartment.id, name: `Other Direction ${stamp}`, managerId: teacherId } })).body
 cleanup.add(`direction ${otherDirection.name}`, () => call('DELETE', `/api/directions/${otherDirection.id}`, { token: admin }))
 const t3 = (await call('POST', '/api/topics', { token: teacher, json: { title: `Topic Other ${stamp}`, directionId: otherDirection.id } })).body
@@ -176,7 +187,7 @@ check('33a the teacher, supervisor and manager, completes it', (await call('POST
 const replacing = (await call('PUT', `/api/students/${loser.id}/topic`, { token: admin, json: { topicId: t5.id } })).body
 check('34 assigning over a held topic waits', `${replacing.status} ${replacing.topicId === t5.id}`, 'Pending true')
 check('34a the student still holds the first topic', (await call('GET', `/api/students/${loser.id}`, { token: admin })).body.topicId, t4.id)
-check('34b the manager\'s approval completes the replacement', (await call('POST', `/api/reservations/${replacing.id}/approve`, { token: teacher })).body.status, 'Approved')
+check('34b the manager\'s approval completes the replacement', (await call('POST', `/api/reservations/${replacing.id}/approve`, { token: teacherAsManager })).body.status, 'Approved')
 check('35 the displaced topic is available again', (await call('GET', `/api/topics/${t4.id}`, { token: admin })).body.status, 'Available')
 check('36 assigning the topic already held refused', (await call('PUT', `/api/students/${loser.id}/topic`, { token: admin, json: { topicId: t5.id } })).body.code, 'topic.alreadyYours')
 check('37 clearing the topic', (await call('PUT', `/api/students/${loser.id}/topic`, { token: admin, json: { topicId: null } })).status, 204)
