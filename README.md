@@ -1,104 +1,107 @@
-# Diploma Tracker - Local Setup
+# Diploma Tracker
 
-## Overview
-Diploma Tracker is a full-stack app with:
-- Backend: ASP.NET 8 Web API (`backend/DiplomaTracker.Api`)
-- Frontend: React + TypeScript + Vite (`frontend/diploma-tracker-web`)
+**Тема: «Система керування та контролю виконання дипломних робіт»**
 
-## Prerequisites
-- .NET SDK 8.x
-- Node.js 18+ (or 20+ recommended) and npm
-- SQL Server instance (local or remote)
+Diploma Tracker — вебсистема для супроводу магістерських дипломних робіт на кафедрі: від вибору теми до зарахування останнього етапу. Студент обирає тему з каталогу або пропонує власну; тему погоджують адміністрація, керівник тематичного напряму та науковий керівник. Далі студент поетапно надсилає роботу, а панель рецензентів (науковий керівник, керівник напряму, додаткові рецензенти, нормоконтролер) повертає її з коментарем або зараховує з оцінкою. Окремий розділ «Документи» забезпечує обіг заяв, протоколів і листів на перегляд та підпис, а також заповнення шаблонів Word даними студента.
 
-## 1) Configure backend settings
-Open:
-- `backend/DiplomaTracker.Api/appsettings.json`
+Ролі: студент, викладач, керівник напряму, нормоконтролер, адміністратор. Ролі персоналу призначаються в межах факультету, кафедри або групи. Інтерфейс доступний українською та англійською мовами.
 
-Update these values before running locally:
-1. `ConnectionStrings:DefaultConnection`
-2. `Jwt:Secret`
+| Частина | Технології | Каталог |
+|---|---|---|
+| Серверна частина (REST API) | ASP.NET Core 8, Entity Framework Core 8, SQL Server | `backend/DiplomaTracker.Api` |
+| Модульні тести | xUnit, EF Core InMemory | `backend/DiplomaTracker.Api.Tests` |
+| Клієнтська частина | React 18, TypeScript, Vite, Tailwind CSS | `frontend/diploma-tracker-web` |
+| Розгортання | Docker Compose, nginx | `docker-compose.yml`, `docs/deploy.md` |
 
-Important:
-- Use your own SQL Server credentials/host/database in `DefaultConnection`.
-- Replace the sample JWT secret with a strong unique secret (long random string).
-- Do not commit real secrets to source control.
+## Документація
 
-Example fields to edit:
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=...;Database=...;User Id=...;Password=...;Encrypt=False;TrustServerCertificate=True;"
-  },
-  "Jwt": {
-    "Issuer": "DiplomaTracker.Api",
-    "Audience": "DiplomaTracker.Web",
-    "Secret": "REPLACE_WITH_STRONG_RANDOM_SECRET",
-    "ExpiresInMinutes": 60
-  }
-}
-```
+| Документ | Що в ньому |
+|---|---|
+| [Посібник користувача](docs/qa/user-manual.md) | Як користуватися системою в кожній ролі |
+| [Розгортання на сервері](docs/deploy.md) | Docker: перше розгортання, оновлення, резервне копіювання, типові проблеми |
+| [Ручні тест-кейси](docs/qa/test-cases.md) | Сценарії перевірки в браузері та їхні результати |
+| [Звіт з практики](docs/practice-report/Звіт_з_практики_Черняк_ТВ-52мп.pdf) | Аналіз, проєктування, реалізація та тестування системи |
+| [Проєктна документація](docs/superpowers/specs/) | Проєктні рішення за етапами розроблення |
 
-## 2) Run backend
-From project root:
-```powershell
-cd backend/DiplomaTracker.Api
-dotnet restore
-dotnet build
-dotnet run --no-build --urls http://localhost:5000
-```
+## Необхідне програмне забезпечення
 
-What happens on startup:
-- EF Core migrations are applied automatically.
-- Seed data is inserted automatically if missing.
-- Swagger UI is available at: `http://localhost:5000/swagger`
+### Для роботи на сервері (Docker)
 
-Health check:
-- `GET http://localhost:5000/api/health`
+| ПЗ | Версія | Примітка |
+|---|---|---|
+| ОС | Linux x86_64 (перевірено на Ubuntu 24.04) | Docker Desktop на Windows і macOS теж підходить |
+| Docker Engine і Docker Compose | Compose v2 | Решту ПЗ (.NET 8, nginx, SQL Server 2022 Express) містять контейнери |
+| Оперативна пам’ять | від 3 ГБ вільної | SQL Server потребує щонайменше 2 ГБ |
+| Git | будь-яка актуальна | Або копіювання архіву коду, див. [docs/deploy.md](docs/deploy.md) |
 
-## 3) Run frontend
-Open a second terminal, from project root:
-```powershell
-cd frontend/diploma-tracker-web
-npm install
-npm run dev
-```
+### Для розроблення
 
-Frontend default URL:
-- `http://localhost:5173`
+| ПЗ | Версія | Примітка |
+|---|---|---|
+| ОС | Windows 10/11, Linux або macOS | |
+| .NET SDK | 8 або новіший | Проєкт націлений на `net8.0` |
+| Node.js і npm | Node.js 20 або новіший | Потрібен для збирання клієнтської частини |
+| Microsoft SQL Server | 2019 або новіший (Express, Developer чи LocalDB) | База даних створюється автоматично під час першого запуску |
+| Браузер | актуальні Chrome або Edge | |
 
-Note:
-- Frontend API base URL is currently hardcoded to `http://localhost:5000` in:
-  - `frontend/diploma-tracker-web/src/api/apiClient.ts`
+Бібліотеки встановлюються автоматично: NuGet-пакети — під час `dotnet build` (див. [`DiplomaTracker.Api.csproj`](backend/DiplomaTracker.Api/DiplomaTracker.Api.csproj)), npm-пакети — командою `npm install` (див. [`package.json`](frontend/diploma-tracker-web/package.json)).
 
-## 4) Seeded local users
-The backend seeder creates demo users:
-- Admin: `admin@diploma.local` / `Admin123!`
-- Teacher: `teacher@diploma.local` / `Teacher123!`
-- Student: `student@diploma.local` / `Student123!`
+## Встановлення
 
-Use these only for local development.
+### На сервері
 
-## 5) Build commands
-Backend:
-```powershell
-cd backend/DiplomaTracker.Api
-dotnet build
-```
+1. Отримати код репозиторію на сервері.
+2. Створити файл `.env` із шаблону `.env.example` і заповнити його: порт, публічна адреса, пароль бази даних, секрет JWT, дані першого адміністратора.
+3. Виконати `docker compose up -d --build`.
+4. Відкрити в браузері адресу з `PUBLIC_URL` та увійти як адміністратор.
 
-Frontend:
-```powershell
-cd frontend/diploma-tracker-web
-npm run build
-```
+Покрокові команди, оновлення та резервне копіювання описано в [docs/deploy.md](docs/deploy.md).
 
-## 6) Troubleshooting
-- 401/403 errors:
-  - Re-login to refresh token.
-  - Verify JWT settings (`Issuer`, `Audience`, `Secret`) are consistent.
-- Database connection failures:
-  - Recheck `DefaultConnection` in `appsettings.json`.
-  - Confirm SQL Server is reachable and credentials are correct.
-- CORS errors:
-  - Backend allows `http://localhost:5173` by default.
-- Frontend cannot call backend:
-  - Ensure backend is running on `http://localhost:5000` or update `apiClient.ts`.
+### Локально для розроблення
+
+1. Задати секрети серверної частини (зберігаються поза репозиторієм):
+
+   ```bash
+   cd backend/DiplomaTracker.Api
+   dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=localhost;Database=DiplomaTrackerDb;Trusted_Connection=True;TrustServerCertificate=True"
+   dotnet user-secrets set "Jwt:Secret" "<випадковий рядок довжиною щонайменше 32 символи>"
+   ```
+
+2. Запустити API на `http://localhost:5000`. Міграції застосовуються, а початкові дані (адміністратор `admin@diploma.local`, пароль у `Services/DbSeeder.cs`) створюються автоматично:
+
+   ```bash
+   dotnet run --launch-profile http
+   ```
+
+3. В іншому терміналі запустити клієнтську частину на `http://localhost:5173` (адресу API задано у `.env.development`):
+
+   ```bash
+   cd frontend/diploma-tracker-web
+   npm install
+   npm run dev
+   ```
+
+4. За бажанням заповнити базу даними через API — дані кафедри ІПЗЕ (групи ТВ-51мп і ТВ-52мп, теми, керівники, напрями й етапи; вони ж використовуються на сервері та в тест-кейсах) або вигадані демонстраційні дані. Облікові записи й параметри описано в [.superpowers/demo/README.md](.superpowers/demo/README.md):
+
+   ```bash
+   node .superpowers/demo/seed-kpi.mjs
+   ```
+
+   ```bash
+   node .superpowers/demo/seed-demo.mjs
+   ```
+
+Перевірка: модульні тести — `dotnet test` у каталозі `backend/DiplomaTracker.Api.Tests`; наскрізні сценарії API — `node .superpowers/checks/<назва>-check.mjs` за запущеного API.
+
+## Коротка інструкція користувача
+
+Повний опис кожної ролі — у [посібнику користувача](docs/qa/user-manual.md).
+
+1. **Вхід.** Відкрийте адресу системи й увійдіть за електронною поштою та паролем. Студент, якого додав адміністратор, уперше натискає «Активуйте обліковий запис» і вводить пошту та номер студентського квитка ([розділ 2](docs/qa/user-manual.md#2-початок-роботи)).
+2. **Студент.** У вкладці «Теми» бронює тему або пропонує власну й чекає трьох погоджень. Потім у вкладці «Моя робота» відкриває етап і надсилає файл (.docx, .pdf або .pptx, до 20 МБ); повернену роботу виправляє й надсилає знову ([розділ 4](docs/qa/user-manual.md#4-студент)).
+3. **Викладач.** У вкладці «Рецензування» відкриває роботу студента й зараховує її з оцінкою 0–100 або повертає з коментарем; у вкладці «Мої теми» веде каталог тем і погоджує запити студентів ([розділ 5](docs/qa/user-manual.md#5-викладач)).
+4. **Керівник напряму та нормоконтролер.** Обирають свою роль у меню користувача («Діяти як»): керівник напряму погоджує теми свого напряму й рецензує етапи, нормоконтролер перевіряє оформлення без оцінки ([розділи 6–7](docs/qa/user-manual.md#6-керівник-напряму)).
+5. **Адміністратор.** Налаштовує факультети, кафедри, групи й етапи, додає студентів (зокрема імпортом CSV) і працівників, призначає ролі з межами ([розділ 8](docs/qa/user-manual.md#8-адміністратор)).
+6. **Документи.** У вкладці «Документи» будь-який користувач створює документ, надсилає його на перегляд або підпис і стежить за історією; там само завантажуються заповнені шаблони Word ([розділ 9](docs/qa/user-manual.md#9-документи)).
+
+Етап зараховується, коли роботу зарахували всі рецензенти; оцінка етапу — округлене середнє їхніх оцінок ([розділ 10](docs/qa/user-manual.md#10-як-оцінюється-етап)).

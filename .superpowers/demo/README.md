@@ -1,5 +1,27 @@
 # Demo data and walkthrough
 
+## Real department data (`seed-kpi.mjs`)
+
+`seed-kpi.mjs` loads the real data of кафедра ІПЗЕ (ННІАТЕ, КПІ): groups ТВ-51мп and ТВ-52мп
+(2026/2027), 32 students with their topics, 16 supervisors, 8 directions and the 11 thesis steps
+(deadlines 15.10–25.12.2026). Contact data is replaced: staff sign in as `staffN@test.data`,
+students as `studentN@test.data`, and student numbers are random. It is what the deployed server
+and `docs/qa/test-cases.md` use.
+
+```
+node .superpowers/demo/seed-kpi.mjs
+```
+
+Set `API_URL=http://SERVER_IP:4047` to load the server instead of the local API, and
+`ADMIN_EMAIL` when the administrator is not `admin@diploma.local`. The administrator's password and
+the password every staff account gets are asked for without echo (or read from `ADMIN_PASSWORD` /
+`STAFF_PASSWORD`). Students get no password: they activate their accounts with e-mail and student
+number while registration is open. Each topic is assigned by the administrator, so its direction
+manager's and supervisor's approvals stay pending. The run is resumable: it only creates what is
+missing.
+
+## Fictional demo (`seed-demo.mjs`)
+
 `seed-demo.mjs` fills a freshly seeded database with a small Ukrainian faculty, so every screen
 has something real to show. Run it once, with the API on :5000:
 
