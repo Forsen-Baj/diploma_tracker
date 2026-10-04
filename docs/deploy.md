@@ -27,6 +27,24 @@ The university server runs many other projects, and the `docker` group can touch
 - `docker compose down -v` deletes our database and uploads. Do not use `-v` unless that is
   the goal.
 
+## How the code reaches the server
+
+The server has no access to the private repositories, so a committed branch is packed on the
+developer's PC and copied over. The archive holds exactly what is committed: no `node_modules`,
+build output or local `.env`.
+
+On the PC, in PowerShell, from the project folder (replace `BRANCH`, normally `master`):
+
+```bash
+git archive --format=tar.gz -o "$env:USERPROFILE\diploma-tracker.tar.gz" BRANCH
+```
+
+Copy it to the server (asks for the server password):
+
+```bash
+scp "$env:USERPROFILE\diploma-tracker.tar.gz" LOGIN@SERVER_IP:~/
+```
+
 ## First deployment
 
 Connect from PowerShell (the password is not echoed while typing):
@@ -35,36 +53,24 @@ Connect from PowerShell (the password is not echoed while typing):
 ssh LOGIN@SERVER_IP
 ```
 
-Download the code (replace `BRANCH` with the branch to deploy, e.g. `master`):
+Unpack the archive into `~/diploma_tracker`:
 
 ```bash
-git clone -b BRANCH https://github.com/Forsen-Baj/diploma_tracker.git
+mkdir -p ~/diploma_tracker && tar -xzf ~/diploma-tracker.tar.gz -C ~/diploma_tracker && rm ~/diploma-tracker.tar.gz && cd ~/diploma_tracker
 ```
+
+Create `.env` with generated secrets. Replace `SERVER_IP` and `YOUR_EMAIL` first; the secrets
+are never printed:
 
 ```bash
-cd diploma_tracker
+IP=SERVER_IP; EMAIL=YOUR_EMAIL; cp .env.example .env && sed -i "s|^PUBLIC_URL=.*|PUBLIC_URL=http://$IP:4047|; s|^DB_PASSWORD=.*|DB_PASSWORD=Dt$(openssl rand -hex 16)|; s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|; s|^ADMIN_EMAIL=.*|ADMIN_EMAIL=$EMAIL|; s|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=Adm$(openssl rand -hex 8)|" .env && chmod 600 .env && grep -E '^(APP_PORT|PUBLIC_URL|ADMIN_EMAIL)=' .env
 ```
 
-Create the settings file and generate two secrets:
-
-```bash
-cp .env.example .env
-```
-
-```bash
-echo "DB_PASSWORD: Dt$(openssl rand -hex 16)"; echo "JWT_SECRET: $(openssl rand -hex 32)"
-```
-
-Open the file, fill in every value, then save with `Ctrl+O`, `Enter` and leave with `Ctrl+X`:
-
-```bash
-nano .env
-```
-
-- `APP_PORT`: the port the university gave the project.
-- `PUBLIC_URL`: `http://SERVER_IP:APP_PORT`, exactly as people type it in the browser.
-- `DB_PASSWORD`, `JWT_SECRET`: the two generated values.
-- `ADMIN_EMAIL`, `ADMIN_PASSWORD`: the first administrator (password 12+ characters).
+- `APP_PORT`: 4047, the port the university gave the project.
+- `PUBLIC_URL`: `http://SERVER_IP:4047`, exactly as people type it in the browser.
+- `ADMIN_EMAIL`, `ADMIN_PASSWORD`: the first administrator, created on the first start only.
+  Read the password with `grep ADMIN_PASSWORD ~/diploma_tracker/.env` and change it in the
+  app after signing in.
 
 Build and start (the first run downloads about 2 GB and takes several minutes):
 
@@ -83,11 +89,14 @@ Open `PUBLIC_URL` in a browser and sign in as the administrator. The health chec
 
 ## Updating to a newer version
 
+Pack and copy the new version as in *How the code reaches the server*, then on the server:
+
 ```bash
-cd ~/diploma_tracker && git pull && docker compose up -d --build
+cd ~/diploma_tracker && tar -xzf ~/diploma-tracker.tar.gz && rm ~/diploma-tracker.tar.gz && docker compose up -d --build
 ```
 
-Only containers whose code changed are rebuilt. Migrations run automatically when `api` starts.
+Unpacking over the folder keeps `.env`, which is not in the archive. Only containers whose code
+changed are rebuilt. Migrations run automatically when `api` starts.
 If `PUBLIC_URL` changes, the same command rebuilds `web` with the new address.
 
 ## Day-to-day commands
